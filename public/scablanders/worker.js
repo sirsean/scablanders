@@ -53716,6 +53716,542 @@ async function getAvailableMercenaries(playerAddress, env2) {
     return a.hireCost - b.hireCost;
   });
 }
+class WorldDO extends DurableObject {
+  constructor(ctx, env2) {
+    super(ctx, env2);
+    this.missions = /* @__PURE__ */ new Map();
+    this.resources = /* @__PURE__ */ new Map();
+    this.townMetrics = {
+      prosperity: 50,
+      security: 50,
+      population: 100,
+      upgradeLevel: 1
+    };
+    this.initializeResources();
+  }
+  /**
+   * Initialize default resource nodes in the Scablands
+   */
+  async initializeResources() {
+    const stored = await this.ctx.storage.get("resources");
+    if (stored && stored.size > 0) {
+      this.resources = stored;
+      return;
+    }
+    const defaultNodes = [
+      // Ore nodes (high value, slower respawn)
+      { id: "ore-1", x: 200, y: 150, type: "ore", quantity: 100, maxQuantity: 100, respawnTime: 3600 },
+      { id: "ore-2", x: 600, y: 400, type: "ore", quantity: 80, maxQuantity: 100, respawnTime: 3600 },
+      { id: "ore-3", x: 300, y: 500, type: "ore", quantity: 90, maxQuantity: 100, respawnTime: 3600 },
+      // Scrap nodes (medium value, medium respawn)
+      { id: "scrap-1", x: 150, y: 300, type: "scrap", quantity: 150, maxQuantity: 150, respawnTime: 1800 },
+      { id: "scrap-2", x: 500, y: 200, type: "scrap", quantity: 120, maxQuantity: 150, respawnTime: 1800 },
+      { id: "scrap-3", x: 400, y: 350, type: "scrap", quantity: 140, maxQuantity: 150, respawnTime: 1800 },
+      { id: "scrap-4", x: 700, y: 300, type: "scrap", quantity: 130, maxQuantity: 150, respawnTime: 1800 },
+      // Organic nodes (lower value, faster respawn)  
+      { id: "organic-1", x: 100, y: 400, type: "organic", quantity: 200, maxQuantity: 200, respawnTime: 900 },
+      { id: "organic-2", x: 350, y: 100, type: "organic", quantity: 180, maxQuantity: 200, respawnTime: 900 },
+      { id: "organic-3", x: 550, y: 450, type: "organic", quantity: 190, maxQuantity: 200, respawnTime: 900 },
+      { id: "organic-4", x: 650, y: 150, type: "organic", quantity: 170, maxQuantity: 200, respawnTime: 900 },
+      { id: "organic-5", x: 250, y: 250, type: "organic", quantity: 200, maxQuantity: 200, respawnTime: 900 }
+    ];
+    for (const node2 of defaultNodes) {
+      this.resources.set(node2.id, node2);
+    }
+    await this.ctx.storage.put("resources", this.resources);
+  }
+  /**
+   * Start a new mission to a resource node
+   */
+  async startMission(request2) {
+    const { playerAddress, drifterIds, targetNodeId } = request2;
+    const targetNode = this.resources.get(targetNodeId);
+    if (!targetNode) {
+      return { success: false, error: "Target resource node not found" };
+    }
+    if (targetNode.quantity <= 0) {
+      return { success: false, error: "Resource node is depleted" };
+    }
+    const distance = Math.sqrt(targetNode.x * targetNode.x + targetNode.y * targetNode.y) / 10;
+    const baseTravelTime = Math.max(30, distance * 2);
+    const travelTime = baseTravelTime;
+    const startTime = /* @__PURE__ */ new Date();
+    const endTime = new Date(startTime.getTime() + travelTime * 1e3);
+    const missionId = `mission-${playerAddress}-${Date.now()}`;
+    const mission = {
+      id: missionId,
+      playerAddress,
+      drifterIds,
+      targetNodeId,
+      startTime,
+      endTime,
+      status: "active",
+      type: "scavenge"
+    };
+    this.missions.set(missionId, mission);
+    await this.ctx.storage.put("missions", this.missions);
+    await this.ctx.storage.setAlarm(endTime.getTime());
+    return {
+      success: true,
+      mission,
+      estimatedDuration: travelTime
+    };
+  }
+  /**
+   * Start an intercept mission against another player's active mission
+   */
+  async startIntercept(request2) {
+    const { attackerAddress, targetMissionId, banditIds } = request2;
+    const targetMission = this.missions.get(targetMissionId);
+    if (!targetMission) {
+      return { success: false, error: "Target mission not found" };
+    }
+    if (targetMission.status !== "active") {
+      return { success: false, error: "Target mission is not active" };
+    }
+    if (targetMission.playerAddress === attackerAddress) {
+      return { success: false, error: "Cannot intercept your own mission" };
+    }
+    const interceptId = `intercept-${attackerAddress}-${Date.now()}`;
+    const interceptMission = {
+      id: interceptId,
+      playerAddress: attackerAddress,
+      drifterIds: banditIds,
+      targetNodeId: targetMission.targetNodeId,
+      startTime: /* @__PURE__ */ new Date(),
+      endTime: targetMission.endTime,
+      // Same end time as target
+      status: "active",
+      type: "intercept",
+      targetMissionId
+    };
+    this.missions.set(interceptId, interceptMission);
+    await this.ctx.storage.put("missions", this.missions);
+    return {
+      success: true,
+      mission: interceptMission
+    };
+  }
+  /**
+   * Complete a mission - called by alarm or manually
+   */
+  async completeMission(missionId) {
+    const mission = this.missions.get(missionId);
+    if (!mission || mission.status !== "active") {
+      return { success: false, error: "Mission not found or not active" };
+    }
+    const targetNode = this.resources.get(mission.targetNodeId);
+    if (!targetNode) {
+      return { success: false, error: "Target node not found" };
+    }
+    const interceptMissions = Array.from(this.missions.values()).filter((m) => m.type === "intercept" && m.targetMissionId === missionId && m.status === "active");
+    let result;
+    if (interceptMissions.length > 0) {
+      result = await this.resolveCombat(mission, interceptMissions[0], targetNode);
+    } else {
+      result = await this.resolveScavenging(mission, targetNode);
+    }
+    mission.status = "completed";
+    this.missions.set(missionId, mission);
+    if (interceptMissions.length > 0) {
+      interceptMissions[0].status = "completed";
+      this.missions.set(interceptMissions[0].id, interceptMissions[0]);
+    }
+    await this.ctx.storage.put("missions", this.missions);
+    await this.ctx.storage.put("resources", this.resources);
+    return result;
+  }
+  /**
+   * Resolve combat between scavenger and interceptor
+   */
+  async resolveCombat(scavengeMission, interceptMission, node2) {
+    const scavengerCombat = scavengeMission.drifterIds.length * 5;
+    const interceptorCombat = interceptMission.drifterIds.length * 5;
+    const scavengerRoll = Math.floor(Math.random() * 20) + 1;
+    const interceptorRoll = Math.floor(Math.random() * 20) + 1;
+    const scavengerTotal = scavengerCombat + scavengerRoll;
+    const interceptorTotal = interceptorCombat + interceptorRoll;
+    let winner;
+    let loot = 0;
+    if (scavengerTotal > interceptorTotal) {
+      winner = "scavenger";
+      loot = Math.min(30, node2.quantity) * 0.7;
+    } else {
+      winner = "interceptor";
+      loot = Math.min(30, node2.quantity) * 0.5;
+    }
+    node2.quantity = Math.max(0, node2.quantity - Math.ceil(loot));
+    if (node2.quantity === 0) {
+      const respawnTime = Date.now() + node2.respawnTime * 1e3;
+      await this.ctx.storage.setAlarm(respawnTime);
+    }
+    return {
+      success: true,
+      type: "combat",
+      winner: winner === "scavenger" ? scavengeMission.playerAddress : interceptMission.playerAddress,
+      loser: winner === "scavenger" ? interceptMission.playerAddress : scavengeMission.playerAddress,
+      lootAmount: loot,
+      combatDetails: {
+        scavengerCombat: scavengerTotal,
+        interceptorCombat: interceptorTotal
+      }
+    };
+  }
+  /**
+   * Resolve normal scavenging mission
+   */
+  async resolveScavenging(mission, node2) {
+    const scavengingPower = mission.drifterIds.length * 3;
+    const baseLoot = Math.min(scavengingPower * 2, node2.quantity);
+    const variance = baseLoot * 0.1;
+    const actualLoot = baseLoot + (Math.random() - 0.5) * variance;
+    const finalLoot = Math.max(1, Math.floor(actualLoot));
+    node2.quantity = Math.max(0, node2.quantity - finalLoot);
+    if (node2.quantity === 0) {
+      const respawnTime = Date.now() + node2.respawnTime * 1e3;
+      await this.ctx.storage.setAlarm(respawnTime);
+    }
+    return {
+      success: true,
+      type: "scavenge",
+      winner: mission.playerAddress,
+      lootAmount: finalLoot,
+      nodeId: node2.id,
+      resourceType: node2.type
+    };
+  }
+  /**
+   * Get list of active missions (filtered by player address if provided)
+   */
+  async listActiveMissions(playerAddress) {
+    const allMissions = Array.from(this.missions.values());
+    if (playerAddress) {
+      return allMissions.filter((m) => m.playerAddress === playerAddress && m.status === "active");
+    }
+    return allMissions.filter((m) => m.status === "active");
+  }
+  /**
+   * Get list of resource nodes (filtered by discoveries if provided)
+   */
+  async listResources(discoveredNodeIds) {
+    const allNodes = Array.from(this.resources.values());
+    if (discoveredNodeIds && discoveredNodeIds.length > 0) {
+      return allNodes.filter((node2) => discoveredNodeIds.includes(node2.id));
+    }
+    return allNodes;
+  }
+  /**
+   * Get current world state
+   */
+  async getWorldState() {
+    return {
+      resources: Array.from(this.resources.values()),
+      activeMissions: Array.from(this.missions.values()).filter((m) => m.status === "active"),
+      townMetrics: this.townMetrics,
+      lastUpdate: /* @__PURE__ */ new Date()
+    };
+  }
+  /**
+   * Alarm handler - processes mission completions and resource respawns
+   */
+  async alarm() {
+    const now = Date.now();
+    const missionsToComplete = Array.from(this.missions.values()).filter((m) => m.status === "active" && m.endTime.getTime() <= now);
+    for (const mission of missionsToComplete) {
+      try {
+        const result = await this.completeMission(mission.id);
+        console.log("Mission completed:", mission.id, result);
+      } catch (error) {
+        console.error("Error completing mission:", mission.id, error);
+      }
+    }
+    const resourcesToRespawn = Array.from(this.resources.values()).filter((r) => r.quantity === 0 && r.respawnTime);
+    for (const resource of resourcesToRespawn) {
+      resource.quantity = resource.maxQuantity;
+      this.resources.set(resource.id, resource);
+    }
+    if (resourcesToRespawn.length > 0) {
+      await this.ctx.storage.put("resources", this.resources);
+    }
+    const nextMission = Array.from(this.missions.values()).filter((m) => m.status === "active").sort((a, b) => a.endTime.getTime() - b.endTime.getTime())[0];
+    if (nextMission) {
+      await this.ctx.storage.setAlarm(nextMission.endTime.getTime());
+    }
+  }
+}
+class PlayerDO extends DurableObject {
+  constructor(ctx, env2) {
+    super(ctx, env2);
+    this.profile = null;
+    this.notifications = [];
+    this.loadProfile();
+  }
+  /**
+   * Load player profile from storage
+   */
+  async loadProfile() {
+    const stored = await this.ctx.storage.get("profile");
+    if (stored) {
+      this.profile = stored;
+    }
+    const storedNotifications = await this.ctx.storage.get("notifications");
+    if (storedNotifications) {
+      this.notifications = storedNotifications;
+    }
+  }
+  /**
+   * Initialize a new player profile
+   */
+  async initializeProfile(address2) {
+    this.profile = {
+      address: address2,
+      balance: 1e3,
+      // Starting balance
+      ownedDrifters: [],
+      // Will be populated from NFT lookup
+      discoveredNodes: [],
+      // Empty initially - player must discover nodes
+      upgrades: [],
+      // No upgrades initially
+      lastLogin: /* @__PURE__ */ new Date()
+    };
+    await this.ctx.storage.put("profile", this.profile);
+    return this.profile;
+  }
+  /**
+   * Get player profile, creating one if it doesn't exist
+   */
+  async getProfile(address2) {
+    if (!this.profile || this.profile.address !== address2) {
+      await this.initializeProfile(address2);
+    }
+    this.profile.lastLogin = /* @__PURE__ */ new Date();
+    await this.ctx.storage.put("profile", this.profile);
+    return this.profile;
+  }
+  /**
+   * Credit amount to player balance
+   * This is the only way to add money to prevent race conditions
+   */
+  async credit(amount) {
+    if (!this.profile) {
+      return { success: false, newBalance: 0, error: "Profile not initialized" };
+    }
+    if (amount <= 0) {
+      return { success: false, newBalance: this.profile.balance, error: "Amount must be positive" };
+    }
+    this.profile.balance += amount;
+    await this.ctx.storage.put("profile", this.profile);
+    return {
+      success: true,
+      newBalance: this.profile.balance
+    };
+  }
+  /**
+   * Debit amount from player balance
+   * Returns false if insufficient funds
+   */
+  async debit(amount) {
+    if (!this.profile) {
+      return { success: false, newBalance: 0, error: "Profile not initialized" };
+    }
+    if (amount <= 0) {
+      return { success: false, newBalance: this.profile.balance, error: "Amount must be positive" };
+    }
+    if (this.profile.balance < amount) {
+      return {
+        success: false,
+        newBalance: this.profile.balance,
+        error: "Insufficient funds"
+      };
+    }
+    this.profile.balance -= amount;
+    await this.ctx.storage.put("profile", this.profile);
+    return {
+      success: true,
+      newBalance: this.profile.balance
+    };
+  }
+  /**
+   * Add an upgrade to player's collection
+   */
+  async addUpgrade(upgradeType) {
+    if (!this.profile) {
+      return { success: false, error: "Profile not initialized" };
+    }
+    if (this.profile.upgrades.includes(upgradeType)) {
+      return { success: false, error: "Upgrade already owned" };
+    }
+    this.profile.upgrades.push(upgradeType);
+    await this.ctx.storage.put("profile", this.profile);
+    return { success: true };
+  }
+  /**
+   * Add a discovered resource node
+   */
+  async addDiscovery(nodeId) {
+    if (!this.profile) {
+      return { success: false, error: "Profile not initialized" };
+    }
+    if (this.profile.discoveredNodes.includes(nodeId)) {
+      return { success: false, error: "Node already discovered" };
+    }
+    this.profile.discoveredNodes.push(nodeId);
+    await this.ctx.storage.put("profile", this.profile);
+    return { success: true };
+  }
+  /**
+   * Update owned Drifters list (called when NFT ownership changes)
+   */
+  async updateOwnedDrifters(drifterIds) {
+    if (!this.profile) {
+      return { success: false, error: "Profile not initialized" };
+    }
+    this.profile.ownedDrifters = drifterIds;
+    await this.ctx.storage.put("profile", this.profile);
+    return { success: true };
+  }
+  /**
+   * Add a notification to the player's queue
+   */
+  async addNotification(message2) {
+    if (!message2.timestamp) {
+      message2.timestamp = /* @__PURE__ */ new Date();
+    }
+    this.notifications.push(message2);
+    if (this.notifications.length > 50) {
+      this.notifications = this.notifications.slice(-50);
+    }
+    await this.ctx.storage.put("notifications", this.notifications);
+    return { success: true };
+  }
+  /**
+   * Get pending notifications for player
+   */
+  async getNotifications(limit = 20) {
+    return this.notifications.slice(-limit).reverse();
+  }
+  /**
+   * Mark notifications as read (remove them from queue)
+   */
+  async markNotificationsRead(notificationIds) {
+    if (notificationIds && notificationIds.length > 0) {
+      this.notifications = this.notifications.filter((n) => !notificationIds.includes(n.id));
+    } else {
+      this.notifications = [];
+    }
+    await this.ctx.storage.put("notifications", this.notifications);
+    return { success: true };
+  }
+  /**
+   * Get player's upgrade effects for calculations
+   */
+  async getUpgradeEffects() {
+    if (!this.profile) {
+      return {
+        speedMultiplier: 1,
+        yieldMultiplier: 1,
+        capacityMultiplier: 1,
+        combatBonus: 0,
+        scavengingBonus: 0,
+        techBonus: 0
+      };
+    }
+    let speedMultiplier = 1;
+    let yieldMultiplier = 1;
+    let capacityMultiplier = 1;
+    let combatBonus = 0;
+    let scavengingBonus = 0;
+    let techBonus = 0;
+    for (const upgrade of this.profile.upgrades) {
+      switch (upgrade) {
+        case "speed-boost-1":
+          speedMultiplier *= 1.2;
+          break;
+        case "speed-boost-2":
+          speedMultiplier *= 1.3;
+          break;
+        case "speed-boost-3":
+          speedMultiplier *= 1.5;
+          break;
+        case "yield-boost-1":
+          yieldMultiplier *= 1.15;
+          break;
+        case "yield-boost-2":
+          yieldMultiplier *= 1.25;
+          break;
+        case "yield-boost-3":
+          yieldMultiplier *= 1.4;
+          break;
+        case "capacity-boost-1":
+          capacityMultiplier *= 1.25;
+          break;
+        case "capacity-boost-2":
+          capacityMultiplier *= 1.5;
+          break;
+        case "capacity-boost-3":
+          capacityMultiplier *= 2;
+          break;
+        case "combat-training-1":
+          combatBonus += 2;
+          break;
+        case "combat-training-2":
+          combatBonus += 3;
+          break;
+        case "combat-training-3":
+          combatBonus += 5;
+          break;
+        case "scavenging-expertise-1":
+          scavengingBonus += 1;
+          break;
+        case "scavenging-expertise-2":
+          scavengingBonus += 2;
+          break;
+        case "scavenging-expertise-3":
+          scavengingBonus += 3;
+          break;
+        case "tech-upgrade-1":
+          techBonus += 1;
+          break;
+        case "tech-upgrade-2":
+          techBonus += 2;
+          break;
+        case "tech-upgrade-3":
+          techBonus += 3;
+          break;
+      }
+    }
+    return {
+      speedMultiplier,
+      yieldMultiplier,
+      capacityMultiplier,
+      combatBonus,
+      scavengingBonus,
+      techBonus
+    };
+  }
+  /**
+   * Reset player data (for development/testing)
+   */
+  async reset() {
+    this.profile = null;
+    this.notifications = [];
+    await this.ctx.storage.deleteAll();
+    return { success: true };
+  }
+  /**
+   * Get storage statistics for debugging
+   */
+  async getStats() {
+    return {
+      profileExists: !!this.profile,
+      balance: this.profile?.balance || 0,
+      upgradeCount: this.profile?.upgrades.length || 0,
+      discoveryCount: this.profile?.discoveredNodes.length || 0,
+      notificationCount: this.notifications.length
+    };
+  }
+}
 class MyDurableObject extends DurableObject {
   constructor(ctx, env2) {
     super(ctx, env2);
@@ -53785,10 +54321,12 @@ async function routeApiCall(path, method, request2, env2) {
     case "world":
       return handleWorld(apiPath, method, request2, env2);
     case "mission":
-      return handleMission(apiPath, method);
+      return handleMission(apiPath, method, request2, env2);
     case "mercenaries":
     case "mercs":
       return handleMercenaries(method, request2, env2);
+    case "test-nft":
+      return handleTestNft(apiPath, method, request2, env2);
     default:
       return new Response(
         JSON.stringify({ error: "API endpoint not found" }),
@@ -53934,18 +54472,11 @@ async function handleProfile(method, request2, env2) {
     } catch (error) {
       console.error("Failed to fetch owned Drifters:", error);
     }
-    const authenticatedProfile = {
-      address: authResult.address,
-      balance: 1e3,
-      // Starting balance for authenticated users
-      ownedDrifters,
-      // Real NFT ownership data
-      discoveredNodes: [],
-      // TODO: Load from persistent storage
-      upgrades: [],
-      // TODO: Load from persistent storage
-      lastLogin: /* @__PURE__ */ new Date()
-    };
+    const playerId = env2.PLAYER_DO.idFromName(authResult.address);
+    const playerStub = env2.PLAYER_DO.get(playerId);
+    const playerProfile = await playerStub.getProfile(authResult.address);
+    await playerStub.updateOwnedDrifters(ownedDrifters);
+    const authenticatedProfile = await playerStub.getProfile(authResult.address);
     return new Response(
       JSON.stringify(authenticatedProfile),
       { headers: { "Content-Type": "application/json" } }
@@ -53960,33 +54491,164 @@ async function handleProfile(method, request2, env2) {
 }
 async function handleWorld(path, method, request2, env2) {
   const endpoint = path[1];
+  const worldId = env2.WORLD_DO.idFromName("world");
+  const worldStub = env2.WORLD_DO.get(worldId);
   switch (endpoint) {
     case "state":
       if (method !== "GET") {
         return new Response("Method not allowed", { status: 405 });
       }
-      const id2 = env2.MY_DURABLE_OBJECT.idFromName("world");
-      const stub = env2.MY_DURABLE_OBJECT.get(id2);
-      const worldState = await stub.getWorldState();
-      return new Response(
-        JSON.stringify(worldState),
-        { headers: { "Content-Type": "application/json" } }
-      );
+      try {
+        const worldState = await worldStub.getWorldState();
+        return new Response(
+          JSON.stringify(worldState),
+          { headers: { "Content-Type": "application/json" } }
+        );
+      } catch (error) {
+        console.error("World state error:", error);
+        return new Response(
+          JSON.stringify({ error: "Failed to get world state" }),
+          { status: 500, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    case "resources":
+      if (method !== "GET") {
+        return new Response("Method not allowed", { status: 405 });
+      }
+      try {
+        const { createAuthMiddleware } = await import("./assets/auth-bw3Uuruo.js");
+        const auth = createAuthMiddleware({});
+        const authResult = await auth(request2);
+        let discoveredNodes = [];
+        if (authResult.address) {
+          const playerId = env2.PLAYER_DO.idFromName(authResult.address);
+          const playerStub = env2.PLAYER_DO.get(playerId);
+          const profile = await playerStub.getProfile(authResult.address);
+          discoveredNodes = profile.discoveredNodes;
+        }
+        const resources = await worldStub.listResources(discoveredNodes);
+        return new Response(
+          JSON.stringify({ resources }),
+          { headers: { "Content-Type": "application/json" } }
+        );
+      } catch (error) {
+        console.error("Resources error:", error);
+        return new Response(
+          JSON.stringify({ error: "Failed to get resources" }),
+          { status: 500, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    case "missions":
+      if (method !== "GET") {
+        return new Response("Method not allowed", { status: 405 });
+      }
+      try {
+        const url = new URL(request2.url);
+        const playerAddress = url.searchParams.get("player");
+        const missions = await worldStub.listActiveMissions(playerAddress || void 0);
+        return new Response(
+          JSON.stringify({ missions }),
+          { headers: { "Content-Type": "application/json" } }
+        );
+      } catch (error) {
+        console.error("Missions error:", error);
+        return new Response(
+          JSON.stringify({ error: "Failed to get missions" }),
+          { status: 500, headers: { "Content-Type": "application/json" } }
+        );
+      }
     default:
       return new Response("World endpoint not found", { status: 404 });
   }
 }
 async function handleMission(path, method, request2, env2) {
   const endpoint = path[1];
+  const { createAuthMiddleware } = await import("./assets/auth-bw3Uuruo.js");
+  const auth = createAuthMiddleware({});
+  const authResult = await auth(request2);
+  if (authResult.error || !authResult.address) {
+    return new Response(
+      JSON.stringify({ error: "Authentication required" }),
+      { status: 401, headers: { "Content-Type": "application/json" } }
+    );
+  }
+  const worldId = env2.WORLD_DO.idFromName("world");
+  const worldStub = env2.WORLD_DO.get(worldId);
+  const playerId = env2.PLAYER_DO.idFromName(authResult.address);
+  env2.PLAYER_DO.get(playerId);
   switch (endpoint) {
     case "start":
       if (method !== "POST") {
         return new Response("Method not allowed", { status: 405 });
       }
-      return new Response(
-        JSON.stringify({ success: false, error: "Not implemented yet" }),
-        { headers: { "Content-Type": "application/json" } }
-      );
+      try {
+        const body = await request2.json();
+        const { drifterIds, targetNodeId } = body;
+        if (!drifterIds || !Array.isArray(drifterIds) || drifterIds.length === 0) {
+          return new Response(
+            JSON.stringify({ success: false, error: "drifterIds array required" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (!targetNodeId) {
+          return new Response(
+            JSON.stringify({ success: false, error: "targetNodeId required" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        const missionRequest = {
+          playerAddress: authResult.address,
+          drifterIds,
+          targetNodeId
+        };
+        const result = await worldStub.startMission(missionRequest);
+        return new Response(
+          JSON.stringify(result),
+          { headers: { "Content-Type": "application/json" } }
+        );
+      } catch (error) {
+        console.error("Start mission error:", error);
+        return new Response(
+          JSON.stringify({ success: false, error: "Failed to start mission" }),
+          { status: 500, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    case "intercept":
+      if (method !== "POST") {
+        return new Response("Method not allowed", { status: 405 });
+      }
+      try {
+        const body = await request2.json();
+        const { targetMissionId, banditIds } = body;
+        if (!targetMissionId) {
+          return new Response(
+            JSON.stringify({ success: false, error: "targetMissionId required" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (!banditIds || !Array.isArray(banditIds) || banditIds.length === 0) {
+          return new Response(
+            JSON.stringify({ success: false, error: "banditIds array required" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        const interceptRequest = {
+          attackerAddress: authResult.address,
+          targetMissionId,
+          banditIds
+        };
+        const result = await worldStub.startIntercept(interceptRequest);
+        return new Response(
+          JSON.stringify(result),
+          { headers: { "Content-Type": "application/json" } }
+        );
+      } catch (error) {
+        console.error("Intercept mission error:", error);
+        return new Response(
+          JSON.stringify({ success: false, error: "Failed to start intercept" }),
+          { status: 500, headers: { "Content-Type": "application/json" } }
+        );
+      }
     default:
       return new Response("Mission endpoint not found", { status: 404 });
   }
@@ -54018,6 +54680,41 @@ async function handleMercenaries(method, request2, env2) {
     );
   }
 }
+async function handleTestNft(path, method, request2, env2) {
+  if (method !== "GET") {
+    return new Response("Method not allowed", { status: 405 });
+  }
+  const endpoint = path[1];
+  if (!endpoint) {
+    return new Response(
+      JSON.stringify({ error: "Usage: GET /api/test-nft/[ethereum_address]" }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
+  try {
+    console.log(`Testing NFT ownership for address: ${endpoint}`);
+    const ownedDrifters = await getPlayerOwnedDrifters(endpoint, env2);
+    return new Response(
+      JSON.stringify({
+        address: endpoint,
+        ownedDrifters,
+        count: ownedDrifters.length,
+        alchemyApiKeyConfigured: !!env2.ALCHEMY_API_KEY
+      }),
+      { headers: { "Content-Type": "application/json" } }
+    );
+  } catch (error) {
+    console.error("Test NFT endpoint error:", error);
+    return new Response(
+      JSON.stringify({
+        error: "Failed to test NFT ownership",
+        details: error.message,
+        alchemyApiKeyConfigured: !!env2.ALCHEMY_API_KEY
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+}
 const worker = {
   async fetch(request2, env2, ctx) {
     return handleApiRequest(request2, env2);
@@ -54040,7 +54737,9 @@ export {
   MyDurableObject,
   Network as N,
   deepCopy as O,
+  PlayerDO,
   VERSION as V,
+  WorldDO,
   __awaiter$1 as _,
   EthersEvent as a,
   getAlchemyEventTag as b,

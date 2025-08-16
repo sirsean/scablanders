@@ -25,6 +25,14 @@
 			{
 				"class_name": "MyDurableObject",
 				"name": "MY_DURABLE_OBJECT"
+			},
+			{
+				"class_name": "WorldDO",
+				"name": "WORLD_DO"
+			},
+			{
+				"class_name": "PlayerDO",
+				"name": "PLAYER_DO"
 			}
 		]
 	},

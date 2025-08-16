@@ -1,12 +1,15 @@
 // Core game enums
-export enum ResourceType {
-  COE_KOPUM_ORE = 'coe_kopum_ore',
-  RANCH_MILK = 'ranch_milk',
-  SCRAP_METAL = 'scrap_metal',
-  ORGANIC_MATTER = 'organic_matter',
-  WATER = 'water',
-  TECH_COMPONENTS = 'tech_components',
-}
+export type ResourceType = 'ore' | 'scrap' | 'organic';
+
+// Deprecated enum - replaced with type for simplicity
+// export enum ResourceType {
+//   COE_KOPUM_ORE = 'coe_kopum_ore',
+//   RANCH_MILK = 'ranch_milk',
+//   SCRAP_METAL = 'scrap_metal',
+//   ORGANIC_MATTER = 'organic_matter',
+//   WATER = 'water',
+//   TECH_COMPONENTS = 'tech_components',
+// }
 
 export enum MissionStatus {
   ACTIVE = 'active',
@@ -22,15 +25,24 @@ export enum MissionType {
   SCOUTING = 'scouting',
 }
 
-export enum UpgradeType {
-  SPEED_BOOST_1 = 'speed_boost_1',
-  SPEED_BOOST_2 = 'speed_boost_2',
-  SPEED_BOOST_3 = 'speed_boost_3',
-  YIELD_BOOST_1 = 'yield_boost_1',
-  YIELD_BOOST_2 = 'yield_boost_2',
-  CAPACITY_BOOST_1 = 'capacity_boost_1',
-  CAPACITY_BOOST_2 = 'capacity_boost_2',
-}
+export type UpgradeType = 
+  | 'speed-boost-1' | 'speed-boost-2' | 'speed-boost-3'
+  | 'yield-boost-1' | 'yield-boost-2' | 'yield-boost-3'
+  | 'capacity-boost-1' | 'capacity-boost-2' | 'capacity-boost-3'
+  | 'combat-training-1' | 'combat-training-2' | 'combat-training-3'
+  | 'scavenging-expertise-1' | 'scavenging-expertise-2' | 'scavenging-expertise-3'
+  | 'tech-upgrade-1' | 'tech-upgrade-2' | 'tech-upgrade-3';
+
+// Deprecated enum - replaced with type for more flexibility
+// export enum UpgradeType {
+//   SPEED_BOOST_1 = 'speed_boost_1',
+//   SPEED_BOOST_2 = 'speed_boost_2',
+//   SPEED_BOOST_3 = 'speed_boost_3',
+//   YIELD_BOOST_1 = 'yield_boost_1',
+//   YIELD_BOOST_2 = 'yield_boost_2',
+//   CAPACITY_BOOST_1 = 'capacity_boost_1',
+//   CAPACITY_BOOST_2 = 'capacity_boost_2',
+// }
 
 // Core game interfaces
 export interface PlayerProfile {
@@ -62,10 +74,10 @@ export interface Mission {
   targetNodeId: string;
   startTime: Date;
   endTime: Date;
-  status: MissionStatus;
-  type: MissionType;
+  status: 'active' | 'completed' | 'intercepted' | 'failed';
+  type: 'scavenge' | 'intercept' | 'scouting';
   estimatedLoot?: number;
-  interceptedBy?: string;
+  targetMissionId?: string; // For intercept missions
 }
 
 export interface ResourceNode {
@@ -75,8 +87,8 @@ export interface ResourceNode {
   type: ResourceType;
   quantity: number;
   maxQuantity: number;
-  respawnTime?: Date;
-  isDiscovered: boolean;
+  respawnTime?: number; // Seconds until respawn
+  isDiscovered?: boolean;
 }
 
 export interface BattleResult {
@@ -128,28 +140,27 @@ export interface AuthVerifyResponse {
 }
 
 export interface StartMissionRequest {
+  playerAddress: string;
   drifterIds: number[];
   targetNodeId: string;
-  missionType: MissionType;
 }
 
 export interface StartMissionResponse {
   success: boolean;
-  missionId?: string;
-  estimatedEndTime?: Date;
-  cost?: number;
+  mission?: Mission;
+  estimatedDuration?: number;
   error?: string;
 }
 
 export interface InterceptMissionRequest {
+  attackerAddress: string;
   targetMissionId: string;
   banditIds: number[];
 }
 
 export interface InterceptMissionResponse {
   success: boolean;
-  interceptId?: string;
-  cost?: number;
+  mission?: Mission;
   error?: string;
 }
 
@@ -174,6 +185,45 @@ export const FRINGE_DRIFTERS_CONTRACT = '0x1234567890123456789012345678901234567
 export const DEFAULT_HIRE_COST = 50;
 export const BASE_MISSION_SPEED = 100; // pixels per minute
 export const INTERCEPT_BASE_COST = 25;
+
+// Notification system
+export interface NotificationMessage {
+  id: string;
+  type: 'mission_complete' | 'mission_intercepted' | 'resource_depleted' | 'upgrade_purchased';
+  title: string;
+  message: string;
+  timestamp: Date;
+  read?: boolean;
+  data?: any;
+}
+
+// Mission results
+export interface MissionResult {
+  success: boolean;
+  error?: string;
+  type?: 'scavenge' | 'combat';
+  winner?: string;
+  loser?: string;
+  lootAmount?: number;
+  nodeId?: string;
+  resourceType?: ResourceType;
+  combatDetails?: {
+    scavengerCombat: number;
+    interceptorCombat: number;
+  };
+}
+
+// Economy models
+export interface UpgradePurchaseRequest {
+  playerAddress: string;
+  upgradeType: UpgradeType;
+}
+
+export interface UpgradePurchaseResponse {
+  success: boolean;
+  newBalance?: number;
+  error?: string;
+}
 
 // Utility types
 export type Coordinates = {

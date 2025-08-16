@@ -6,10 +6,14 @@ import type {
   ResourceNode, 
   WorldState,
   StartMissionRequest,
-  StartMissionResponse 
+  StartMissionResponse,
+  InterceptMissionRequest,
+  InterceptMissionResponse 
 } from '@shared/models';
 import { getPlayerOwnedDrifters } from './nft';
 import { getAvailableMercenaries } from './drifters';
+import { WorldDO } from './world-do';
+import { PlayerDO } from './player-do';
 
 /**
  * Scablanders Game Worker
@@ -117,6 +121,9 @@ async function routeApiCall(path: string, method: string, request: Request, env:
     case 'mercenaries':
     case 'mercs':
       return handleMercenaries(method, request, env);
+    
+    case 'upgrade':
+      return handleUpgrade(apiPath, method, request, env);
     
     case 'test-nft':
       return handleTestNft(apiPath, method, request, env);
@@ -305,15 +312,16 @@ async function handleProfile(method: string, request: Request, env: Env): Promis
       // Continue with empty array on error
     }
     
-    // TODO: Get real player profile from PlayerDO in Phase 3
-    const authenticatedProfile = {
-      address: authResult.address,
-      balance: 1000, // Starting balance for authenticated users
-      ownedDrifters, // Real NFT ownership data
-      discoveredNodes: [], // TODO: Load from persistent storage
-      upgrades: [], // TODO: Load from persistent storage
-      lastLogin: new Date()
-    };
+    // Get real player profile from PlayerDO
+    const playerId = env.PLAYER_DO.idFromName(authResult.address);
+    const playerStub = env.PLAYER_DO.get(playerId);
+    const playerProfile = await playerStub.getProfile(authResult.address);
+    
+    // Update owned Drifters from NFT lookup
+    await playerStub.updateOwnedDrifters(ownedDrifters);
+    
+    // Get updated profile
+    const authenticatedProfile = await playerStub.getProfile(authResult.address);
     
     return new Response(
       JSON.stringify(authenticatedProfile), 
@@ -329,9 +337,13 @@ async function handleProfile(method: string, request: Request, env: Env): Promis
   }
 }
 
-// World state endpoints (placeholder)
+// World state endpoints - using WorldDO
 async function handleWorld(path: string[], method: string, request: Request, env: Env): Promise<Response> {
   const endpoint = path[1];
+  
+  // Get the singleton WorldDO
+  const worldId = env.WORLD_DO.idFromName('world');
+  const worldStub = env.WORLD_DO.get(worldId);
   
   switch (endpoint) {
     case 'state':
@@ -339,34 +351,200 @@ async function handleWorld(path: string[], method: string, request: Request, env
         return new Response('Method not allowed', { status: 405 });
       }
       
-      const id = env.MY_DURABLE_OBJECT.idFromName('world');
-      const stub = env.MY_DURABLE_OBJECT.get(id);
-      const worldState = await stub.getWorldState();
+      try {
+        const worldState = await worldStub.getWorldState();
+        
+        return new Response(
+          JSON.stringify(worldState), 
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      } catch (error) {
+        console.error('World state error:', error);
+        return new Response(
+          JSON.stringify({ error: 'Failed to get world state' }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+    
+    case 'resources':
+      if (method !== 'GET') {
+        return new Response('Method not allowed', { status: 405 });
+      }
       
-      return new Response(
-        JSON.stringify(worldState), 
-        { headers: { 'Content-Type': 'application/json' } }
-      );
+      try {
+        // Get authenticated player to filter by discoveries
+        const { createAuthMiddleware } = await import('./auth');
+        const auth = createAuthMiddleware({} as any);
+        const authResult = await auth(request);
+        
+        let discoveredNodes: string[] = [];
+        if (authResult.address) {
+          // Get player's discovered nodes from PlayerDO
+          const playerId = env.PLAYER_DO.idFromName(authResult.address);
+          const playerStub = env.PLAYER_DO.get(playerId);
+          const profile = await playerStub.getProfile(authResult.address);
+          discoveredNodes = profile.discoveredNodes;
+        }
+        
+        const resources = await worldStub.listResources(discoveredNodes);
+        
+        return new Response(
+          JSON.stringify({ resources }), 
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      } catch (error) {
+        console.error('Resources error:', error);
+        return new Response(
+          JSON.stringify({ error: 'Failed to get resources' }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+    
+    case 'missions':
+      if (method !== 'GET') {
+        return new Response('Method not allowed', { status: 405 });
+      }
+      
+      try {
+        // Get query parameter for player filtering
+        const url = new URL(request.url);
+        const playerAddress = url.searchParams.get('player');
+        
+        const missions = await worldStub.listActiveMissions(playerAddress || undefined);
+        
+        return new Response(
+          JSON.stringify({ missions }), 
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      } catch (error) {
+        console.error('Missions error:', error);
+        return new Response(
+          JSON.stringify({ error: 'Failed to get missions' }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
     
     default:
       return new Response('World endpoint not found', { status: 404 });
   }
 }
 
-// Mission endpoints (placeholder)
+// Mission endpoints - using WorldDO
 async function handleMission(path: string[], method: string, request: Request, env: Env): Promise<Response> {
   const endpoint = path[1];
+  
+  // Get authentication for all mission operations
+  const { createAuthMiddleware } = await import('./auth');
+  const auth = createAuthMiddleware({} as any);
+  const authResult = await auth(request);
+  
+  if (authResult.error || !authResult.address) {
+    return new Response(
+      JSON.stringify({ error: 'Authentication required' }),
+      { status: 401, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+  
+  // Get WorldDO and PlayerDO stubs
+  const worldId = env.WORLD_DO.idFromName('world');
+  const worldStub = env.WORLD_DO.get(worldId);
+  const playerId = env.PLAYER_DO.idFromName(authResult.address);
+  const playerStub = env.PLAYER_DO.get(playerId);
   
   switch (endpoint) {
     case 'start':
       if (method !== 'POST') {
         return new Response('Method not allowed', { status: 405 });
       }
-      // TODO: Implement mission starting in Phase 4
-      return new Response(
-        JSON.stringify({ success: false, error: 'Not implemented yet' }), 
-        { headers: { 'Content-Type': 'application/json' } }
-      );
+      
+      try {
+        const body = await request.json();
+        const { drifterIds, targetNodeId } = body;
+        
+        if (!drifterIds || !Array.isArray(drifterIds) || drifterIds.length === 0) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'drifterIds array required' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        if (!targetNodeId) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'targetNodeId required' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // TODO: Validate player owns the drifters or can afford to hire them
+        // TODO: Deduct hiring costs from player balance
+        
+        const missionRequest: StartMissionRequest = {
+          playerAddress: authResult.address,
+          drifterIds,
+          targetNodeId
+        };
+        
+        const result = await worldStub.startMission(missionRequest);
+        
+        return new Response(
+          JSON.stringify(result), 
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+        
+      } catch (error) {
+        console.error('Start mission error:', error);
+        return new Response(
+          JSON.stringify({ success: false, error: 'Failed to start mission' }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+    
+    case 'intercept':
+      if (method !== 'POST') {
+        return new Response('Method not allowed', { status: 405 });
+      }
+      
+      try {
+        const body = await request.json();
+        const { targetMissionId, banditIds } = body;
+        
+        if (!targetMissionId) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'targetMissionId required' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        if (!banditIds || !Array.isArray(banditIds) || banditIds.length === 0) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'banditIds array required' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // TODO: Validate player owns the bandits or can afford to hire them
+        // TODO: Deduct intercept cost from player balance
+        
+        const interceptRequest: InterceptMissionRequest = {
+          attackerAddress: authResult.address,
+          targetMissionId,
+          banditIds
+        };
+        
+        const result = await worldStub.startIntercept(interceptRequest);
+        
+        return new Response(
+          JSON.stringify(result), 
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+        
+      } catch (error) {
+        console.error('Intercept mission error:', error);
+        return new Response(
+          JSON.stringify({ success: false, error: 'Failed to start intercept' }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
     
     default:
       return new Response('Mission endpoint not found', { status: 404 });
@@ -406,6 +584,174 @@ async function handleMercenaries(method: string, request: Request, env: Env): Pr
       JSON.stringify({ error: 'Failed to load mercenaries' }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
+  }
+}
+
+// Upgrade endpoints - authenticated
+async function handleUpgrade(path: string[], method: string, request: Request, env: Env): Promise<Response> {
+  const endpoint = path[1];
+  
+  // Get authentication for all upgrade operations
+  const { createAuthMiddleware } = await import('./auth');
+  const auth = createAuthMiddleware({} as any);
+  const authResult = await auth(request);
+  
+  if (authResult.error || !authResult.address) {
+    return new Response(
+      JSON.stringify({ error: 'Authentication required' }),
+      { status: 401, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+  
+  const playerId = env.PLAYER_DO.idFromName(authResult.address);
+  const playerStub = env.PLAYER_DO.get(playerId);
+  
+  switch (endpoint) {
+    case 'list':
+      if (method !== 'GET') {
+        return new Response('Method not allowed', { status: 405 });
+      }
+      
+      try {
+        // Get player's current upgrades
+        const profile = await playerStub.getProfile(authResult.address);
+        
+        // Get available upgrades from economy config
+        const { getAvailableUpgrades } = await import('./data/economy');
+        const availableUpgrades = getAvailableUpgrades(profile.upgrades);
+        
+        return new Response(
+          JSON.stringify({ 
+            availableUpgrades, 
+            ownedUpgrades: profile.upgrades,
+            balance: profile.balance 
+          }), 
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      } catch (error) {
+        console.error('List upgrades error:', error);
+        return new Response(
+          JSON.stringify({ error: 'Failed to list upgrades' }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+    
+    case 'buy':
+      if (method !== 'POST') {
+        return new Response('Method not allowed', { status: 405 });
+      }
+      
+      try {
+        const body = await request.json();
+        const { upgradeType } = body;
+        
+        if (!upgradeType) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'upgradeType required' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Get upgrade config and validate
+        const { UPGRADE_CONFIGS, canAffordUpgrade } = await import('./data/economy');
+        const upgradeConfig = UPGRADE_CONFIGS[upgradeType];
+        
+        if (!upgradeConfig) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Invalid upgrade type' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Get current profile
+        const profile = await playerStub.getProfile(authResult.address);
+        
+        // Check if already owned
+        if (profile.upgrades.includes(upgradeType)) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Upgrade already owned' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Check prerequisites
+        if (upgradeConfig.prerequisites) {
+          const missingPrereqs = upgradeConfig.prerequisites.filter(prereq => 
+            !profile.upgrades.includes(prereq)
+          );
+          if (missingPrereqs.length > 0) {
+            return new Response(
+              JSON.stringify({ 
+                success: false, 
+                error: 'Missing prerequisites',
+                missingPrerequisites: missingPrereqs
+              }),
+              { status: 400, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+        }
+        
+        // Check if player can afford it
+        if (!canAffordUpgrade(profile.balance, upgradeType)) {
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              error: 'Insufficient funds',
+              cost: upgradeConfig.price,
+              balance: profile.balance
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Deduct cost
+        const debitResult = await playerStub.debit(upgradeConfig.price);
+        if (!debitResult.success) {
+          return new Response(
+            JSON.stringify({ success: false, error: debitResult.error }),
+            { status: 500, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Add upgrade
+        const upgradeResult = await playerStub.addUpgrade(upgradeType);
+        if (!upgradeResult.success) {
+          // Refund if upgrade fails
+          await playerStub.credit(upgradeConfig.price);
+          return new Response(
+            JSON.stringify({ success: false, error: upgradeResult.error }),
+            { status: 500, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Add notification
+        await playerStub.addNotification({
+          id: `upgrade-${Date.now()}`,
+          type: 'upgrade_purchased',
+          title: 'Upgrade Purchased!',
+          message: `You purchased ${upgradeConfig.name} for ${upgradeConfig.price} credits.`,
+          timestamp: new Date()
+        });
+        
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            upgrade: upgradeConfig,
+            newBalance: debitResult.newBalance
+          }),
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+        
+      } catch (error) {
+        console.error('Buy upgrade error:', error);
+        return new Response(
+          JSON.stringify({ success: false, error: 'Failed to purchase upgrade' }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+    
+    default:
+      return new Response('Upgrade endpoint not found', { status: 404 });
   }
 }
 
@@ -451,6 +797,9 @@ async function handleTestNft(path: string[], method: string, request: Request, e
     );
   }
 }
+
+// Export Durable Object classes
+export { WorldDO, PlayerDO };
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {

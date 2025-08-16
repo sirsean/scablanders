@@ -28,6 +28,8 @@
       "../node_modules/alchemy-sdk/dist/esm/alchemy-websocket-provider-2f8b1006.js",
       "../server/auth.ts",
       "../server/auth.ts",
+      "../server/auth.ts",
+      "../server/auth.ts",
       "../server/auth.ts"
     ]
   },
