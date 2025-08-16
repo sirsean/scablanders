@@ -16,6 +16,7 @@
 		"@cloudflare/vite-plugin": "^1.11.5",
 		"@wagmi/connectors": "^5.9.3",
 		"@wagmi/core": "^2.19.0",
+		"alchemy-sdk": "^3.6.3",
 		"ethers": "^6.15.0",
 		"phaser": "^3.90.0",
 		"siwe": "^3.0.0",

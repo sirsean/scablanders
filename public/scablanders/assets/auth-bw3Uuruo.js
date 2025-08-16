@@ -6,6 +6,11 @@ import "buffer";
 import "node:net";
 import "zlib";
 import "net";
+import "stream";
+import "path";
+import "url";
+import "assert";
+import "events";
 async function verifySiweSignature(message, signature, nonceStore) {
   try {
     const siweMessage = new siweExports.SiweMessage(message);

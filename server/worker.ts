@@ -8,6 +8,8 @@ import type {
   StartMissionRequest,
   StartMissionResponse 
 } from '@shared/models';
+import { getPlayerOwnedDrifters } from './nft';
+import { getAvailableMercenaries } from './drifters';
 
 /**
  * Scablanders Game Worker
@@ -111,6 +113,13 @@ async function routeApiCall(path: string, method: string, request: Request, env:
     
     case 'mission':
       return handleMission(apiPath, method, request, env);
+    
+    case 'mercenaries':
+    case 'mercs':
+      return handleMercenaries(method, request, env);
+    
+    case 'test-nft':
+      return handleTestNft(apiPath, method, request, env);
     
     default:
       return new Response(
@@ -287,11 +296,20 @@ async function handleProfile(method: string, request: Request, env: Env): Promis
       );
     }
     
+    // Get owned Drifters from NFT ownership
+    let ownedDrifters: number[] = [];
+    try {
+      ownedDrifters = await getPlayerOwnedDrifters(authResult.address, env);
+    } catch (error) {
+      console.error('Failed to fetch owned Drifters:', error);
+      // Continue with empty array on error
+    }
+    
     // TODO: Get real player profile from PlayerDO in Phase 3
     const authenticatedProfile = {
       address: authResult.address,
       balance: 1000, // Starting balance for authenticated users
-      ownedDrifters: [], // TODO: Populate from NFT ownership check
+      ownedDrifters, // Real NFT ownership data
       discoveredNodes: [], // TODO: Load from persistent storage
       upgrades: [], // TODO: Load from persistent storage
       lastLogin: new Date()
@@ -352,6 +370,85 @@ async function handleMission(path: string[], method: string, request: Request, e
     
     default:
       return new Response('Mission endpoint not found', { status: 404 });
+  }
+}
+
+// Mercenaries endpoint - authenticated
+async function handleMercenaries(method: string, request: Request, env: Env): Promise<Response> {
+  if (method !== 'GET') {
+    return new Response('Method not allowed', { status: 405 });
+  }
+  
+  try {
+    // Check authentication
+    const { createAuthMiddleware } = await import('./auth');
+    const auth = createAuthMiddleware({} as any); // Simplified for now
+    const authResult = await auth(request);
+    
+    if (authResult.error || !authResult.address) {
+      return new Response(
+        JSON.stringify({ error: 'Authentication required' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Get available mercenaries for this player
+    const mercenaries = await getAvailableMercenaries(authResult.address, env);
+    
+    return new Response(
+      JSON.stringify({ mercenaries }), 
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    
+  } catch (error) {
+    console.error('Mercenaries endpoint error:', error);
+    return new Response(
+      JSON.stringify({ error: 'Failed to load mercenaries' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+}
+
+// Test NFT endpoint (for development only)
+async function handleTestNft(path: string[], method: string, request: Request, env: Env): Promise<Response> {
+  if (method !== 'GET') {
+    return new Response('Method not allowed', { status: 405 });
+  }
+
+  const endpoint = path[1]; // Should be the Ethereum address to test
+  
+  if (!endpoint) {
+    return new Response(
+      JSON.stringify({ error: 'Usage: GET /api/test-nft/[ethereum_address]' }),
+      { status: 400, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+  
+  try {
+    console.log(`Testing NFT ownership for address: ${endpoint}`);
+    
+    const ownedDrifters = await getPlayerOwnedDrifters(endpoint, env);
+    
+    return new Response(
+      JSON.stringify({ 
+        address: endpoint,
+        ownedDrifters,
+        count: ownedDrifters.length,
+        alchemyApiKeyConfigured: !!env.ALCHEMY_API_KEY
+      }), 
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    
+  } catch (error) {
+    console.error('Test NFT endpoint error:', error);
+    return new Response(
+      JSON.stringify({ 
+        error: 'Failed to test NFT ownership',
+        details: error.message,
+        alchemyApiKeyConfigured: !!env.ALCHEMY_API_KEY
+      }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
   }
 }
 

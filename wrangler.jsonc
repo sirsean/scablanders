@@ -31,8 +31,13 @@
 	"kv_namespaces": [
 		{
 			"binding": "AUTH_KV",
-			"id": "placeholder",
-			"preview_id": "placeholder"
+			"id": "223cb91dc3ed4871be9e96dd9907b6a4",
+			"preview_id": "a096d4c1f3ac4c81a83a5acf019cdb0c"
+		},
+		{
+			"binding": "KV",
+			"id": "e0aae3150dbb4928abfbf537a62a6f0d",
+			"preview_id": "ca96a2ccc90b4ea3a97467633ac42fa4"
 		}
 	],
 	"observability": {
