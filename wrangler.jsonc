@@ -5,7 +5,7 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "scablanders",
-	"main": "src/index.ts",
+	"main": "server/worker.ts",
 	"compatibility_date": "2025-08-16",
 	"migrations": [
 		{
