@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
+import { generateNonce } from 'siwe';
 import type { 
   PlayerProfile, 
   Mission, 
@@ -50,9 +51,10 @@ async function handleApiRequest(request: Request, env: Env): Promise<Response> {
 
   // CORS headers for development
   const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': 'http://localhost:5173',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Cookie',
+    'Access-Control-Allow-Credentials': 'true',
   };
 
   if (method === 'OPTIONS') {
@@ -135,58 +137,178 @@ async function handleHealthCheck(env: Env): Promise<Response> {
   );
 }
 
-// Auth endpoints (placeholder for Phase 2)
+// Auth endpoints - SIWE implementation
 async function handleAuth(path: string[], method: string, request: Request, env: Env): Promise<Response> {
   const endpoint = path[1];
+  
+  // Create KV adapters for auth storage
+  const nonceStore = {
+    async get(key: string) {
+      return await env.AUTH_KV.get(key);
+    },
+    async put(key: string, value: string, options?: { expirationTtl?: number }) {
+      return await env.AUTH_KV.put(key, value, options);
+    },
+    async delete(key: string) {
+      return await env.AUTH_KV.delete(key);
+    }
+  };
   
   switch (endpoint) {
     case 'nonce':
       if (method !== 'GET') {
         return new Response('Method not allowed', { status: 405 });
       }
-      return new Response(
-        JSON.stringify({ 
-          nonce: Math.random().toString(36).substring(7),
-          message: 'Sign this message to authenticate with Scablanders' 
-        }), 
-        { headers: { 'Content-Type': 'application/json' } }
-      );
+      
+      try {
+        const nonce = generateNonce();
+        
+        // Store nonce with 5 minute expiration
+        await nonceStore.put(`nonce:${nonce}`, 'valid', { expirationTtl: 300 });
+        
+        return new Response(
+          JSON.stringify({ 
+            nonce,
+            message: `Welcome to Scablanders!\n\nSign this message to authenticate with your wallet.\n\nNonce: ${nonce}`
+          }), 
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      } catch (error) {
+        console.error('Nonce generation error:', error);
+        return new Response(
+          JSON.stringify({ error: 'Failed to generate nonce' }), 
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
     
     case 'verify':
       if (method !== 'POST') {
         return new Response('Method not allowed', { status: 405 });
       }
-      // TODO: Implement SIWE verification in Phase 2
-      return new Response(
-        JSON.stringify({ success: false, error: 'Not implemented yet' }), 
+      
+      try {
+        const body = await request.json();
+        const { message, signature } = body;
+        
+        if (!message || !signature) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Message and signature required' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        const { verifySiweSignature, createSessionToken } = await import('./auth');
+        
+        const result = await verifySiweSignature(message, signature, nonceStore);
+        
+        if (!result.success) {
+          return new Response(
+            JSON.stringify({ success: false, error: result.error }),
+            { status: 401, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Create session token
+        const token = createSessionToken(result.address!);
+        
+        // Set secure HTTP-only cookie
+        const response = new Response(
+          JSON.stringify({ 
+            success: true, 
+            address: result.address 
+          }),
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+        
+        response.headers.set(
+          'Set-Cookie', 
+          `CF_ACCESS_TOKEN=${token}; HttpOnly; Secure; SameSite=Strict; Max-Age=86400; Path=/`
+        );
+        
+        return response;
+        
+      } catch (error) {
+        console.error('Auth verification error:', error);
+        return new Response(
+          JSON.stringify({ success: false, error: 'Authentication failed' }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+    
+    case 'logout':
+      if (method !== 'POST') {
+        return new Response('Method not allowed', { status: 405 });
+      }
+      
+      const response = new Response(
+        JSON.stringify({ success: true }),
         { headers: { 'Content-Type': 'application/json' } }
       );
+      
+      // Clear the auth cookie
+      response.headers.set(
+        'Set-Cookie', 
+        'CF_ACCESS_TOKEN=; HttpOnly; Secure; SameSite=Strict; Max-Age=0; Path=/'
+      );
+      
+      return response;
     
     default:
       return new Response('Auth endpoint not found', { status: 404 });
   }
 }
 
-// Profile endpoint (placeholder)
+// Profile endpoint - authenticated
 async function handleProfile(method: string, request: Request, env: Env): Promise<Response> {
   if (method !== 'GET') {
     return new Response('Method not allowed', { status: 405 });
   }
   
-  // TODO: Get actual player profile in Phase 2
-  const mockProfile = {
-    address: '0x0000000000000000000000000000000000000000',
-    balance: 500,
-    ownedDrifters: [],
-    discoveredNodes: [],
-    upgrades: [],
-    lastLogin: new Date()
-  };
-  
-  return new Response(
-    JSON.stringify(mockProfile), 
-    { headers: { 'Content-Type': 'application/json' } }
-  );
+  try {
+    // Check authentication
+    const { createAuthMiddleware } = await import('./auth');
+    const auth = createAuthMiddleware({} as any); // Simplified for now
+    const authResult = await auth(request);
+    
+    if (authResult.error || !authResult.address) {
+      // Return mock profile for unauthenticated users
+      const mockProfile = {
+        address: '0x0000000000000000000000000000000000000000',
+        balance: 0,
+        ownedDrifters: [],
+        discoveredNodes: [],
+        upgrades: [],
+        lastLogin: new Date()
+      };
+      
+      return new Response(
+        JSON.stringify(mockProfile), 
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // TODO: Get real player profile from PlayerDO in Phase 3
+    const authenticatedProfile = {
+      address: authResult.address,
+      balance: 1000, // Starting balance for authenticated users
+      ownedDrifters: [], // TODO: Populate from NFT ownership check
+      discoveredNodes: [], // TODO: Load from persistent storage
+      upgrades: [], // TODO: Load from persistent storage
+      lastLogin: new Date()
+    };
+    
+    return new Response(
+      JSON.stringify(authenticatedProfile), 
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    
+  } catch (error) {
+    console.error('Profile endpoint error:', error);
+    return new Response(
+      JSON.stringify({ error: 'Failed to load profile' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
 }
 
 // World state endpoints (placeholder)

@@ -109,46 +109,82 @@ const config: Phaser.Types.Core.GameConfig = {
 // Initialize the game
 const game = new Phaser.Game(config);
 
-// Basic wallet connection handler (placeholder)
-document.getElementById('connect-wallet')?.addEventListener('click', async () => {
-  console.log('Connect wallet clicked');
-  // TODO: Implement proper SIWE authentication
-  
-  if (typeof window.ethereum !== 'undefined') {
-    try {
-      const accounts = await window.ethereum.request({ 
-        method: 'eth_requestAccounts' 
-      });
-      console.log('Connected to wallet:', accounts[0]);
-      
-      // Show wallet info
-      const connectButton = document.getElementById('connect-wallet');
-      const walletInfo = document.getElementById('wallet-info');
-      const addressDisplay = document.getElementById('address-display');
-      
-      if (connectButton) connectButton.style.display = 'none';
-      if (walletInfo) walletInfo.style.display = 'block';
-      if (addressDisplay) {
-        addressDisplay.textContent = `${accounts[0].slice(0, 6)}...${accounts[0].slice(-4)}`;
-      }
-      
-    } catch (error) {
-      console.error('Failed to connect wallet:', error);
-    }
-  } else {
-    alert('Please install MetaMask or another web3 wallet');
-  }
-});
+// Import authentication system
+import { auth } from './auth';
 
-// Disconnect handler
-document.getElementById('disconnect-wallet')?.addEventListener('click', () => {
-  console.log('Disconnect wallet clicked');
+// Set up authentication state handling
+auth.onStateChange((state) => {
+  console.log('Auth state changed:', state);
   
   const connectButton = document.getElementById('connect-wallet');
   const walletInfo = document.getElementById('wallet-info');
+  const addressDisplay = document.getElementById('address-display');
+  const creditsDisplay = document.getElementById('credits-amount');
   
-  if (connectButton) connectButton.style.display = 'block';
-  if (walletInfo) walletInfo.style.display = 'none';
+  if (state.isAuthenticated && state.address) {
+    // Show authenticated state
+    if (connectButton) connectButton.style.display = 'none';
+    if (walletInfo) walletInfo.style.display = 'block';
+    if (addressDisplay) {
+      addressDisplay.textContent = `${state.address.slice(0, 6)}...${state.address.slice(-4)}`;
+    }
+    
+    // Fetch and display player profile
+    fetchPlayerProfile();
+    
+  } else {
+    // Show unauthenticated state
+    if (connectButton) connectButton.style.display = 'block';
+    if (walletInfo) walletInfo.style.display = 'none';
+    if (creditsDisplay) creditsDisplay.textContent = '0';
+  }
+  
+  // Show connection state
+  if (connectButton && state.isConnecting) {
+    connectButton.textContent = 'Connecting...';
+    connectButton.disabled = true;
+  } else if (connectButton) {
+    connectButton.textContent = 'Connect Wallet';
+    connectButton.disabled = false;
+  }
+  
+  // Show errors
+  if (state.error) {
+    console.error('Auth error:', state.error);
+    // Could show a toast notification here
+  }
 });
+
+// SIWE Authentication handlers
+document.getElementById('connect-wallet')?.addEventListener('click', async () => {
+  console.log('Starting SIWE authentication...');
+  await auth.connect();
+});
+
+document.getElementById('disconnect-wallet')?.addEventListener('click', async () => {
+  console.log('Disconnecting wallet...');
+  await auth.disconnect();
+});
+
+// Fetch authenticated player profile
+async function fetchPlayerProfile() {
+  try {
+    const response = await fetch('/api/profile', {
+      credentials: 'include'
+    });
+    if (response.ok) {
+      const profile = await response.json();
+      console.log('Player profile:', profile);
+      
+      // Update credits display
+      const creditsDisplay = document.getElementById('credits-amount');
+      if (creditsDisplay) {
+        creditsDisplay.textContent = profile.balance.toString();
+      }
+    }
+  } catch (error) {
+    console.error('Failed to fetch profile:', error);
+  }
+}
 
 console.log('Scablanders client initialized');

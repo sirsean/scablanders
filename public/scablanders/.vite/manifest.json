@@ -1,8 +1,21 @@
 {
+  "../server/auth.ts": {
+    "file": "assets/auth-C0jaQFD6.js",
+    "name": "auth",
+    "src": "../server/auth.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "../server/worker.ts"
+    ]
+  },
   "../server/worker.ts": {
     "file": "worker.js",
     "name": "worker",
     "src": "../server/worker.ts",
-    "isEntry": true
+    "isEntry": true,
+    "dynamicImports": [
+      "../server/auth.ts",
+      "../server/auth.ts"
+    ]
   }
 }
