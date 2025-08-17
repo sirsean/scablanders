@@ -17,6 +17,8 @@
 		"@wagmi/connectors": "^5.9.3",
 		"@wagmi/core": "^2.19.0",
 		"alchemy-sdk": "^3.6.3",
+		"commander": "^14.0.0",
+		"dotenv": "^17.2.1",
 		"ethers": "^6.15.0",
 		"hono": "^4.9.2",
 		"phaser": "^3.90.0",
