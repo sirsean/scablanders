@@ -25,6 +25,13 @@ export function getAllDrifters(): DrifterProfile[] {
 }
 
 /**
+ * Get the Drifter registry as a record
+ */
+export function getDrifterRegistry(): Record<string, DrifterProfile> {
+  return driftersRegistry;
+}
+
+/**
  * Get available mercenaries for a specific player
  * Returns all Drifters with hire costs (0 for owned, base cost for others)
  */

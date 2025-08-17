@@ -168,3 +168,11 @@ export async function invalidatePlayerCache(playerAddress: string, env: any): Pr
   await env.KV.delete(cacheKey);
   console.log(`Invalidated cache for player ${playerAddress}`);
 }
+
+/**
+ * Get owned Drifters using individual KV and API key parameters (for Hono compatibility)
+ */
+export async function getOwnedDrifters(playerAddress: string, kv: any, alchemyApiKey: string): Promise<number[]> {
+  const env = { KV: kv, ALCHEMY_API_KEY: alchemyApiKey };
+  return getPlayerOwnedDrifters(playerAddress, env);
+}
