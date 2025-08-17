@@ -1,0 +1,102 @@
+import Phaser from 'phaser';
+
+export class BootScene extends Phaser.Scene {
+  constructor() {
+    super({ key: 'BootScene' });
+  }
+
+  preload() {
+    // Show loading progress
+    const centerX = this.cameras.main.centerX;
+    const centerY = this.cameras.main.centerY;
+
+    // Loading text
+    const loadingText = this.add.text(centerX, centerY - 50, 'Loading Scablanders...', {
+      fontSize: '24px',
+      color: '#FFD700',
+      fontFamily: 'Courier New'
+    }).setOrigin(0.5);
+
+    // Progress bar background
+    const progressBg = this.add.rectangle(centerX, centerY, 300, 20, 0x333333);
+    const progressBar = this.add.rectangle(centerX - 150, centerY, 0, 16, 0xFFD700);
+    progressBar.setOrigin(0, 0.5);
+
+    // Update progress bar
+    this.load.on('progress', (value: number) => {
+      progressBar.width = 300 * value;
+    });
+
+    // Create simple colored rectangles as placeholder assets
+    this.load.image('desert-bg', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
+    
+    // Generate simple resource node textures
+    this.load.image('ore-node', this.generateResourceTexture(0xFF4500, 20));
+    this.load.image('scrap-node', this.generateResourceTexture(0x708090, 20));
+    this.load.image('organic-node', this.generateResourceTexture(0x8FBC8F, 20));
+    
+    // Generate UI textures
+    this.load.image('panel-bg', this.generatePanelTexture(200, 150));
+  }
+
+  private generateResourceTexture(color: number, radius: number): string {
+    // Create a canvas and draw a circle
+    const canvas = document.createElement('canvas');
+    canvas.width = radius * 2;
+    canvas.height = radius * 2;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Draw outer glow
+    const gradient = ctx.createRadialGradient(radius, radius, 0, radius, radius, radius);
+    gradient.addColorStop(0, `#${color.toString(16).padStart(6, '0')}`);
+    gradient.addColorStop(0.7, `#${color.toString(16).padStart(6, '0')}80`);
+    gradient.addColorStop(1, 'transparent');
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw solid center
+    ctx.beginPath();
+    ctx.arc(radius, radius, radius * 0.6, 0, Math.PI * 2);
+    ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+    ctx.fill();
+    
+    return canvas.toDataURL();
+  }
+
+  private generatePanelTexture(width: number, height: number): string {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Background with transparency
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Border
+    ctx.strokeStyle = '#444444';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, width - 2, height - 2);
+    
+    // Subtle inner glow
+    ctx.strokeStyle = '#666666';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(2, 2, width - 4, height - 4);
+    
+    return canvas.toDataURL();
+  }
+
+  create() {
+    console.log('Scablanders Boot Scene Started');
+    
+    // Hide HTML loading element
+    const loadingEl = document.getElementById('loading');
+    if (loadingEl) {
+      loadingEl.style.display = 'none';
+    }
+    
+    // Start the main game scene
+    this.scene.start('GameScene');
+  }
+}
