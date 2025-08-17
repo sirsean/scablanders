@@ -51,6 +51,7 @@ export interface PlayerProfile {
   ownedDrifters: number[];
   discoveredNodes: string[];
   upgrades: UpgradeType[];
+  activeMissions: string[];
   lastLogin: Date;
 }
 

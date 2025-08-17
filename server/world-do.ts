@@ -34,8 +34,22 @@ export class WorldDO extends DurableObject {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     
+    // Load state on construction
+    this.initializeData();
+  }
+
+  /**
+   * Initialize data from storage or create defaults
+   */
+  private async initializeData() {
+    // Load stored missions
+    const storedMissions = await this.ctx.storage.get<Map<string, Mission>>('missions');
+    if (storedMissions) {
+      this.missions = storedMissions;
+    }
+    
     // Initialize with default resource nodes if first time
-    this.initializeResources();
+    await this.initializeResources();
   }
 
   /**
@@ -324,6 +338,28 @@ export class WorldDO extends DurableObject {
     }
     
     return allNodes; // Return all nodes for now (discovery system TODO)
+  }
+
+  /**
+   * Get a specific mission by ID
+   */
+  async getMission(missionId: string): Promise<Mission | null> {
+    return this.missions.get(missionId) || null;
+  }
+
+  /**
+   * Intercept another player's mission (alias for startIntercept with different parameters)
+   */
+  async interceptMission(request: {
+    missionId: string;
+    interceptorAddress: string;
+    drifterId: number;
+  }): Promise<InterceptMissionResponse> {
+    return await this.startIntercept({
+      attackerAddress: request.interceptorAddress,
+      targetMissionId: request.missionId,
+      banditIds: [request.drifterId]
+    });
   }
 
   /**

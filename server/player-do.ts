@@ -32,7 +32,11 @@ export class PlayerDO extends DurableObject {
   private async loadProfile() {
     const stored = await this.ctx.storage.get<PlayerProfile>('profile');
     if (stored) {
-      this.profile = stored;
+      // Ensure all required fields are present (for backward compatibility)
+      this.profile = {
+        ...stored,
+        activeMissions: stored.activeMissions || []
+      };
     }
     
     const storedNotifications = await this.ctx.storage.get<NotificationMessage[]>('notifications');
@@ -51,6 +55,7 @@ export class PlayerDO extends DurableObject {
       ownedDrifters: [], // Will be populated from NFT lookup
       discoveredNodes: [], // Empty initially - player must discover nodes
       upgrades: [], // No upgrades initially
+      activeMissions: [], // No active missions initially
       lastLogin: new Date()
     };
     
@@ -333,6 +338,76 @@ export class PlayerDO extends DurableObject {
   }
 
   /**
+   * Add an active mission to the player's list
+   */
+  async addActiveMission(missionId: string): Promise<{ success: boolean; error?: string }> {
+    if (!this.profile) {
+      return { success: false, error: 'Profile not initialized' };
+    }
+    
+    if (this.profile.activeMissions.includes(missionId)) {
+      return { success: false, error: 'Mission already active' };
+    }
+    
+    this.profile.activeMissions.push(missionId);
+    await this.ctx.storage.put('profile', this.profile);
+    
+    return { success: true };
+  }
+
+  /**
+   * Remove an active mission from the player's list
+   */
+  async removeActiveMission(missionId: string): Promise<{ success: boolean; error?: string }> {
+    if (!this.profile) {
+      return { success: false, error: 'Profile not initialized' };
+    }
+    
+    const index = this.profile.activeMissions.indexOf(missionId);
+    if (index === -1) {
+      return { success: false, error: 'Mission not found in active list' };
+    }
+    
+    this.profile.activeMissions.splice(index, 1);
+    await this.ctx.storage.put('profile', this.profile);
+    
+    return { success: true };
+  }
+
+  /**
+   * Add resources to player balance (from mission rewards)
+   */
+  async addResources(resources: { [resourceType: string]: number }): Promise<{ success: boolean; error?: string }> {
+    if (!this.profile) {
+      return { success: false, error: 'Profile not initialized' };
+    }
+    
+    // Convert resources to credits (simplified for now)
+    // TODO: Implement proper resource inventory system
+    let totalCredits = 0;
+    for (const [resourceType, amount] of Object.entries(resources)) {
+      switch (resourceType) {
+        case 'ore':
+          totalCredits += amount * 10; // Ore worth 10 credits each
+          break;
+        case 'scrap':
+          totalCredits += amount * 5; // Scrap worth 5 credits each
+          break;
+        case 'organic':
+          totalCredits += amount * 3; // Organic worth 3 credits each
+          break;
+        default:
+          totalCredits += amount; // Unknown resources worth 1 credit each
+      }
+    }
+    
+    this.profile.balance += totalCredits;
+    await this.ctx.storage.put('profile', this.profile);
+    
+    return { success: true };
+  }
+
+  /**
    * Get storage statistics for debugging
    */
   async getStats(): Promise<{
@@ -340,6 +415,7 @@ export class PlayerDO extends DurableObject {
     balance: number;
     upgradeCount: number;
     discoveryCount: number;
+    activeMissionCount: number;
     notificationCount: number;
   }> {
     return {
@@ -347,6 +423,7 @@ export class PlayerDO extends DurableObject {
       balance: this.profile?.balance || 0,
       upgradeCount: this.profile?.upgrades.length || 0,
       discoveryCount: this.profile?.discoveredNodes.length || 0,
+      activeMissionCount: this.profile?.activeMissions.length || 0,
       notificationCount: this.notifications.length
     };
   }

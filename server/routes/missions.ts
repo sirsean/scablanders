@@ -11,10 +11,8 @@ missions.post('/start', requireAuth, async (c) => {
   try {
     const playerAddress = c.get('playerAddress')!;
     const body = await c.req.json() as {
-      drifterId: number;
-      targetId: string;
-      missionType: 'EXPLORE' | 'SCAVENGE' | 'RAID' | 'ESCORT';
-      duration?: number;
+      drifterIds: number[];
+      targetNodeId: string;
     };
 
     // Get PlayerDO and WorldDO
@@ -24,18 +22,24 @@ missions.post('/start', requireAuth, async (c) => {
     const worldStub = c.env.WORLD_DO.get(worldId);
 
     // Start the mission through the WorldDO
-    const mission = await worldStub.startMission({
+    const result = await worldStub.startMission({
       playerAddress,
-      drifterId: body.drifterId,
-      targetId: body.targetId,
-      missionType: body.missionType,
-      duration: body.duration
+      drifterIds: body.drifterIds,
+      targetNodeId: body.targetNodeId
     });
 
-    // Update player's active missions
-    await playerStub.addActiveMission(mission.id);
+    if (!result.success) {
+      return c.json({ success: false, error: result.error }, 400);
+    }
 
-    return c.json({ success: true, mission });
+    // Update player's active missions
+    await playerStub.addActiveMission(result.mission!.id);
+
+    return c.json({ 
+      success: true, 
+      mission: result.mission,
+      estimatedDuration: result.estimatedDuration 
+    });
   } catch (error) {
     console.error('Start mission error:', error);
     return c.json({ error: 'Failed to start mission' }, 500);
@@ -81,22 +85,31 @@ missions.post('/complete', requireAuth, async (c) => {
       missionId: string;
     };
 
-    // Get WorldDO
+    // Get WorldDO to fetch mission info first
     const worldId = c.env.WORLD_DO.idFromName('world');
     const worldStub = c.env.WORLD_DO.get(worldId);
+    
+    const mission = await worldStub.getMission(body.missionId);
+    if (!mission) {
+      return c.json({ error: 'Mission not found' }, 404);
+    }
 
     // Complete the mission
     const result = await worldStub.completeMission(body.missionId);
 
-    // Update affected players' data
-    for (const playerAddress of result.affectedPlayers) {
-      const playerId = c.env.PLAYER_DO.idFromName(playerAddress);
-      const playerStub = c.env.PLAYER_DO.get(playerId);
-      await playerStub.removeActiveMission(body.missionId);
-      
-      if (result.rewards && result.rewards[playerAddress]) {
-        await playerStub.addResources(result.rewards[playerAddress]);
-      }
+    if (!result.success) {
+      return c.json({ error: result.error }, 400);
+    }
+
+    // Update player's mission list and reward them
+    const playerId = c.env.PLAYER_DO.idFromName(mission.playerAddress);
+    const playerStub = c.env.PLAYER_DO.get(playerId);
+    await playerStub.removeActiveMission(body.missionId);
+    
+    // Add loot as resources (convert to resource map)
+    if (result.lootAmount && result.resourceType) {
+      const resources = { [result.resourceType]: result.lootAmount };
+      await playerStub.addResources(resources);
     }
 
     return c.json({ success: true, result });

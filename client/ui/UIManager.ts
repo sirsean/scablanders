@@ -1,12 +1,14 @@
 import type { GameState, GameNotification } from '../gameState';
 import { gameState } from '../gameState';
 import type { DrifterProfile } from '@shared/models';
+import { ActiveMissionsPanel } from './ActiveMissionsPanel';
 
 export class UIManager {
   private notificationContainer: HTMLElement | null = null;
   private missionPanel: HTMLElement | null = null;
   private mercenaryPanel: HTMLElement | null = null;
   private profilePanel: HTMLElement | null = null;
+  private activeMissionsPanel: HTMLElement | null = null;
 
   constructor() {
     this.createUIElements();
@@ -23,6 +25,7 @@ export class UIManager {
     this.createMissionPanel();
     this.createMercenaryPanel();
     this.createProfilePanel();
+    this.createActiveMissionsPanel();
   }
 
   private createNotificationContainer() {
@@ -140,6 +143,11 @@ export class UIManager {
     document.body.appendChild(this.profilePanel);
   }
 
+  private createActiveMissionsPanel() {
+    this.activeMissionsPanel = ActiveMissionsPanel.createActiveMissionsPanel();
+    document.body.appendChild(this.activeMissionsPanel);
+  }
+
   private setupEventListeners() {
     // Panel close buttons
     document.getElementById('close-mission-panel')?.addEventListener('click', () => {
@@ -152,6 +160,10 @@ export class UIManager {
 
     document.getElementById('close-profile-panel')?.addEventListener('click', () => {
       gameState.toggleProfilePanel();
+    });
+
+    document.getElementById('close-active-missions-panel')?.addEventListener('click', () => {
+      gameState.toggleActiveMissionsPanel();
     });
 
     // Keyboard shortcuts
@@ -196,6 +208,18 @@ export class UIManager {
       this.profilePanel.style.display = state.showProfilePanel ? 'block' : 'none';
       if (state.showProfilePanel) {
         this.updateProfilePanel(state);
+      }
+    }
+
+    if (this.activeMissionsPanel) {
+      this.activeMissionsPanel.style.display = state.showActiveMissionsPanel ? 'block' : 'none';
+      if (state.showActiveMissionsPanel) {
+        ActiveMissionsPanel.updateActiveMissionsPanel(
+          state.playerMissions,
+          state.ownedDrifters,
+          state.worldState?.resources || [],
+          state.isLoadingPlayerMissions
+        );
       }
     }
 
@@ -433,24 +457,10 @@ export class UIManager {
       </div>
 
       <div style="margin-bottom: 20px;">
-        <h4 style="color: #ffd700; margin: 0 0 8px 0;">Resources</h4>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px;">
-          <div style="text-align: center; padding: 8px; border: 1px solid #444; border-radius: 4px;">
-            <div style="color: #00ff00; font-size: 18px; font-weight: bold;">${profile.resources?.credits || 0}</div>
-            <div style="color: #ccc; font-size: 12px;">Credits</div>
-          </div>
-          <div style="text-align: center; padding: 8px; border: 1px solid #444; border-radius: 4px;">
-            <div style="color: #ff4500; font-size: 18px; font-weight: bold;">${profile.resources?.ore || 0}</div>
-            <div style="color: #ccc; font-size: 12px;">Ore</div>
-          </div>
-          <div style="text-align: center; padding: 8px; border: 1px solid #444; border-radius: 4px;">
-            <div style="color: #708090; font-size: 18px; font-weight: bold;">${profile.resources?.scrap || 0}</div>
-            <div style="color: #ccc; font-size: 12px;">Scrap</div>
-          </div>
-          <div style="text-align: center; padding: 8px; border: 1px solid #444; border-radius: 4px;">
-            <div style="color: #8fbc8f; font-size: 18px; font-weight: bold;">${profile.resources?.organic || 0}</div>
-            <div style="color: #ccc; font-size: 12px;">Organic</div>
-          </div>
+        <h4 style="color: #ffd700; margin: 0 0 8px 0;">Balance</h4>
+        <div style="text-align: center; padding: 16px; border: 2px solid #ffd700; border-radius: 8px; background: rgba(255, 215, 0, 0.1);">
+          <div style="color: #00ff00; font-size: 24px; font-weight: bold;">${profile.balance || 0}</div>
+          <div style="color: #ffd700; font-size: 14px; margin-top: 4px;">Credits</div>
         </div>
       </div>
 
@@ -504,7 +514,11 @@ export class UIManager {
     // Update credits display
     const creditsDisplay = document.getElementById('credits-amount');
     if (creditsDisplay && state.profile) {
-      creditsDisplay.textContent = (state.profile.resources?.credits || 0).toString();
+      const credits = state.profile.balance || 0;
+      console.log('Updating credits display:', credits, 'Profile:', state.profile);
+      creditsDisplay.textContent = credits.toString();
+    } else {
+      console.log('Credits update failed - creditsDisplay:', !!creditsDisplay, 'profile:', !!state.profile);
     }
 
     // Update wallet info

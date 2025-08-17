@@ -54,6 +54,19 @@ document.getElementById('disconnect-wallet')?.addEventListener('click', async ()
   await auth.disconnect();
 });
 
+// Add bottom control panel button handlers
+document.getElementById('toggle-mercenaries')?.addEventListener('click', () => {
+  gameState.toggleMercenaryPanel();
+});
+
+document.getElementById('toggle-missions')?.addEventListener('click', () => {
+  gameState.toggleActiveMissionsPanel();
+});
+
+document.getElementById('toggle-profile')?.addEventListener('click', () => {
+  gameState.toggleProfilePanel();
+});
+
 // Add top bar button handlers for panels
 document.addEventListener('DOMContentLoaded', () => {
   // Add mercenaries button to UI

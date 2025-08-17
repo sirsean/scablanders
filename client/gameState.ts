@@ -9,10 +9,11 @@ export interface GameState {
   // Player data
   profile: PlayerProfile | null;
   ownedDrifters: DrifterProfile[];
+  playerMissions: Mission[]; // Player's specific missions
   
   // World data
   worldState: WorldState | null;
-  activeMissions: Mission[];
+  activeMissions: Mission[]; // All active missions (for map display)
   availableMercenaries: DrifterProfile[];
   
   // UI state
@@ -20,12 +21,14 @@ export interface GameState {
   showMissionPanel: boolean;
   showMercenaryPanel: boolean;
   showProfilePanel: boolean;
+  showActiveMissionsPanel: boolean;
   notifications: GameNotification[];
   
   // Loading states
   isLoadingProfile: boolean;
   isLoadingWorld: boolean;
   isLoadingMercenaries: boolean;
+  isLoadingPlayerMissions: boolean;
 }
 
 export interface GameNotification {
@@ -43,6 +46,7 @@ class GameStateManager extends EventTarget {
     playerAddress: null,
     profile: null,
     ownedDrifters: [],
+    playerMissions: [],
     worldState: null,
     activeMissions: [],
     availableMercenaries: [],
@@ -50,10 +54,12 @@ class GameStateManager extends EventTarget {
     showMissionPanel: false,
     showMercenaryPanel: false,
     showProfilePanel: false,
+    showActiveMissionsPanel: false,
     notifications: [],
     isLoadingProfile: false,
     isLoadingWorld: false,
     isLoadingMercenaries: false,
+    isLoadingPlayerMissions: false,
   };
 
   constructor() {
@@ -88,12 +94,14 @@ class GameStateManager extends EventTarget {
         this.loadPlayerProfile();
         this.loadWorldState();
         this.loadMercenaries();
+        this.loadPlayerMissions();
       } else {
         // Clear data when not authenticated
         this.setState({
           profile: null,
           ownedDrifters: [],
-          activeMissions: []
+          activeMissions: [],
+          playerMissions: []
         });
       }
     });
@@ -197,9 +205,8 @@ class GameStateManager extends EventTarget {
       const response = await this.apiCall('/missions/start', {
         method: 'POST',
         body: JSON.stringify({
-          drifterId,
-          targetId,
-          missionType
+          drifterIds: [drifterId],
+          targetNodeId: targetId
         })
       });
 
@@ -215,6 +222,7 @@ class GameStateManager extends EventTarget {
         // Refresh data
         await this.loadWorldState();
         await this.loadPlayerProfile();
+        await this.loadPlayerMissions();
       }
       
       return result;
@@ -278,6 +286,28 @@ class GameStateManager extends EventTarget {
     this.setState({ showProfilePanel: !this.state.showProfilePanel });
   }
 
+  toggleActiveMissionsPanel() {
+    this.setState({ showActiveMissionsPanel: !this.state.showActiveMissionsPanel });
+  }
+
+  async loadPlayerMissions() {
+    if (!this.state.playerAddress || this.state.isLoadingPlayerMissions) return;
+
+    this.setState({ isLoadingPlayerMissions: true });
+
+    try {
+      const response = await this.apiCall(`/missions/player/${this.state.playerAddress}`);
+      const data = await response.json();
+      
+      this.setState({ 
+        playerMissions: data.missions || [],
+        isLoadingPlayerMissions: false
+      });
+    } catch (error) {
+      this.setState({ isLoadingPlayerMissions: false });
+    }
+  }
+
   // Notification system
   addNotification(notification: Omit<GameNotification, 'id' | 'timestamp'>) {
     const newNotification: GameNotification = {
@@ -307,6 +337,7 @@ class GameStateManager extends EventTarget {
       if (this.state.isAuthenticated) {
         this.loadPlayerProfile();
         this.loadWorldState();
+        this.loadPlayerMissions();
       }
     }, 30000);
   }

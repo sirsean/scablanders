@@ -1,21 +1,12 @@
 {
   "../node_modules/alchemy-sdk/dist/esm/alchemy-websocket-provider-2f8b1006.js": {
-    "file": "assets/alchemy-websocket-provider-2f8b1006-B9ZPQJNo.js",
+    "file": "assets/alchemy-websocket-provider-2f8b1006-03No0SRm.js",
     "name": "alchemy-websocket-provider-2f8b1006",
     "src": "../node_modules/alchemy-sdk/dist/esm/alchemy-websocket-provider-2f8b1006.js",
     "isDynamicEntry": true,
     "imports": [
       "../server/worker.ts",
-      "_alchemy-provider-0b2e9f09-qWPUdFOF.js"
-    ]
-  },
-  "../server/auth.ts": {
-    "file": "assets/auth-bw3Uuruo.js",
-    "name": "auth",
-    "src": "../server/auth.ts",
-    "isDynamicEntry": true,
-    "imports": [
-      "../server/worker.ts"
+      "_alchemy-provider-0b2e9f09-B3YBQ7sx.js"
     ]
   },
   "../server/worker.ts": {
@@ -24,17 +15,12 @@
     "src": "../server/worker.ts",
     "isEntry": true,
     "dynamicImports": [
-      "_alchemy-provider-0b2e9f09-qWPUdFOF.js",
-      "../node_modules/alchemy-sdk/dist/esm/alchemy-websocket-provider-2f8b1006.js",
-      "../server/auth.ts",
-      "../server/auth.ts",
-      "../server/auth.ts",
-      "../server/auth.ts",
-      "../server/auth.ts"
+      "_alchemy-provider-0b2e9f09-B3YBQ7sx.js",
+      "../node_modules/alchemy-sdk/dist/esm/alchemy-websocket-provider-2f8b1006.js"
     ]
   },
-  "_alchemy-provider-0b2e9f09-qWPUdFOF.js": {
-    "file": "assets/alchemy-provider-0b2e9f09-qWPUdFOF.js",
+  "_alchemy-provider-0b2e9f09-B3YBQ7sx.js": {
+    "file": "assets/alchemy-provider-0b2e9f09-B3YBQ7sx.js",
     "name": "alchemy-provider-0b2e9f09",
     "isDynamicEntry": true,
     "imports": [
