@@ -1,6 +1,7 @@
 import type { GameState, GameNotification } from '../gameState';
 import { gameState } from '../gameState';
-import type { DrifterProfile } from '@shared/models';
+import type { DrifterProfile, MissionType } from '@shared/models';
+import { calculateMissionDuration, estimateMissionRewards, formatDuration } from '../../shared/mission-utils';
 import { ActiveMissionsPanel } from './ActiveMissionsPanel';
 
 export class UIManager {
@@ -220,6 +221,9 @@ export class UIManager {
           state.resourceNodes || [],
           state.isLoadingPlayerMissions
         );
+      } else {
+        // Stop the live timer when panel is hidden
+        ActiveMissionsPanel.stopLiveTimer();
       }
     }
 
@@ -251,12 +255,29 @@ export class UIManager {
       return;
     }
 
+    // Calculate estimated mission duration using shared utility
+    const estimatedDuration = calculateMissionDuration(selectedResource);
+    const durationText = formatDuration(estimatedDuration);
+    
+    // Default to scavenge for initial estimates (most common/safe mission type)
+    const defaultEstimate = estimateMissionRewards(selectedResource, 'scavenge', estimatedDuration);
+
     content.innerHTML = `
       <div style="margin-bottom: 16px;">
         <h4 style="color: #00ff00; margin: 0 0 8px 0;">${selectedResource.type.toUpperCase()} NODE</h4>
         <p style="margin: 4px 0;">Current Yield: <span style="color: #ffff00;">${selectedResource.currentYield}</span></p>
         <p style="margin: 4px 0;">Location: (${selectedResource.coordinates.x}, ${selectedResource.coordinates.y})</p>
         <p style="margin: 4px 0; color: #ffd700;">★ ${selectedResource.rarity.toUpperCase()} ★</p>
+        <p style="margin: 4px 0; color: #00bfff; font-weight: bold;">⏱️ Estimated Duration: ${durationText}</p>
+      </div>
+
+      <div style="margin-bottom: 16px;">
+        <h4 style="color: #FFD700; margin: 0 0 8px 0;">Expected Rewards (SCAVENGE)</h4>
+        <div style="background: rgba(255, 215, 0, 0.1); border: 1px solid #444; border-radius: 4px; padding: 8px; font-size: 12px;">
+          <p style="margin: 2px 0; color: #ffd700;">💰 Credits: ${defaultEstimate.creditsRange.min}-${defaultEstimate.creditsRange.max}</p>
+          <p style="margin: 2px 0; color: #00ff88;">📦 ${defaultEstimate.resourcesRange.type.toUpperCase()}: ${defaultEstimate.resourcesRange.min}-${defaultEstimate.resourcesRange.max}</p>
+          <p style="margin: 4px 0 0 0; color: #888; font-style: italic; font-size: 10px;">*Estimates may vary by mission type and actual yield</p>
+        </div>
       </div>
 
       <div style="margin-bottom: 16px;">
@@ -269,17 +290,17 @@ export class UIManager {
       <div style="margin-bottom: 16px;">
         <h4 style="color: #FFD700; margin: 0 0 8px 0;">Mission Type</h4>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-          <button class="mission-type-btn" data-type="SCAVENGE" style="background: #2c5530; border: 1px solid #4a7c59; color: #fff; padding: 8px; cursor: pointer; border-radius: 4px;">
+          <button class="mission-type-btn" data-type="scavenge" style="background: #2c5530; border: 1px solid #4a7c59; color: #fff; padding: 8px; cursor: pointer; border-radius: 4px;">
             SCAVENGE<br><small>Gather resources safely</small>
           </button>
-          <button class="mission-type-btn" data-type="EXPLORE" style="background: #4a5c2a; border: 1px solid #6b7c4a; color: #fff; padding: 8px; cursor: pointer; border-radius: 4px;">
-            EXPLORE<br><small>Discover new areas</small>
+          <button class="mission-type-btn" data-type="scouting" style="background: #4a5c2a; border: 1px solid #6b7c4a; color: #fff; padding: 8px; cursor: pointer; border-radius: 4px;">
+            SCOUTING<br><small>Discover new areas</small>
           </button>
-          <button class="mission-type-btn" data-type="RAID" style="background: #5c2a2a; border: 1px solid #7c4a4a; color: #fff; padding: 8px; cursor: pointer; border-radius: 4px;">
-            RAID<br><small>High risk, high reward</small>
+          <button class="mission-type-btn" data-type="combat" style="background: #5c2a2a; border: 1px solid #7c4a4a; color: #fff; padding: 8px; cursor: pointer; border-radius: 4px;">
+            COMBAT<br><small>High risk, high reward</small>
           </button>
-          <button class="mission-type-btn" data-type="ESCORT" style="background: #2a4a5c; border: 1px solid #4a6b7c; color: #fff; padding: 8px; cursor: pointer; border-radius: 4px;">
-            ESCORT<br><small>Protect other missions</small>
+          <button class="mission-type-btn" data-type="intercept" style="background: #2a4a5c; border: 1px solid #4a6b7c; color: #fff; padding: 8px; cursor: pointer; border-radius: 4px;">
+            INTERCEPT<br><small>Steal from other missions</small>
           </button>
         </div>
       </div>
@@ -571,4 +592,5 @@ export class UIManager {
     const hours = Math.floor(minutes / 60);
     return `${hours}h ago`;
   }
+
 }

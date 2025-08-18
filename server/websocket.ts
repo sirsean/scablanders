@@ -146,7 +146,7 @@ export function handleWebSocket(request: Request, env: Env): Response {
       sendToSession(sessionId, {
         type: 'subscription_confirmed',
         timestamp: new Date(),
-        data: { events: ['player_updates', 'world_updates'] }
+        data: { events: ['player_state', 'world_state'] }
       });
       
       console.log(`[WS] Session ${sessionId} registered successfully with GameDO`);
@@ -227,10 +227,10 @@ async function handleAuthentication(sessionId: string, token: string, env: Env) 
         }
       });
 
-      // Subscribe to player's Durable Object for real-time updates
-      const playerId = env.PLAYER_DO.idFromName(playerAddress);
-      const playerStub = env.PLAYER_DO.get(playerId);
-      await playerStub.addWebSocketConnection(sessionId, session.websocket);
+      // Register the authenticated session with GameDO
+      const gameId = env.GAME_DO.idFromName('game');
+      const gameStub = env.GAME_DO.get(gameId);
+      await gameStub.addWebSocketSession(sessionId, playerAddress, true);
 
       console.log(`WebSocket session ${sessionId} authenticated for player ${playerAddress}`);
     } else {
@@ -256,12 +256,9 @@ async function handleSubscription(sessionId: string, events: string[], env: Env)
   const session = activeSessions.get(sessionId);
   if (!session || !session.authenticated || !session.playerAddress) return;
 
-  // Subscribe to world events if requested
-  if (events.includes('world_updates')) {
-    const worldId = env.WORLD_DO.idFromName('world');
-    const worldStub = env.WORLD_DO.get(worldId);
-    await worldStub.addWebSocketSubscriber(sessionId, session.websocket);
-  }
+  // All subscriptions are handled by GameDO - no additional work needed here
+  // The GameDO already registered this session and will send appropriate events
+  console.log(`[WS] Session ${sessionId} subscribed to events:`, events);
 
   sendToSession(sessionId, {
     type: 'subscription_confirmed',

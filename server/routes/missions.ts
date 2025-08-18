@@ -65,7 +65,7 @@ missions.post('/intercept', requireAuth, async (c) => {
   }
 });
 
-// POST /api/missions/complete - Complete a mission (usually called by alarm)
+// POST /api/missions/complete - Complete a mission (usually called by alarm or for testing)
 missions.post('/complete', requireAuth, async (c) => {
   try {
     const body = await c.req.json() as {
@@ -81,17 +81,66 @@ missions.post('/complete', requireAuth, async (c) => {
       return c.json({ error: 'Mission not found' }, 404);
     }
 
-    // Complete the mission
-    const result = await gameStub.completeMission(body.missionId);
+    console.log(`[API] Manually completing mission ${body.missionId} for testing`);
+    
+    // Complete the mission with force flag - this will trigger WebSocket updates automatically
+    const result = await gameStub.completeMission(body.missionId, true);
 
     if (!result.success) {
       return c.json({ error: result.error }, 400);
     }
 
-    return c.json({ success: true, result });
+    return c.json({ 
+      success: true, 
+      result,
+      message: 'Mission completed successfully - WebSocket updates sent'
+    });
   } catch (error) {
     console.error('Complete mission error:', error);
     return c.json({ error: 'Failed to complete mission' }, 500);
+  }
+});
+
+// POST /api/missions/complete-oldest - Complete the oldest active mission for current player (dev tool)
+missions.post('/complete-oldest', requireAuth, async (c) => {
+  try {
+    const playerAddress = c.get('playerAddress')!;
+    
+    // Get GameDO
+    const gameId = c.env.GAME_DO.idFromName('game');
+    const gameStub = c.env.GAME_DO.get(gameId);
+    
+    // Get player's missions
+    const playerMissions = await gameStub.getPlayerMissions(playerAddress);
+    const activeMissions = playerMissions.filter(m => m.status === 'active');
+    
+    if (activeMissions.length === 0) {
+      return c.json({ error: 'No active missions to complete' }, 404);
+    }
+    
+    // Find oldest mission
+    const oldestMission = activeMissions.sort((a, b) => 
+      new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+    )[0];
+    
+    console.log(`[API] Auto-completing oldest mission ${oldestMission.id} for player ${playerAddress}`);
+    
+    // Complete the mission with force flag
+    const result = await gameStub.completeMission(oldestMission.id, true);
+
+    if (!result.success) {
+      return c.json({ error: result.error }, 400);
+    }
+
+    return c.json({ 
+      success: true, 
+      completedMission: oldestMission,
+      result,
+      message: 'Oldest mission completed successfully'
+    });
+  } catch (error) {
+    console.error('Complete oldest mission error:', error);
+    return c.json({ error: 'Failed to complete oldest mission' }, 500);
   }
 });
 
@@ -133,6 +182,29 @@ missions.get('/player/:address', async (c) => {
   } catch (error) {
     console.error('Get player missions error:', error);
     return c.json({ error: 'Failed to get player missions' }, 500);
+  }
+});
+
+// POST /api/missions/trigger-resource-management - Manually trigger resource management (dev tool)
+missions.post('/trigger-resource-management', requireAuth, async (c) => {
+  try {
+    // Get GameDO
+    const gameId = c.env.GAME_DO.idFromName('game');
+    const gameStub = c.env.GAME_DO.get(gameId);
+    
+    console.log('[API] Manually triggering resource management');
+    
+    // Trigger resource management
+    const result = await gameStub.triggerResourceManagement();
+
+    return c.json({ 
+      success: true, 
+      summary: result.summary,
+      message: 'Resource management cycle completed - check logs for details'
+    });
+  } catch (error) {
+    console.error('Trigger resource management error:', error);
+    return c.json({ error: 'Failed to trigger resource management' }, 500);
   }
 });
 

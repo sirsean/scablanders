@@ -178,19 +178,19 @@ class GameStateManager extends EventTarget {
     });
 
     // Listen for player state updates
-    webSocketManager.addEventListener('player_state', (event) => {
-      const update = event.detail as PlayerStateUpdate;
+    webSocketManager.addEventListener('playerStateUpdate', (event) => {
+      const update = event.detail as PlayerStateUpdate['data'];
       console.log('[GameState] Received player state update:', update);
       
-      if (update.data.profile) {
-        console.log('[GameState] Updating profile from WebSocket:', update.data.profile);
-        this.setState({ profile: update.data.profile });
+      if (update.profile) {
+        console.log('[GameState] Updating profile from WebSocket:', update.profile);
+        this.setState({ profile: update.profile });
       }
       
-      if (update.data.notifications) {
-        console.log('[GameState] Received notifications from WebSocket:', update.data.notifications);
+      if (update.notifications) {
+        console.log('[GameState] Received notifications from WebSocket:', update.notifications);
         // Convert to UI notifications format
-        const uiNotifications = update.data.notifications.map(n => ({
+        const uiNotifications = update.notifications.map(n => ({
           id: n.id,
           type: n.type as any,
           title: n.type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
@@ -213,34 +213,35 @@ class GameStateManager extends EventTarget {
     });
 
     // Listen for world state updates
-    webSocketManager.addEventListener('world_state', (event) => {
-      const update = event.detail as WorldStateUpdate;
+    webSocketManager.addEventListener('worldStateUpdate', (event) => {
+      const update = event.detail as WorldStateUpdate['data'];
       console.log('[GameState] Received world state update:', update);
       
-      if (update.data.resourceNodes) {
-        console.log('[GameState] Updating resource nodes from WebSocket:', update.data.resourceNodes);
-        this.setState({ resourceNodes: update.data.resourceNodes });
+      if (update.resourceNodes) {
+        console.log('[GameState] Updating resource nodes from WebSocket:', update.resourceNodes);
+        this.setState({ resourceNodes: update.resourceNodes });
       }
       
-      if (update.data.missions) {
-        console.log('[GameState] Updating missions from WebSocket:', update.data.missions);
-        this.setState({ activeMissions: update.data.missions });
+      if (update.missions) {
+        console.log('[GameState] Updating missions from WebSocket:', update.missions);
+        this.setState({ activeMissions: update.missions });
       }
       
-      if (update.data.worldMetrics) {
-        console.log('[GameState] Updating world metrics from WebSocket:', update.data.worldMetrics);
-        this.setState({ worldMetrics: update.data.worldMetrics });
+      if (update.worldMetrics) {
+        console.log('[GameState] Updating world metrics from WebSocket:', update.worldMetrics);
+        this.setState({ worldMetrics: update.worldMetrics });
       }
     });
 
     // Listen for mission updates
     webSocketManager.addEventListener('missionUpdate', (event) => {
-      const update = event.detail as MissionUpdate;
+      const update = event.detail; // This is the data field from the WebSocket message
+      console.log('[GameState] Received mission update:', update);
       
       // Update specific mission in player missions
       if (update.mission && this.state.playerMissions) {
         const updatedPlayerMissions = this.state.playerMissions.map(mission =>
-          mission.id === update.mission!.id ? update.mission! : mission
+          mission.id === update.mission.id ? update.mission : mission
         );
         this.setState({ playerMissions: updatedPlayerMissions });
       }
@@ -248,7 +249,7 @@ class GameStateManager extends EventTarget {
       // Update specific mission in active missions
       if (update.mission && this.state.activeMissions) {
         const updatedActiveMissions = this.state.activeMissions.map(mission =>
-          mission.id === update.mission!.id ? update.mission! : mission
+          mission.id === update.mission.id ? update.mission : mission
         );
         this.setState({ activeMissions: updatedActiveMissions });
       }
@@ -512,10 +513,11 @@ class GameStateManager extends EventTarget {
     this.setState({ notifications });
   }
 
-  // Periodic updates (every 30 seconds)
+  // Periodic updates (every 30 seconds) - only when WebSocket is not connected
   private startPeriodicUpdates() {
     setInterval(() => {
-      if (this.state.isAuthenticated) {
+      if (this.state.isAuthenticated && !this.state.realTimeMode) {
+        console.log('[GameState] Periodic update (WebSocket disconnected)');
         this.loadPlayerProfile();
         this.loadWorldState();
         this.loadPlayerMissions();

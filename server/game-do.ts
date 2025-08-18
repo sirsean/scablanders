@@ -12,12 +12,27 @@ import type {
   ResourceType,
   Rarity
 } from '@shared/models';
+import { calculateMissionDuration, calculateMissionRewards } from '../shared/mission-utils';
 
 interface WebSocketSession {
   sessionId: string;
   playerAddress?: string;
   authenticated: boolean;
   lastPing: number;
+}
+
+interface ResourceManagementConfig {
+  minNodesPerType: Record<ResourceType, number>;
+  minTotalNodes: number;
+  maxTotalNodes: number;
+  regenerationInterval: number; // minutes
+  naturalRegenerationRate: number; // per hour
+  spawnArea: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  };
 }
 
 interface GameState {
@@ -31,6 +46,7 @@ interface GameState {
     economicActivity: number;
     lastUpdate: Date;
   };
+  resourceConfig: ResourceManagementConfig;
 }
 
 /**
@@ -63,11 +79,31 @@ export class GameDO extends DurableObject {
         totalCompletedMissions: 0,
         economicActivity: 0,
         lastUpdate: new Date()
+      },
+      resourceConfig: {
+        minNodesPerType: {
+          ore: 2,
+          scrap: 2,
+          organic: 1
+        },
+        minTotalNodes: 5,
+        maxTotalNodes: 15,
+        regenerationInterval: 15, // Check every 15 minutes
+        naturalRegenerationRate: 10, // 10% per hour
+        spawnArea: {
+          minX: 50,
+          maxX: 650,
+          minY: 50,
+          maxY: 450
+        }
       }
     };
     
     // Load persisted data first, then initialize resources
     this.initializeGameState();
+    
+    // Schedule initial resource management alarm
+    this.scheduleResourceManagementAlarm();
   }
 
   /**
@@ -336,6 +372,23 @@ export class GameDO extends DurableObject {
     }
   }
 
+  /**
+   * Broadcast mission update to all authenticated sessions
+   */
+  private async broadcastMissionUpdate(update: any) {
+    const message = {
+      type: 'mission_update',
+      timestamp: new Date(),
+      data: update
+    };
+
+    for (const [sessionId, session] of this.webSocketSessions) {
+      if (session.authenticated) {
+        this.sendToSession(sessionId, message);
+      }
+    }
+  }
+
   // =============================================================================
   // Player Management
   // =============================================================================
@@ -466,8 +519,16 @@ export class GameDO extends DurableObject {
     // Create mission
     const missionId = crypto.randomUUID();
     const now = new Date();
-    const duration = 30 * 60 * 1000; // 30 minutes in milliseconds
-
+    
+    // Calculate mission duration and rewards using shared utilities
+    const duration = calculateMissionDuration(targetNode);
+    console.log(`[GameDO] duration: ${duration}`);
+    const rewards = calculateMissionRewards(targetNode, missionType, duration);
+    console.log(`[GameDO] rewards: ${rewards}`);
+    
+    console.log(`[GameDO] Mission duration calculated: ${duration / 1000 / 60} minutes based on distance to node at (${targetNode.coordinates.x}, ${targetNode.coordinates.y})`);
+    console.log(`[GameDO] Mission rewards calculated: ${rewards.credits} credits, ${Object.values(rewards.resources)[0]} ${Object.keys(rewards.resources)[0]}`);
+    
     const mission: Mission = {
       id: missionId,
       type: missionType,
@@ -477,12 +538,7 @@ export class GameDO extends DurableObject {
       startTime: now,
       completionTime: new Date(now.getTime() + duration),
       status: 'active',
-      rewards: {
-        credits: Math.floor(Math.random() * 500) + 200,
-        resources: {
-          [targetNode.type]: Math.floor(Math.random() * 50) + 25
-        }
-      }
+      rewards
     };
 
     // Add to game state
@@ -510,7 +566,7 @@ export class GameDO extends DurableObject {
   /**
    * Complete a mission
    */
-  async completeMission(missionId: string): Promise<{ success: boolean; rewards?: any; error?: string }> {
+  async completeMission(missionId: string, forceComplete: boolean = false): Promise<{ success: boolean; rewards?: any; error?: string }> {
     const mission = this.gameState.missions.get(missionId);
     if (!mission) {
       return { success: false, error: 'Mission not found' };
@@ -520,7 +576,8 @@ export class GameDO extends DurableObject {
       return { success: false, error: 'Mission not active' };
     }
 
-    if (new Date() < mission.completionTime) {
+    // Skip time check if forcing completion (for manual testing)
+    if (!forceComplete && new Date() < mission.completionTime) {
       return { success: false, error: 'Mission not yet complete' };
     }
 
@@ -531,6 +588,46 @@ export class GameDO extends DurableObject {
 
     // Award rewards
     player.balance += mission.rewards.credits;
+    
+    // Deplete resources from target node
+    const node = this.gameState.resourceNodes.get(mission.targetNodeId);
+    if (node) {
+      console.log(`[GameDO] Depleting resources from node ${mission.targetNodeId} (${node.type})`);
+      console.log(`[GameDO] Node before depletion: currentYield=${node.currentYield}, depletion=${node.depletion}`);
+      
+      // Calculate how much resource was extracted
+      const resourceType = node.type;
+      const extractedRequested = mission.rewards.resources[resourceType] ?? 0;
+      const extractedActual = Math.min(extractedRequested, node.currentYield);
+      
+      console.log(`[GameDO] Extracting ${extractedActual} units (requested: ${extractedRequested}, available: ${node.currentYield})`);
+      
+      // Apply depletion
+      node.currentYield -= extractedActual;
+      node.depletion += extractedActual;
+      node.lastHarvested = new Date();
+      
+      // Mark as inactive if fully depleted
+      if (node.currentYield <= 0) {
+        node.currentYield = 0;
+        node.isActive = false;
+        console.log(`[GameDO] Node ${mission.targetNodeId} is now fully depleted and inactive`);
+        
+        // Add depletion notification to player
+        await this.addNotification(mission.playerAddress, {
+          id: crypto.randomUUID(),
+          type: 'resource_depleted',
+          title: 'Resource Depleted',
+          message: `The ${resourceType} node you were harvesting has been fully depleted.`,
+          timestamp: new Date(),
+          read: false
+        });
+      }
+      
+      console.log(`[GameDO] Node after depletion: currentYield=${node.currentYield}, depletion=${node.depletion}`);
+    } else {
+      console.error(`[GameDO] Target node ${mission.targetNodeId} not found during mission completion`);
+    }
     
     // Remove from active missions
     const missionIndex = player.activeMissions.indexOf(missionId);
@@ -561,6 +658,17 @@ export class GameDO extends DurableObject {
     // Broadcast updates
     await this.broadcastPlayerStateUpdate(mission.playerAddress);
     await this.broadcastWorldStateUpdate();
+    
+    // Send dedicated mission completion event
+    await this.broadcastMissionUpdate({
+      mission,
+      type: 'completed',
+      notification: {
+        type: 'mission_complete',
+        title: 'Mission Complete',
+        message: `Mission completed! Earned ${mission.rewards.credits} credits.`
+      }
+    });
 
     return { success: true, rewards: mission.rewards };
   }
@@ -676,6 +784,226 @@ export class GameDO extends DurableObject {
   async getActiveMissions(): Promise<Mission[]> {
     return Array.from(this.gameState.missions.values()).filter(m => m.status === 'active');
   }
+
+  // =============================================================================
+  // Resource Management and Regeneration
+  // =============================================================================
+
+  /**
+   * Schedule the next resource management alarm
+   */
+  private async scheduleResourceManagementAlarm() {
+    const intervalMs = this.gameState.resourceConfig.regenerationInterval * 60 * 1000;
+    const nextAlarmTime = new Date(Date.now() + intervalMs);
+    
+    console.log(`[GameDO] Scheduling resource management alarm for ${nextAlarmTime.toISOString()}`);
+    await this.ctx.storage.setAlarm(nextAlarmTime);
+  }
+
+  /**
+   * Handle alarm - resource management
+   */
+  async alarm() {
+    console.log('[GameDO] Resource management alarm triggered');
+    
+    try {
+      await this.performResourceManagement();
+    } catch (error) {
+      console.error('[GameDO] Error during resource management:', error);
+    }
+    
+    // Schedule next alarm
+    await this.scheduleResourceManagementAlarm();
+  }
+
+  /**
+   * Perform resource management: regeneration, cleanup, and spawning
+   */
+  private async performResourceManagement() {
+    console.log('[GameDO] Starting resource management cycle');
+    
+    const config = this.gameState.resourceConfig;
+    let changesMade = false;
+    
+    // 1. Remove fully depleted nodes
+    const nodesToRemove: string[] = [];
+    for (const [nodeId, node] of this.gameState.resourceNodes) {
+      if (node.currentYield <= 0 && !node.isActive) {
+        nodesToRemove.push(nodeId);
+      }
+    }
+    
+    if (nodesToRemove.length > 0) {
+      console.log(`[GameDO] Removing ${nodesToRemove.length} depleted nodes`);
+      for (const nodeId of nodesToRemove) {
+        this.gameState.resourceNodes.delete(nodeId);
+      }
+      changesMade = true;
+    }
+    
+    // 2. Natural regeneration of partially depleted nodes
+    const hourlyRegenRate = config.naturalRegenerationRate / 100; // Convert percentage to decimal
+    const intervalHours = config.regenerationInterval / 60; // Convert minutes to hours
+    const regenThisCycle = hourlyRegenRate * intervalHours;
+    
+    for (const [nodeId, node] of this.gameState.resourceNodes) {
+      if (node.depletion > 0 && node.isActive) {
+        const regenAmount = Math.floor(node.baseYield * regenThisCycle);
+        if (regenAmount > 0) {
+          const oldYield = node.currentYield;
+          node.currentYield = Math.min(node.baseYield, node.currentYield + regenAmount);
+          node.depletion = Math.max(0, node.depletion - regenAmount);
+          
+          console.log(`[GameDO] Node ${nodeId} regenerated: ${oldYield} -> ${node.currentYield} (+${node.currentYield - oldYield})`);
+          changesMade = true;
+        }
+      }
+    }
+    
+    // 3. Count current nodes by type
+    const nodeCountsByType: Record<ResourceType, number> = {
+      ore: 0,
+      scrap: 0,
+      organic: 0
+    };
+    
+    for (const node of this.gameState.resourceNodes.values()) {
+      if (node.isActive) {
+        nodeCountsByType[node.type]++;
+      }
+    }
+    
+    // 4. Spawn new nodes if needed
+    const totalActiveNodes = Object.values(nodeCountsByType).reduce((sum, count) => sum + count, 0);
+    console.log(`[GameDO] Current node counts: ore=${nodeCountsByType.ore}, scrap=${nodeCountsByType.scrap}, organic=${nodeCountsByType.organic}, total=${totalActiveNodes}`);
+    
+    // Check if we need more nodes of any type
+    const nodesToSpawn: { type: ResourceType; count: number }[] = [];
+    
+    for (const [type, currentCount] of Object.entries(nodeCountsByType) as [ResourceType, number][]) {
+      const minNeeded = config.minNodesPerType[type];
+      if (currentCount < minNeeded) {
+        nodesToSpawn.push({ type, count: minNeeded - currentCount });
+      }
+    }
+    
+    // Also check if we're below minimum total
+    if (totalActiveNodes < config.minTotalNodes) {
+      const additionalNeeded = config.minTotalNodes - totalActiveNodes;
+      // Distribute among types that aren't at minimum
+      const typesNeedingMore = Object.entries(nodeCountsByType)
+        .filter(([type, count]) => count < config.minNodesPerType[type as ResourceType])
+        .map(([type]) => type as ResourceType);
+      
+      if (typesNeedingMore.length === 0) {
+        // All types at minimum, add to ore by default
+        const existing = nodesToSpawn.find(n => n.type === 'ore');
+        if (existing) {
+          existing.count += additionalNeeded;
+        } else {
+          nodesToSpawn.push({ type: 'ore', count: additionalNeeded });
+        }
+      }
+    }
+    
+    // Spawn the needed nodes
+    for (const { type, count } of nodesToSpawn) {
+      for (let i = 0; i < count; i++) {
+        if (totalActiveNodes + i >= config.maxTotalNodes) {
+          console.log(`[GameDO] Reached maximum node limit (${config.maxTotalNodes}), stopping spawn`);
+          break;
+        }
+        
+        const newNode = this.createRandomResourceNode(type);
+        this.gameState.resourceNodes.set(newNode.id, newNode);
+        console.log(`[GameDO] Spawned new ${type} node at (${newNode.coordinates.x}, ${newNode.coordinates.y})`);
+        changesMade = true;
+      }
+    }
+    
+    // 5. Save changes and broadcast if anything changed
+    if (changesMade) {
+      await this.saveGameState();
+      await this.broadcastWorldStateUpdate();
+      console.log('[GameDO] Resource management cycle completed with changes');
+    } else {
+      console.log('[GameDO] Resource management cycle completed with no changes needed');
+    }
+  }
+
+  /**
+   * Create a random resource node of the specified type
+   */
+  private createRandomResourceNode(type: ResourceType): ResourceNode {
+    const config = this.gameState.resourceConfig;
+    const spawnArea = config.spawnArea;
+    
+    // Random coordinates within spawn area
+    const x = Math.floor(Math.random() * (spawnArea.maxX - spawnArea.minX)) + spawnArea.minX;
+    const y = Math.floor(Math.random() * (spawnArea.maxY - spawnArea.minY)) + spawnArea.minY;
+    
+    // Base yield based on type and rarity
+    const rarities: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+    const rarityWeights = [50, 30, 15, 4, 1]; // Percentage weights
+    
+    let selectedRarity: Rarity = 'common';
+    const roll = Math.random() * 100;
+    let cumulative = 0;
+    
+    for (let i = 0; i < rarities.length; i++) {
+      cumulative += rarityWeights[i];
+      if (roll <= cumulative) {
+        selectedRarity = rarities[i];
+        break;
+      }
+    }
+    
+    // Base yield varies by type and rarity
+    const baseYields = {
+      ore: { common: 40, uncommon: 60, rare: 80, epic: 120, legendary: 200 },
+      scrap: { common: 50, uncommon: 75, rare: 100, epic: 150, legendary: 250 },
+      organic: { common: 25, uncommon: 40, rare: 60, epic: 90, legendary: 150 }
+    };
+    
+    const baseYield = baseYields[type][selectedRarity];
+    
+    return {
+      id: `${type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      type,
+      coordinates: { x, y },
+      baseYield,
+      currentYield: baseYield,
+      depletion: 0,
+      rarity: selectedRarity,
+      discoveredBy: [],
+      lastHarvested: new Date(0), // Never harvested
+      isActive: true
+    };
+  }
+
+  /**
+   * Manually trigger resource management (for testing)
+   */
+  async triggerResourceManagement(): Promise<{ success: boolean; summary: string }> {
+    console.log('[GameDO] Manually triggering resource management');
+    
+    const beforeStats = {
+      totalNodes: this.gameState.resourceNodes.size,
+      activeNodes: Array.from(this.gameState.resourceNodes.values()).filter(n => n.isActive).length
+    };
+    
+    await this.performResourceManagement();
+    
+    const afterStats = {
+      totalNodes: this.gameState.resourceNodes.size,
+      activeNodes: Array.from(this.gameState.resourceNodes.values()).filter(n => n.isActive).length
+    };
+    
+    const summary = `Resource management completed. Nodes: ${beforeStats.totalNodes} -> ${afterStats.totalNodes}, Active: ${beforeStats.activeNodes} -> ${afterStats.activeNodes}`;
+    
+    return { success: true, summary };
+  }
+
 
   // =============================================================================
   // Development/Testing

@@ -64,17 +64,7 @@ export class GameScene extends Phaser.Scene {
 
   private updateWorldDisplay(state: GameState) {
     if (state.resourceNodes && state.resourceNodes.length > 0) {
-      // Clear existing placeholder nodes
-      this.resourceNodes.forEach(node => node.destroy());
-      this.nodeLabels.forEach(label => label.destroy());
-      this.resourceNodes.clear();
-      this.nodeLabels.clear();
-      
-      // Create resource nodes from server data
-      state.resourceNodes.forEach((resource: ResourceNode) => {
-        this.createResourceNodeFromServerData(resource);
-      });
-      
+      this.updateResourceNodes(state.resourceNodes);
       this.updateMissionIndicators(state.activeMissions);
     }
     
@@ -82,6 +72,110 @@ export class GameScene extends Phaser.Scene {
     if (state.playerMissions) {
       this.updateMissionRoutes(state.playerMissions);
     }
+  }
+  
+  /**
+   * Update resource nodes incrementally - only change what's different
+   */
+  private updateResourceNodes(serverNodes: ResourceNode[]) {
+    const serverNodeMap = new Map(serverNodes.map(node => [node.id, node]));
+    
+    // Remove nodes that no longer exist on server
+    for (const [nodeId] of this.resourceNodes) {
+      if (!serverNodeMap.has(nodeId)) {
+        console.log(`[GameScene] Removing deleted node: ${nodeId}`);
+        this.removeResourceNode(nodeId);
+      }
+    }
+    
+    // Update existing nodes or create new ones
+    for (const serverNode of serverNodes) {
+      const existingNode = this.resourceNodes.get(serverNode.id);
+      
+      if (!existingNode) {
+        // Create new node
+        console.log(`[GameScene] Creating new resource node: ${serverNode.id}`);
+        this.createResourceNodeFromServerData(serverNode);
+      } else {
+        // Update existing node if changed
+        this.updateExistingResourceNode(serverNode);
+      }
+    }
+  }
+  
+  /**
+   * Update an existing resource node's display
+   */
+  private updateExistingResourceNode(resource: ResourceNode) {
+    const nodeSprite = this.resourceNodes.get(resource.id);
+    const nodeLabel = this.nodeLabels.get(resource.id);
+    
+    if (!nodeSprite || !nodeLabel) return;
+    
+    // Update label text with new yield amount
+    const rarityText = resource.rarity !== 'common' ? ` (${resource.rarity.toUpperCase()})` : '';
+    const newLabelText = `${resource.type.toUpperCase()}${rarityText}\n${resource.currentYield}`;
+    
+    if (nodeLabel.text !== newLabelText) {
+      console.log(`[GameScene] Updating node ${resource.id} yield: ${resource.currentYield}`);
+      nodeLabel.setText(newLabelText);
+      
+      // Add visual feedback for resource changes
+      this.flashNodeUpdate(nodeSprite);
+    }
+    
+    // Update node visual state if depleted
+    if (!resource.isActive) {
+      nodeSprite.setTint(0x666666); // Gray out depleted nodes
+      nodeSprite.setAlpha(0.6);
+    } else {
+      nodeSprite.clearTint();
+      nodeSprite.setAlpha(1.0);
+    }
+  }
+  
+  /**
+   * Remove a resource node and its label
+   */
+  private removeResourceNode(nodeId: string) {
+    const nodeSprite = this.resourceNodes.get(nodeId);
+    const nodeLabel = this.nodeLabels.get(nodeId);
+    
+    if (nodeSprite) {
+      nodeSprite.destroy();
+      this.resourceNodes.delete(nodeId);
+    }
+    
+    if (nodeLabel) {
+      nodeLabel.destroy();
+      this.nodeLabels.delete(nodeId);
+    }
+  }
+  
+  /**
+   * Flash visual effect when a node is updated
+   */
+  private flashNodeUpdate(nodeSprite: Phaser.GameObjects.Image) {
+    // Brief flash effect to show the node was updated
+    this.tweens.add({
+      targets: nodeSprite,
+      scaleX: nodeSprite.scaleX * 1.1,
+      scaleY: nodeSprite.scaleY * 1.1,
+      duration: 150,
+      yoyo: true,
+      ease: 'Bounce.easeOut'
+    });
+    
+    // Brief tint flash
+    this.tweens.add({
+      targets: nodeSprite,
+      tint: 0x00FF00,
+      duration: 200,
+      yoyo: true,
+      onComplete: () => {
+        nodeSprite.clearTint();
+      }
+    });
   }
 
 

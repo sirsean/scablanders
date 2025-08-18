@@ -2,6 +2,20 @@ import type { Mission, DrifterProfile, ResourceNode } from '@shared/models';
 import { gameState } from '../gameState';
 
 export class ActiveMissionsPanel {
+  private static updateInterval: number | null = null;
+  private static lastMissions: Mission[] = [];
+  private static lastOwnedDrifters: DrifterProfile[] = [];
+  private static lastResources: ResourceNode[] = [];
+  
+  // Set up cleanup on page unload
+  static {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', () => {
+        ActiveMissionsPanel.stopLiveTimer();
+      });
+    }
+  }
+  
   static createActiveMissionsPanel(): HTMLElement {
     const panel = document.createElement('div');
     panel.id = 'active-missions-panel';
@@ -43,6 +57,50 @@ export class ActiveMissionsPanel {
     resources: ResourceNode[],
     isLoading: boolean
   ) {
+    // Store the data for live updates
+    this.lastMissions = playerMissions || [];
+    this.lastOwnedDrifters = ownedDrifters || [];
+    this.lastResources = resources || [];
+    
+    this.renderContent(isLoading);
+    
+    // Start or restart the live timer
+    this.startLiveTimer();
+  }
+  
+  /**
+   * Start the live timer that updates countdowns every second
+   */
+  private static startLiveTimer() {
+    // Clear any existing timer
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+    }
+    
+    // Start new timer
+    this.updateInterval = setInterval(() => {
+      // Only update if the panel is visible and we have missions
+      const panel = document.getElementById('active-missions-panel');
+      if (panel && panel.style.display !== 'none') {
+        this.renderContent(false); // Not loading, just live update
+      }
+    }, 1000) as any;
+  }
+  
+  /**
+   * Stop the live timer
+   */
+  static stopLiveTimer() {
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+      this.updateInterval = null;
+    }
+  }
+  
+  /**
+   * Render the content using stored data
+   */
+  private static renderContent(isLoading: boolean) {
     const content = document.getElementById('active-missions-content');
     if (!content) return;
 
@@ -51,24 +109,36 @@ export class ActiveMissionsPanel {
       return;
     }
 
-    if (!playerMissions || playerMissions.length === 0) {
+    if (!this.lastMissions || this.lastMissions.length === 0) {
       content.innerHTML = `
         <div style="text-align: center; color: #888; padding: 20px;">
           <p>No active missions</p>
           <p style="font-size: 14px;">Start a mission by selecting a resource node on the map!</p>
         </div>
       `;
+      this.stopLiveTimer(); // No point running timer with no missions
       return;
     }
 
-    const activeMissions = playerMissions.filter(m => m.status === 'active');
+    const activeMissions = this.lastMissions.filter(m => m.status === 'active');
+    
+    if (activeMissions.length === 0) {
+      content.innerHTML = `
+        <div style="text-align: center; color: #888; padding: 20px;">
+          <p>No active missions</p>
+          <p style="font-size: 14px;">Start a mission by selecting a resource node on the map!</p>
+        </div>
+      `;
+      this.stopLiveTimer(); // No active missions, stop the timer
+      return;
+    }
 
     content.innerHTML = `
       <div style="margin-bottom: 12px;">
         <span style="color: #00ff00; font-weight: bold;">Active Missions: ${activeMissions.length}</span>
       </div>
       
-      ${activeMissions.map(mission => this.renderMissionCard(mission, ownedDrifters, resources)).join('')}
+      ${activeMissions.map(mission => this.renderMissionCard(mission, this.lastOwnedDrifters, this.lastResources)).join('')}
     `;
   }
 
