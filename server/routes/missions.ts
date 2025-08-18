@@ -15,30 +15,25 @@ missions.post('/start', requireAuth, async (c) => {
       targetNodeId: string;
     };
 
-    // Get PlayerDO and WorldDO
-    const playerId = c.env.PLAYER_DO.idFromName(playerAddress);
-    const playerStub = c.env.PLAYER_DO.get(playerId);
-    const worldId = c.env.WORLD_DO.idFromName('world');
-    const worldStub = c.env.WORLD_DO.get(worldId);
+    // Get GameDO
+    const gameId = c.env.GAME_DO.idFromName('game');
+    const gameStub = c.env.GAME_DO.get(gameId);
 
-    // Start the mission through the WorldDO
-    const result = await worldStub.startMission({
+    // Start the mission through the GameDO
+    const result = await gameStub.startMission(
       playerAddress,
-      drifterIds: body.drifterIds,
-      targetNodeId: body.targetNodeId
-    });
+      'scavenge', // Default mission type
+      body.drifterIds,
+      body.targetNodeId
+    );
 
     if (!result.success) {
       return c.json({ success: false, error: result.error }, 400);
     }
 
-    // Update player's active missions
-    await playerStub.addActiveMission(result.mission!.id);
-
     return c.json({ 
       success: true, 
-      mission: result.mission,
-      estimatedDuration: result.estimatedDuration 
+      missionId: result.missionId
     });
   } catch (error) {
     console.error('Start mission error:', error);
@@ -55,21 +50,13 @@ missions.post('/intercept', requireAuth, async (c) => {
       drifterId: number;
     };
 
-    // Get WorldDO
-    const worldId = c.env.WORLD_DO.idFromName('world');
-    const worldStub = c.env.WORLD_DO.get(worldId);
+    // Get GameDO
+    const gameId = c.env.GAME_DO.idFromName('game');
+    const gameStub = c.env.GAME_DO.get(gameId);
 
-    // Intercept the mission
-    const result = await worldStub.interceptMission({
-      missionId: body.missionId,
-      interceptorAddress: playerAddress,
-      drifterId: body.drifterId
-    });
-
-    // Update player's active missions
-    const playerId = c.env.PLAYER_DO.idFromName(playerAddress);
-    const playerStub = c.env.PLAYER_DO.get(playerId);
-    await playerStub.addActiveMission(body.missionId);
+    // For now, intercepting is not implemented in the single GameDO
+    // This would need to be added as a method to GameDO
+    return c.json({ error: 'Mission interception not yet implemented' }, 501);
 
     return c.json({ success: true, result });
   } catch (error) {
@@ -85,31 +72,20 @@ missions.post('/complete', requireAuth, async (c) => {
       missionId: string;
     };
 
-    // Get WorldDO to fetch mission info first
-    const worldId = c.env.WORLD_DO.idFromName('world');
-    const worldStub = c.env.WORLD_DO.get(worldId);
+    // Get GameDO
+    const gameId = c.env.GAME_DO.idFromName('game');
+    const gameStub = c.env.GAME_DO.get(gameId);
     
-    const mission = await worldStub.getMission(body.missionId);
+    const mission = await gameStub.getMission(body.missionId);
     if (!mission) {
       return c.json({ error: 'Mission not found' }, 404);
     }
 
     // Complete the mission
-    const result = await worldStub.completeMission(body.missionId);
+    const result = await gameStub.completeMission(body.missionId);
 
     if (!result.success) {
       return c.json({ error: result.error }, 400);
-    }
-
-    // Update player's mission list and reward them
-    const playerId = c.env.PLAYER_DO.idFromName(mission.playerAddress);
-    const playerStub = c.env.PLAYER_DO.get(playerId);
-    await playerStub.removeActiveMission(body.missionId);
-    
-    // Add loot as resources (convert to resource map)
-    if (result.lootAmount && result.resourceType) {
-      const resources = { [result.resourceType]: result.lootAmount };
-      await playerStub.addResources(resources);
     }
 
     return c.json({ success: true, result });
@@ -124,11 +100,11 @@ missions.get('/:id', async (c) => {
   try {
     const missionId = c.req.param('id');
     
-    // Get WorldDO
-    const worldId = c.env.WORLD_DO.idFromName('world');
-    const worldStub = c.env.WORLD_DO.get(worldId);
+    // Get GameDO
+    const gameId = c.env.GAME_DO.idFromName('game');
+    const gameStub = c.env.GAME_DO.get(gameId);
 
-    const mission = await worldStub.getMission(missionId);
+    const mission = await gameStub.getMission(missionId);
     
     if (!mission) {
       return c.json({ error: 'Mission not found' }, 404);
@@ -146,22 +122,12 @@ missions.get('/player/:address', async (c) => {
   try {
     const playerAddress = c.req.param('address');
     
-    // Get PlayerDO
-    const playerId = c.env.PLAYER_DO.idFromName(playerAddress);
-    const playerStub = c.env.PLAYER_DO.get(playerId);
-    const profile = await playerStub.getProfile(playerAddress);
-
-    // Get WorldDO to fetch full mission details
-    const worldId = c.env.WORLD_DO.idFromName('world');
-    const worldStub = c.env.WORLD_DO.get(worldId);
-
-    const missions = [];
-    for (const missionId of profile.activeMissions) {
-      const mission = await worldStub.getMission(missionId);
-      if (mission) {
-        missions.push(mission);
-      }
-    }
+    // Get GameDO
+    const gameId = c.env.GAME_DO.idFromName('game');
+    const gameStub = c.env.GAME_DO.get(gameId);
+    
+    // Get player missions directly from GameDO
+    const missions = await gameStub.getPlayerMissions(playerAddress);
 
     return c.json({ missions });
   } catch (error) {

@@ -217,7 +217,7 @@ export class UIManager {
         ActiveMissionsPanel.updateActiveMissionsPanel(
           state.playerMissions,
           state.ownedDrifters,
-          state.worldState?.resources || [],
+          state.resourceNodes || [],
           state.isLoadingPlayerMissions
         );
       }
@@ -245,7 +245,7 @@ export class UIManager {
     }
 
     // Find the selected resource node data
-    const selectedResource = state.worldState?.resources?.find(r => r.id === state.selectedResourceNode);
+    const selectedResource = state.resourceNodes?.find(r => r.id === state.selectedResourceNode);
     if (!selectedResource) {
       content.innerHTML = '<p>Resource node data not available.</p>';
       return;
@@ -254,9 +254,9 @@ export class UIManager {
     content.innerHTML = `
       <div style="margin-bottom: 16px;">
         <h4 style="color: #00ff00; margin: 0 0 8px 0;">${selectedResource.type.toUpperCase()} NODE</h4>
-        <p style="margin: 4px 0;">Quantity: <span style="color: #ffff00;">${selectedResource.quantity}</span></p>
-        <p style="margin: 4px 0;">Location: (${selectedResource.x}, ${selectedResource.y})</p>
-        ${selectedResource.rarity ? `<p style="margin: 4px 0; color: #ffd700;">★ ${selectedResource.rarity.toUpperCase()} ★</p>` : ''}
+        <p style="margin: 4px 0;">Current Yield: <span style="color: #ffff00;">${selectedResource.currentYield}</span></p>
+        <p style="margin: 4px 0;">Location: (${selectedResource.coordinates.x}, ${selectedResource.coordinates.y})</p>
+        <p style="margin: 4px 0; color: #ffd700;">★ ${selectedResource.rarity.toUpperCase()} ★</p>
       </div>
 
       <div style="margin-bottom: 16px;">

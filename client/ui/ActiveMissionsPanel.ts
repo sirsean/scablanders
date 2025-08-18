@@ -77,8 +77,8 @@ export class ActiveMissionsPanel {
     const missionDrifters = ownedDrifters.filter(d => mission.drifterIds.includes(d.tokenId));
     
     const now = new Date();
-    const progress = this.calculateMissionProgress(mission.startTime, mission.endTime, now);
-    const timeRemaining = this.formatTimeRemaining(mission.endTime, now);
+    const progress = this.calculateMissionProgress(mission.startTime, mission.completionTime, now);
+    const timeRemaining = this.formatTimeRemaining(mission.completionTime, now);
     
     return `
       <div style="
@@ -103,7 +103,7 @@ export class ActiveMissionsPanel {
         <div style="margin-bottom: 8px;">
           <span style="color: #ccc;">Target: </span>
           <span style="color: #00ff00;">
-            ${targetResource ? `${targetResource.type.toUpperCase()} (${targetResource.x}, ${targetResource.y})` : 'Unknown location'}
+            ${targetResource ? `${targetResource.type.toUpperCase()} (${targetResource.coordinates.x}, ${targetResource.coordinates.y})` : 'Unknown location'}
           </span>
         </div>
         
@@ -151,17 +151,17 @@ export class ActiveMissionsPanel {
     `;
   }
 
-  private static calculateMissionProgress(startTime: Date | string, endTime: Date | string, currentTime: Date): number {
+  private static calculateMissionProgress(startTime: Date | string, completionTime: Date | string, currentTime: Date): number {
     const startDate = startTime instanceof Date ? startTime : new Date(startTime);
-    const endDate = endTime instanceof Date ? endTime : new Date(endTime);
+    const endDate = completionTime instanceof Date ? completionTime : new Date(completionTime);
     
     const totalDuration = endDate.getTime() - startDate.getTime();
     const elapsed = currentTime.getTime() - startDate.getTime();
     return Math.max(0, Math.min(100, (elapsed / totalDuration) * 100));
   }
 
-  private static formatTimeRemaining(endTime: Date | string, currentTime: Date): string {
-    const endDate = endTime instanceof Date ? endTime : new Date(endTime);
+  private static formatTimeRemaining(completionTime: Date | string, currentTime: Date): string {
+    const endDate = completionTime instanceof Date ? completionTime : new Date(completionTime);
     const remainingMs = endDate.getTime() - currentTime.getTime();
     
     if (remainingMs <= 0) return 'Complete!';

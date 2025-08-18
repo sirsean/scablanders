@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { WorldDO } from './world-do';
-import { PlayerDO } from './player-do';
+import { GameDO } from './game-do';
 
 // Import Hono route modules
 import auth from './routes/auth';
@@ -10,6 +9,7 @@ import world from './routes/world';
 import missions from './routes/missions';
 import mercenaries from './routes/mercenaries';
 import { getPlayerOwnedDrifters } from './nft';
+import { handleWebSocket } from './websocket';
 
 /**
  * Scablanders Game Worker
@@ -32,16 +32,16 @@ app.use('/*', cors({
 // Health check endpoint
 app.get('/api/health', async (c) => {
   try {
-    // Test WorldDO connection
-    const worldId = c.env.WORLD_DO.idFromName('world');
-    const worldStub = c.env.WORLD_DO.get(worldId);
-    const worldState = await worldStub.getWorldState();
+    // Test GameDO connection
+    const gameId = c.env.GAME_DO.idFromName('game');
+    const gameStub = c.env.GAME_DO.get(gameId);
+    const stats = await gameStub.getStats();
     
     return c.json({ 
       status: 'healthy', 
       timestamp: new Date().toISOString(),
-      worldConnected: true,
-      activeMissions: worldState.activeMissions.length
+      gameConnected: true,
+      ...stats
     });
   } catch (error) {
     console.error('Health check error:', error);
@@ -83,6 +83,64 @@ app.get('/api/test-nft/:address', async (c) => {
   }
 });
 
+// Debug endpoint for mission troubleshooting (development only)
+app.get('/api/debug/missions/:address?', async (c) => {
+  try {
+    const gameId = c.env.GAME_DO.idFromName('game');
+    const gameStub = c.env.GAME_DO.get(gameId);
+    const address = c.req.param('address');
+    
+    const stats = await gameStub.getStats();
+    const allMissions = await gameStub.getActiveMissions();
+    
+    let playerInfo = null;
+    if (address) {
+      const profile = await gameStub.getProfile(address);
+      const playerMissions = await gameStub.getPlayerMissions(address);
+      playerInfo = {
+        address,
+        activeMissionIds: profile.activeMissions,
+        retrievedMissions: playerMissions.length,
+        missions: playerMissions
+      };
+    }
+    
+    return c.json({
+      timestamp: new Date().toISOString(),
+      globalStats: stats,
+      allActiveMissions: allMissions.length,
+      missionDetails: allMissions.map(m => ({
+        id: m.id,
+        playerAddress: m.playerAddress,
+        status: m.status,
+        type: m.type
+      })),
+      playerInfo
+    });
+  } catch (error) {
+    console.error('Debug missions error:', error);
+    return c.json({ error: 'Debug failed', details: error.message }, 500);
+  }
+});
+
+// Cleanup endpoint for orphaned missions (development only)
+app.post('/api/debug/cleanup-missions', async (c) => {
+  try {
+    const gameId = c.env.GAME_DO.idFromName('game');
+    const gameStub = c.env.GAME_DO.get(gameId);
+    
+    const result = await gameStub.cleanupOrphanedMissions();
+    
+    return c.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    console.error('Cleanup missions error:', error);
+    return c.json({ error: 'Cleanup failed', details: error.message }, 500);
+  }
+});
+
 // Mount route handlers
 app.route('/api/auth', auth);
 app.route('/api/profile', profile);
@@ -106,6 +164,21 @@ app.onError((err, c) => {
 
 
 // Export Durable Object classes
-export { WorldDO, PlayerDO };
+export { GameDO };
 
-export default app;
+// Main worker export that handles both HTTP and WebSocket requests
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    // Check if this is a WebSocket upgrade request
+    const upgradeHeader = request.headers.get('Upgrade');
+    if (upgradeHeader && upgradeHeader.toLowerCase() === 'websocket') {
+      // Handle WebSocket upgrade
+      if (new URL(request.url).pathname === '/ws') {
+        return handleWebSocket(request, env);
+      }
+    }
+    
+    // Handle regular HTTP requests with Hono
+    return app.fetch(request, env, ctx);
+  }
+};

@@ -1,5 +1,7 @@
-import type { PlayerProfile, WorldState, Mission, DrifterProfile } from '@shared/models';
+import type { PlayerProfile, Mission, DrifterProfile, ResourceNode } from '@shared/models';
 import { auth } from './auth';
+import { webSocketManager } from './websocketManager';
+import type { PlayerStateUpdate, WorldStateUpdate, MissionUpdate, ConnectionStatusUpdate } from '@shared/models';
 
 export interface GameState {
   // Authentication
@@ -12,9 +14,22 @@ export interface GameState {
   playerMissions: Mission[]; // Player's specific missions
   
   // World data
-  worldState: WorldState | null;
+  resourceNodes: ResourceNode[];
   activeMissions: Mission[]; // All active missions (for map display)
+  worldMetrics: {
+    totalActiveMissions: number;
+    totalCompletedMissions: number;
+    economicActivity: number;
+    lastUpdate: Date;
+  } | null;
   availableMercenaries: DrifterProfile[];
+  
+  // Connection state
+  wsConnected: boolean;
+  wsAuthenticated: boolean;
+  wsReconnectAttempts: number;
+  connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
+  realTimeMode: boolean; // Whether updates come from WebSocket or polling
   
   // UI state
   selectedResourceNode: string | null;
@@ -47,9 +62,15 @@ class GameStateManager extends EventTarget {
     profile: null,
     ownedDrifters: [],
     playerMissions: [],
-    worldState: null,
+    resourceNodes: [],
     activeMissions: [],
+    worldMetrics: null,
     availableMercenaries: [],
+    wsConnected: false,
+    wsAuthenticated: false,
+    wsReconnectAttempts: 0,
+    connectionStatus: 'disconnected',
+    realTimeMode: false,
     selectedResourceNode: null,
     showMissionPanel: false,
     showMercenaryPanel: false,
@@ -65,6 +86,7 @@ class GameStateManager extends EventTarget {
   constructor() {
     super();
     this.setupAuthListener();
+    this.setupWebSocketListeners();
     this.startPeriodicUpdates();
   }
 
@@ -95,6 +117,9 @@ class GameStateManager extends EventTarget {
         this.loadWorldState();
         this.loadMercenaries();
         this.loadPlayerMissions();
+        
+        // Connect WebSocket for real-time updates
+        this.connectWebSocket();
       } else {
         // Clear data when not authenticated
         this.setState({
@@ -103,7 +128,166 @@ class GameStateManager extends EventTarget {
           activeMissions: [],
           playerMissions: []
         });
+        
+        // Disconnect WebSocket
+        this.disconnectWebSocket();
       }
+    });
+  }
+
+  private setupWebSocketListeners() {
+    console.log('[GameState] Setting up WebSocket listeners');
+    
+    // Listen for connection status changes
+    webSocketManager.addEventListener('connectionStatus', (event) => {
+      const { status, authenticated } = event.detail;
+      console.log('[GameState] WebSocket connection status changed:', { status, authenticated });
+      
+      this.setState({
+        connectionStatus: status,
+        wsConnected: status === 'connected',
+        wsAuthenticated: authenticated || false
+      });
+      
+      if (status === 'connected') {
+        this.setState({ 
+          realTimeMode: true,
+          wsReconnectAttempts: 0 
+        });
+        this.addNotification({
+          type: 'success',
+          title: 'Real-time Connected',
+          message: authenticated ? 'WebSocket authenticated' : 'WebSocket connected',
+          duration: 3000
+        });
+      } else if (status === 'reconnecting') {
+        this.setState({ 
+          wsReconnectAttempts: this.state.wsReconnectAttempts + 1 
+        });
+      } else if (status === 'disconnected') {
+        this.setState({ 
+          realTimeMode: false 
+        });
+        this.addNotification({
+          type: 'info',
+          title: 'Connection Lost',
+          message: 'Switched to periodic updates',
+          duration: 3000
+        });
+      }
+    });
+
+    // Listen for player state updates
+    webSocketManager.addEventListener('player_state', (event) => {
+      const update = event.detail as PlayerStateUpdate;
+      console.log('[GameState] Received player state update:', update);
+      
+      if (update.data.profile) {
+        console.log('[GameState] Updating profile from WebSocket:', update.data.profile);
+        this.setState({ profile: update.data.profile });
+      }
+      
+      if (update.data.notifications) {
+        console.log('[GameState] Received notifications from WebSocket:', update.data.notifications);
+        // Convert to UI notifications format
+        const uiNotifications = update.data.notifications.map(n => ({
+          id: n.id,
+          type: n.type as any,
+          title: n.type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
+          message: n.message,
+          timestamp: new Date(n.timestamp)
+        }));
+        
+        // Add new notifications to the existing list
+        const existingIds = new Set(this.state.notifications.map(n => n.id));
+        const newNotifications = uiNotifications.filter(n => !existingIds.has(n.id));
+        
+        newNotifications.forEach(notification => {
+          this.addNotification({
+            type: notification.type,
+            title: notification.title,
+            message: notification.message
+          });
+        });
+      }
+    });
+
+    // Listen for world state updates
+    webSocketManager.addEventListener('world_state', (event) => {
+      const update = event.detail as WorldStateUpdate;
+      console.log('[GameState] Received world state update:', update);
+      
+      if (update.data.resourceNodes) {
+        console.log('[GameState] Updating resource nodes from WebSocket:', update.data.resourceNodes);
+        this.setState({ resourceNodes: update.data.resourceNodes });
+      }
+      
+      if (update.data.missions) {
+        console.log('[GameState] Updating missions from WebSocket:', update.data.missions);
+        this.setState({ activeMissions: update.data.missions });
+      }
+      
+      if (update.data.worldMetrics) {
+        console.log('[GameState] Updating world metrics from WebSocket:', update.data.worldMetrics);
+        this.setState({ worldMetrics: update.data.worldMetrics });
+      }
+    });
+
+    // Listen for mission updates
+    webSocketManager.addEventListener('missionUpdate', (event) => {
+      const update = event.detail as MissionUpdate;
+      
+      // Update specific mission in player missions
+      if (update.mission && this.state.playerMissions) {
+        const updatedPlayerMissions = this.state.playerMissions.map(mission =>
+          mission.id === update.mission!.id ? update.mission! : mission
+        );
+        this.setState({ playerMissions: updatedPlayerMissions });
+      }
+      
+      // Update specific mission in active missions
+      if (update.mission && this.state.activeMissions) {
+        const updatedActiveMissions = this.state.activeMissions.map(mission =>
+          mission.id === update.mission!.id ? update.mission! : mission
+        );
+        this.setState({ activeMissions: updatedActiveMissions });
+      }
+      
+      if (update.notification) {
+        this.addNotification({
+          type: update.notification.type as any,
+          title: update.notification.title,
+          message: update.notification.message
+        });
+      }
+    });
+  }
+
+  // WebSocket connection management
+  async connectWebSocket() {
+    if (!this.state.isAuthenticated) {
+      console.warn('Cannot connect WebSocket: not authenticated');
+      return;
+    }
+
+    this.setState({ connectionStatus: 'connecting' });
+    
+    try {
+      await webSocketManager.connect();
+    } catch (error) {
+      console.error('WebSocket connection failed:', error);
+      this.setState({ connectionStatus: 'disconnected' });
+    }
+  }
+
+  disconnectWebSocket() {
+    webSocketManager.disconnect();
+    this.setState({
+      wsConnected: false,
+      wsAuthenticated: false,
+      connectionStatus: 'disconnected',
+      realTimeMode: false,
+      wsReconnectAttempts: 0
     });
   }
 
@@ -161,15 +345,12 @@ class GameStateManager extends EventTarget {
 
     try {
       const response = await this.apiCall('/world/state');
-      const worldState = await response.json();
-      
-      // Also load active missions
-      const missionsResponse = await this.apiCall('/world/missions');
-      const missionsData = await missionsResponse.json();
+      const data = await response.json();
       
       this.setState({ 
-        worldState,
-        activeMissions: missionsData.missions || [],
+        resourceNodes: data.resourceNodes || [],
+        activeMissions: data.activeMissions || [],
+        worldMetrics: data.worldMetrics || null,
         isLoadingWorld: false
       });
     } catch (error) {

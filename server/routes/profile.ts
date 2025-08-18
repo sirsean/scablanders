@@ -35,15 +35,15 @@ profile.get('/', async (c) => {
       // Continue with empty array on error
     }
     
-    // Get real player profile from PlayerDO
-    const playerId = c.env.PLAYER_DO.idFromName(playerAddress);
-    const playerStub = c.env.PLAYER_DO.get(playerId);
+    // Get real player profile from GameDO
+    const gameId = c.env.GAME_DO.idFromName('game');
+    const gameStub = c.env.GAME_DO.get(gameId);
     
     // Update owned Drifters from NFT lookup
-    await playerStub.updateOwnedDrifters(ownedDrifters);
+    await gameStub.updateOwnedDrifters(playerAddress, ownedDrifters);
     
     // Get updated profile
-    const authenticatedProfile = await playerStub.getProfile(playerAddress);
+    const authenticatedProfile = await gameStub.getProfile(playerAddress);
     
     return c.json(authenticatedProfile);
     

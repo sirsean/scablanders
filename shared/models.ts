@@ -18,12 +18,6 @@ export enum MissionStatus {
   FAILED = 'failed',
 }
 
-export enum MissionType {
-  MINING = 'mining',
-  SALVAGE = 'salvage',
-  HUNTING = 'hunting',
-  SCOUTING = 'scouting',
-}
 
 export type UpgradeType = 
   | 'speed-boost-1' | 'speed-boost-2' | 'speed-boost-3'
@@ -70,27 +64,35 @@ export interface DrifterProfile {
 
 export interface Mission {
   id: string;
+  type: MissionType;
   playerAddress: string;
   drifterIds: number[];
   targetNodeId: string;
   startTime: Date;
-  endTime: Date;
+  completionTime: Date;
   status: 'active' | 'completed' | 'intercepted' | 'failed';
-  type: 'scavenge' | 'intercept' | 'scouting';
-  estimatedLoot?: number;
-  targetMissionId?: string; // For intercept missions
+  rewards: {
+    credits: number;
+    resources: { [resourceType: string]: number };
+  };
 }
+
+export type MissionType = 'scavenge' | 'intercept' | 'combat' | 'scouting';
 
 export interface ResourceNode {
   id: string;
-  x: number;
-  y: number;
   type: ResourceType;
-  quantity: number;
-  maxQuantity: number;
-  respawnTime?: number; // Seconds until respawn
-  isDiscovered?: boolean;
+  coordinates: { x: number; y: number };
+  baseYield: number;
+  currentYield: number;
+  depletion: number;
+  rarity: Rarity;
+  discoveredBy: string[];
+  lastHarvested: Date;
+  isActive: boolean;
 }
+
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 
 export interface BattleResult {
   winner: 'defender' | 'attacker';
@@ -225,6 +227,61 @@ export interface UpgradePurchaseResponse {
   newBalance?: number;
   error?: string;
 }
+
+// WebSocket message types
+export interface WebSocketMessage {
+  type: string;
+  timestamp: Date;
+  data?: any;
+}
+
+export interface PlayerStateUpdate extends WebSocketMessage {
+  type: 'player_state';
+  data: {
+    profile: PlayerProfile;
+    balance: number;
+    activeMissions: string[];
+    discoveredNodes: string[];
+    notifications: NotificationMessage[];
+  };
+}
+
+export interface WorldStateUpdate extends WebSocketMessage {
+  type: 'world_state';
+  data: {
+    resourceNodes: ResourceNode[];
+    missions: Mission[];
+    worldMetrics: {
+      totalActiveMissions: number;
+      totalCompletedMissions: number;
+      economicActivity: number;
+      lastUpdate: Date;
+    };
+  };
+}
+
+export interface MissionUpdate extends WebSocketMessage {
+  type: 'mission_update';
+  data: {
+    mission: Mission;
+    isComplete?: boolean;
+    reward?: number;
+  };
+}
+
+export interface ConnectionStatusUpdate extends WebSocketMessage {
+  type: 'connection_status';
+  data: {
+    status: 'connected' | 'disconnected' | 'reconnecting';
+    authenticated: boolean;
+  };
+}
+
+export type GameWebSocketMessage = 
+  | PlayerStateUpdate 
+  | WorldStateUpdate 
+  | MissionUpdate 
+  | ConnectionStatusUpdate;
 
 // Utility types
 export type Coordinates = {

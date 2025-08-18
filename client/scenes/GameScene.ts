@@ -57,16 +57,24 @@ export class GameScene extends Phaser.Scene {
     // Create town marker
     this.createTownMarker();
     
-    // Create initial placeholder nodes if no world data
-    this.createPlaceholderNodes();
+    // Resource nodes will be loaded from server via gameState
     
     console.log('Game Scene initialized');
   }
 
   private updateWorldDisplay(state: GameState) {
-    if (state.worldState) {
-      this.worldData = state.worldState;
-      this.updateResourceNodes();
+    if (state.resourceNodes && state.resourceNodes.length > 0) {
+      // Clear existing placeholder nodes
+      this.resourceNodes.forEach(node => node.destroy());
+      this.nodeLabels.forEach(label => label.destroy());
+      this.resourceNodes.clear();
+      this.nodeLabels.clear();
+      
+      // Create resource nodes from server data
+      state.resourceNodes.forEach((resource: ResourceNode) => {
+        this.createResourceNodeFromServerData(resource);
+      });
+      
       this.updateMissionIndicators(state.activeMissions);
     }
     
@@ -76,45 +84,16 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private createPlaceholderNodes() {
-    // Create placeholder resource nodes until real data loads
-    const placeholderNodes = [
-      { id: 'ore_1', x: 200, y: 300, type: 'ore', quantity: 100 },
-      { id: 'ore_2', x: 800, y: 350, type: 'ore', quantity: 150 },
-      { id: 'scrap_1', x: 400, y: 250, type: 'scrap', quantity: 80 },
-      { id: 'scrap_2', x: 700, y: 500, type: 'scrap', quantity: 120 },
-      { id: 'organic_1', x: 300, y: 450, type: 'organic', quantity: 60 },
-      { id: 'organic_2', x: 900, y: 200, type: 'organic', quantity: 90 },
-      { id: 'rare_1', x: 500, y: 400, type: 'ore', quantity: 200, rarity: 'rare' },
-    ];
-    
-    placeholderNodes.forEach(node => {
-      this.createResourceNode(node);
-    });
-  }
 
-  private updateResourceNodes() {
-    if (!this.worldData?.resources) return;
-    
-    // Clear existing placeholder nodes
-    this.resourceNodes.forEach(node => node.destroy());
-    this.nodeLabels.forEach(label => label.destroy());
-    this.resourceNodes.clear();
-    this.nodeLabels.clear();
-    
-    // Create real resource nodes from world data
-    this.worldData.resources.forEach((resource: ResourceNode) => {
-      this.createResourceNode(resource);
-    });
-  }
 
-  private createResourceNode(resource: any) {
-    const { id, x, y, type, quantity, rarity } = resource;
+  private createResourceNodeFromServerData(resource: ResourceNode) {
+    const { id, type, coordinates, currentYield, rarity } = resource;
+    const { x, y } = coordinates;
     
     // Determine node appearance based on type and rarity
     let textureKey = `${type}-node`;
-    let scale = rarity === 'rare' ? 1.3 : 1.0;
-    let glowColor = rarity === 'rare' ? 0xFFD700 : this.getResourceColor(type);
+    let scale = rarity === 'rare' || rarity === 'epic' || rarity === 'legendary' ? 1.3 : 1.0;
+    let glowColor = this.getRarityColor(rarity);
     
     // Create the main node sprite
     const node = this.add.image(x, y, textureKey);
@@ -122,7 +101,7 @@ export class GameScene extends Phaser.Scene {
     node.setInteractive({ cursor: 'pointer' });
     
     // Add glow effect for rare nodes
-    if (rarity === 'rare') {
+    if (rarity !== 'common') {
       const glow = this.add.circle(x, y, 35, glowColor, 0.3);
       glow.setBlendMode(Phaser.BlendModes.ADD);
     }
@@ -145,7 +124,8 @@ export class GameScene extends Phaser.Scene {
     
     // Add node label
     const labelY = y - (35 * scale);
-    const label = this.add.text(x, labelY, `${type.toUpperCase()}\n${quantity}`, {
+    const rarityText = rarity !== 'common' ? ` (${rarity.toUpperCase()})` : '';
+    const label = this.add.text(x, labelY, `${type.toUpperCase()}${rarityText}\n${currentYield}`, {
       fontSize: '11px',
       color: '#FFFFFF',
       fontFamily: 'Courier New',
@@ -288,27 +268,29 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createMissionRoute(mission: Mission) {
-    const targetNode = this.worldData?.resources?.find((r: ResourceNode) => r.id === mission.targetNodeId);
+    const currentState = gameState.getState();
+    const targetNode = currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId);
     if (!targetNode) return;
     
+    const { x: nodeX, y: nodeY } = targetNode.coordinates;
     const routeGraphics = this.add.graphics();
     
     // Draw route line from town to resource node
     routeGraphics.lineStyle(2, 0x888888, 0.6);
-    routeGraphics.lineBetween(TOWN_X, TOWN_Y, targetNode.x, targetNode.y);
+    routeGraphics.lineBetween(TOWN_X, TOWN_Y, nodeX, nodeY);
     
     // Add dashed effect
     routeGraphics.lineStyle(2, 0xAAAAAAA, 0.8);
-    const distance = Phaser.Math.Distance.Between(TOWN_X, TOWN_Y, targetNode.x, targetNode.y);
+    const distance = Phaser.Math.Distance.Between(TOWN_X, TOWN_Y, nodeX, nodeY);
     const steps = Math.floor(distance / 20);
     
     for (let i = 0; i < steps; i += 2) {
       const t1 = i / steps;
       const t2 = Math.min((i + 1) / steps, 1);
-      const x1 = TOWN_X + (targetNode.x - TOWN_X) * t1;
-      const y1 = TOWN_Y + (targetNode.y - TOWN_Y) * t1;
-      const x2 = TOWN_X + (targetNode.x - TOWN_X) * t2;
-      const y2 = TOWN_Y + (targetNode.y - TOWN_Y) * t2;
+      const x1 = TOWN_X + (nodeX - TOWN_X) * t1;
+      const y1 = TOWN_Y + (nodeY - TOWN_Y) * t1;
+      const x2 = TOWN_X + (nodeX - TOWN_X) * t2;
+      const y2 = TOWN_Y + (nodeY - TOWN_Y) * t2;
       
       routeGraphics.lineBetween(x1, y1, x2, y2);
     }
@@ -317,7 +299,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createMissionDrifter(mission: Mission) {
-    const targetNode = this.worldData?.resources?.find((r: ResourceNode) => r.id === mission.targetNodeId);
+    const currentState = gameState.getState();
+    const targetNode = currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId);
     if (!targetNode) return;
     
     const drifterContainer = this.add.container(0, 0);
@@ -356,24 +339,25 @@ export class GameScene extends Phaser.Scene {
   private updateDrifterPosition(drifterContainer: Phaser.GameObjects.Container, mission: Mission, targetNode: ResourceNode) {
     const now = new Date();
     const startTime = mission.startTime instanceof Date ? mission.startTime : new Date(mission.startTime);
-    const endTime = mission.endTime instanceof Date ? mission.endTime : new Date(mission.endTime);
+    const endTime = mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime);
     
     const totalDuration = endTime.getTime() - startTime.getTime();
     const elapsed = now.getTime() - startTime.getTime();
     const progress = Math.max(0, Math.min(1, elapsed / totalDuration));
     
+    const { x: nodeX, y: nodeY } = targetNode.coordinates;
     let currentX: number, currentY: number;
     
     if (progress <= 0.5) {
       // First half: traveling to resource node
       const outboundProgress = progress * 2; // 0 to 1
-      currentX = TOWN_X + (targetNode.x - TOWN_X) * outboundProgress;
-      currentY = TOWN_Y + (targetNode.y - TOWN_Y) * outboundProgress;
+      currentX = TOWN_X + (nodeX - TOWN_X) * outboundProgress;
+      currentY = TOWN_Y + (nodeY - TOWN_Y) * outboundProgress;
     } else {
       // Second half: traveling back to town
       const returnProgress = (progress - 0.5) * 2; // 0 to 1
-      currentX = targetNode.x + (TOWN_X - targetNode.x) * returnProgress;
-      currentY = targetNode.y + (TOWN_Y - targetNode.y) * returnProgress;
+      currentX = nodeX + (TOWN_X - nodeX) * returnProgress;
+      currentY = nodeY + (TOWN_Y - nodeY) * returnProgress;
     }
     
     // Add subtle floating motion
@@ -386,6 +370,17 @@ export class GameScene extends Phaser.Scene {
       case 'ore': return 0xFF4500;
       case 'scrap': return 0x708090;
       case 'organic': return 0x8FBC8F;
+      default: return 0xFFFFFF;
+    }
+  }
+
+  private getRarityColor(rarity: string): number {
+    switch (rarity) {
+      case 'common': return 0xFFFFFF;
+      case 'uncommon': return 0x00FF00;
+      case 'rare': return 0x0080FF;
+      case 'epic': return 0x8000FF;
+      case 'legendary': return 0xFFD700;
       default: return 0xFFFFFF;
     }
   }
@@ -408,7 +403,8 @@ export class GameScene extends Phaser.Scene {
       const activeMissions = gameState.getState().playerMissions.filter(m => m.status === 'active');
       activeMissions.forEach(mission => {
         const drifterContainer = this.missionDrifters.get(mission.id);
-        const targetNode = this.worldData?.resources?.find((r: ResourceNode) => r.id === mission.targetNodeId);
+        const currentState = gameState.getState();
+        const targetNode = currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId);
         if (drifterContainer && targetNode) {
           this.updateDrifterPosition(drifterContainer, mission, targetNode);
         }
