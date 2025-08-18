@@ -277,11 +277,19 @@ export interface ConnectionStatusUpdate extends WebSocketMessage {
   };
 }
 
+export interface NotificationAck extends WebSocketMessage {
+  type: 'notification_ack';
+  data: {
+    notificationIds: string[];
+  };
+}
+
 export type GameWebSocketMessage = 
   | PlayerStateUpdate 
   | WorldStateUpdate 
   | MissionUpdate 
-  | ConnectionStatusUpdate;
+  | ConnectionStatusUpdate
+  | NotificationAck;
 
 // Utility types
 export type Coordinates = {

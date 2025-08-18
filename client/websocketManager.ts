@@ -162,7 +162,14 @@ export class WebSocketManager extends EventTarget {
   }
 
   /**
-   * Send a message to the server
+   * Send a message to the server (public method)
+   */
+  sendMessage(message: any): void {
+    this.send(message);
+  }
+
+  /**
+   * Send a message to the server (private method)
    */
   private send(message: any): void {
     if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
@@ -241,6 +248,14 @@ export class WebSocketManager extends EventTarget {
           // Dispatch custom event for GameStateManager
           this.dispatchEvent(new CustomEvent('missionUpdate', {
             detail: missionMsg.data
+          }));
+          break;
+          
+        case 'notification':
+          console.log('[WS Client] Received notification:', message.data);
+          // Dispatch custom event for GameStateManager
+          this.dispatchEvent(new CustomEvent('notification', {
+            detail: message.data
           }));
           break;
         

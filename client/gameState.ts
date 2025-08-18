@@ -200,29 +200,9 @@ class GameStateManager extends EventTarget {
         this.setState({ profile: update.profile });
       }
       
-      if (update.notifications) {
-        console.log('[GameState] Received notifications from WebSocket:', update.notifications);
-        // Convert to UI notifications format
-        const uiNotifications = update.notifications.map(n => ({
-          id: n.id,
-          type: n.type as any,
-          title: n.type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
-          message: n.message,
-          timestamp: new Date(n.timestamp)
-        }));
-        
-        // Add new notifications to the existing list
-        const existingIds = new Set(this.state.notifications.map(n => n.id));
-        const newNotifications = uiNotifications.filter(n => !existingIds.has(n.id));
-        
-        newNotifications.forEach(notification => {
-          this.addNotification({
-            type: notification.type,
-            title: notification.title,
-            message: notification.message
-          });
-        });
-      }
+      // NOTE: Persistent notifications are handled separately and should NOT be displayed as toast notifications
+      // The real-time notification system (WebSocket 'notification' events) handles toast notifications
+      // Persistent notifications in update.notifications are for historical/UI purposes only
     });
 
     // Listen for world state updates
@@ -268,12 +248,28 @@ class GameStateManager extends EventTarget {
       }
       
       if (update.notification) {
-        this.addNotification({
+        // Use new notification system with ACK
+        this.handleServerNotification({
+          id: crypto.randomUUID(),
           type: update.notification.type as any,
           title: update.notification.title,
           message: update.notification.message
         });
       }
+    });
+    
+    // Listen for direct notifications from server
+    webSocketManager.addEventListener('notification', (event) => {
+      const notification = event.detail; // This is the notification data from the server
+      console.log('[GameState] Received server notification:', notification);
+      
+      // Use server notification system with ACK
+      this.handleServerNotification({
+        id: notification.id,
+        type: notification.type as any,
+        title: notification.title,
+        message: notification.message
+      });
     });
   }
 
@@ -524,6 +520,41 @@ class GameStateManager extends EventTarget {
   removeNotification(id: string) {
     const notifications = this.state.notifications.filter(n => n.id !== id);
     this.setState({ notifications });
+  }
+
+  // Handle server notifications with ACK protocol
+  private handleServerNotification(notification: Omit<GameNotification, 'timestamp'>) {
+    const fullNotification: GameNotification = {
+      ...notification,
+      timestamp: new Date(),
+      duration: notification.duration || 5000
+    };
+
+    // Add to UI
+    const notifications = [fullNotification, ...this.state.notifications].slice(0, 10);
+    this.setState({ notifications });
+
+    // Send ACK to server
+    this.sendNotificationAck([fullNotification.id]);
+
+    // Auto-remove after duration
+    setTimeout(() => {
+      this.removeNotification(fullNotification.id);
+    }, fullNotification.duration);
+  }
+
+  // Send notification acknowledgment via WebSocket
+  private sendNotificationAck(notificationIds: string[]) {
+    if (this.state.wsConnected && webSocketManager) {
+      webSocketManager.sendMessage({
+        type: 'notification_ack',
+        timestamp: new Date(),
+        data: {
+          notificationIds
+        }
+      });
+      console.log('[GameState] Sent ACK for notifications:', notificationIds);
+    }
   }
 
   // Periodic updates (every 30 seconds) - only when WebSocket is not connected

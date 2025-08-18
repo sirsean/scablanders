@@ -260,11 +260,12 @@ export class ActiveMissionsPanel {
     
     const result = await response.json();
     if (result.success) {
-      gameState.addNotification({
-        type: 'success',
-        title: 'Mission Complete!',
-        message: `Collected rewards from mission #${missionId.slice(-6)}`
-      });
+      // NOTE: Removed client-side notification - server will broadcast via WebSocket
+      // gameState.addNotification({
+      //   type: 'success',
+      //   title: 'Mission Complete!',
+      //   message: `Collected rewards from mission #${missionId.slice(-6)}`
+      // });
       gameState.loadPlayerMissions();
       gameState.loadPlayerProfile();
     } else {

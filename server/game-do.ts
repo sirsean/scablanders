@@ -21,6 +21,15 @@ interface WebSocketSession {
   lastPing: number;
 }
 
+interface PendingNotification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  timestamp: Date;
+  data?: any;
+}
+
 interface ResourceManagementConfig {
   minNodesPerType: Record<ResourceType, number>;
   minTotalNodes: number;
@@ -62,14 +71,18 @@ interface GameState {
 export class GameDO extends DurableObject {
   private gameState: GameState;
   private webSocketSessions: Map<string, WebSocketSession>;
+  private pendingNotifications: Map<string, Set<string>>; // sessionId -> Set<notificationId>
+  private playerReplayQueues: Map<string, PendingNotification[]>; // playerAddress -> notification queue
   private env: Env;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.env = env;
     
-    // Initialize WebSocket sessions
+    // Initialize WebSocket sessions and notification tracking
     this.webSocketSessions = new Map();
+    this.pendingNotifications = new Map();
+    this.playerReplayQueues = new Map();
     
     // Initialize empty game state
     this.gameState = {
@@ -664,20 +677,29 @@ export class GameDO extends DurableObject {
 
     await this.saveGameState();
 
+    // NOTE: We don't add mission completion to persistent notifications anymore
+    // since we use the real-time notification system instead
+
     // Broadcast updates
     await this.broadcastPlayerStateUpdate(mission.playerAddress);
     await this.broadcastWorldStateUpdate();
     
-    // Send dedicated mission completion event
-    await this.broadcastMissionUpdate({
-      mission,
-      type: 'completed',
-      notification: {
-        type: 'mission_complete',
-        title: 'Mission Complete',
-        message: `Mission completed! Earned ${mission.rewards.credits} credits.`
+    // Send mission completion notification to player's sessions
+    const notification: PendingNotification = {
+      id: crypto.randomUUID(),
+      type: 'mission_complete',
+      title: 'Mission Complete',
+      message: `Mission completed! Earned ${mission.rewards.credits} credits.`,
+      timestamp: new Date()
+    };
+    
+    // Send to all sessions for this player
+    for (const [sessionId, session] of this.webSocketSessions) {
+      if (session.playerAddress === mission.playerAddress && session.authenticated && 
+          session.websocket.readyState === WebSocket.READY_STATE_OPEN) {
+        this.sendNotificationToSession(sessionId, notification);
       }
-    });
+    }
 
     return { success: true, rewards: mission.rewards };
   }
@@ -1145,7 +1167,7 @@ export class GameDO extends DurableObject {
     });
     
     server.addEventListener('close', () => {
-      this.webSocketSessions.delete(sessionId);
+      this.cleanupSession(sessionId);
       console.log(`[GameDO] WebSocket session closed: ${sessionId}`);
     });
     
@@ -1207,6 +1229,12 @@ export class GameDO extends DurableObject {
           }
           break;
           
+        case 'notification_ack':
+          if (session.authenticated && message.data?.notificationIds) {
+            this.handleNotificationAck(sessionId, message.data.notificationIds);
+          }
+          break;
+          
         default:
           this.sendToSession(sessionId, {
             type: 'error',
@@ -1236,6 +1264,13 @@ export class GameDO extends DurableObject {
       session.authenticated = true;
       
       console.log(`[GameDO] WebSocket session ${sessionId} authenticated for player ${playerAddress}`);
+      
+      // Clear any stale queued notifications (don't replay old notifications on refresh)
+      if (this.playerReplayQueues.has(playerAddress)) {
+        const queueSize = this.playerReplayQueues.get(playerAddress)!.length;
+        console.log(`[GameDO] Clearing ${queueSize} stale notifications from replay queue for player ${playerAddress}`);
+        this.playerReplayQueues.delete(playerAddress);
+      }
       
       this.sendToSession(sessionId, {
         type: 'connection_status',
@@ -1287,5 +1322,124 @@ export class GameDO extends DurableObject {
     return new Response(JSON.stringify(stats), {
       headers: { 'Content-Type': 'application/json' }
     });
+  }
+
+  // =============================================================================
+  // Notification Tracking System
+  // =============================================================================
+
+  /**
+   * Handle notification acknowledgment from client
+   */
+  private handleNotificationAck(sessionId: string, notificationIds: string[]) {
+    console.log(`[GameDO] Received ACK from session ${sessionId} for notifications:`, notificationIds);
+    
+    const pendingSet = this.pendingNotifications.get(sessionId);
+    if (!pendingSet) {
+      console.log(`[GameDO] No pending notifications found for session ${sessionId}`);
+      return;
+    }
+
+    // Remove acknowledged notifications from pending set
+    for (const notifId of notificationIds) {
+      if (pendingSet.has(notifId)) {
+        pendingSet.delete(notifId);
+        console.log(`[GameDO] Removed notification ${notifId} from pending for session ${sessionId}`);
+      }
+    }
+
+    // Clean up empty pending set
+    if (pendingSet.size === 0) {
+      this.pendingNotifications.delete(sessionId);
+    }
+  }
+
+  /**
+   * Send notification with delivery tracking
+   */
+  private sendNotificationToSession(sessionId: string, notification: PendingNotification) {
+    const session = this.webSocketSessions.get(sessionId);
+    if (!session || session.websocket.readyState !== WebSocket.READY_STATE_OPEN) {
+      console.log(`[GameDO] Session ${sessionId} not available, adding to replay queue`);
+      // Add to replay queue if session not available
+      if (session?.playerAddress) {
+        this.addToReplayQueue(session.playerAddress, notification);
+      }
+      return;
+    }
+
+    // Track as pending
+    if (!this.pendingNotifications.has(sessionId)) {
+      this.pendingNotifications.set(sessionId, new Set());
+    }
+    this.pendingNotifications.get(sessionId)!.add(notification.id);
+
+    // Send the notification
+    const message = {
+      type: 'notification',
+      timestamp: new Date(),
+      data: notification
+    };
+
+    session.websocket.send(JSON.stringify(message));
+    console.log(`[GameDO] Sent notification ${notification.id} to session ${sessionId} (pending ACK)`);
+  }
+
+  /**
+   * Add notification to player's replay queue for later delivery
+   */
+  private addToReplayQueue(playerAddress: string, notification: PendingNotification) {
+    if (!this.playerReplayQueues.has(playerAddress)) {
+      this.playerReplayQueues.set(playerAddress, []);
+    }
+    
+    const queue = this.playerReplayQueues.get(playerAddress)!;
+    queue.push(notification);
+    
+    // Keep queue size manageable
+    if (queue.length > 10) {
+      queue.shift(); // Remove oldest
+    }
+    
+    console.log(`[GameDO] Added notification ${notification.id} to replay queue for player ${playerAddress}`);
+  }
+
+  /**
+   * Send any queued notifications to newly connected session
+   */
+  private async sendQueuedNotifications(sessionId: string, playerAddress: string) {
+    const queue = this.playerReplayQueues.get(playerAddress);
+    if (!queue || queue.length === 0) {
+      return;
+    }
+
+    console.log(`[GameDO] Replaying ${queue.length} queued notifications to session ${sessionId}`);
+    
+    // Send all queued notifications
+    for (const notification of queue) {
+      this.sendNotificationToSession(sessionId, notification);
+    }
+    
+    // Clear the queue since we've sent them
+    this.playerReplayQueues.delete(playerAddress);
+  }
+
+  /**
+   * Clean up session data when WebSocket closes
+   */
+  private cleanupSession(sessionId: string) {
+    const session = this.webSocketSessions.get(sessionId);
+    if (!session) return;
+
+    // Log pending notifications but DON'T move them back to replay queue
+    // Browser refreshes and normal disconnects should not replay notifications
+    const pendingSet = this.pendingNotifications.get(sessionId);
+    if (pendingSet && pendingSet.size > 0) {
+      console.log(`[GameDO] Session ${sessionId} closed with ${pendingSet.size} pending notifications. These will be discarded (normal for browser refresh).`);
+    }
+
+    // Clean up tracking maps
+    this.pendingNotifications.delete(sessionId);
+    this.webSocketSessions.delete(sessionId);
   }
 }
