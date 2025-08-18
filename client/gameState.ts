@@ -154,6 +154,19 @@ class GameStateManager extends EventTarget {
           realTimeMode: true,
           wsReconnectAttempts: 0 
         });
+        
+        // Authenticate the WebSocket if we have a player address and aren't already authenticated
+        if (!authenticated && this.state.playerAddress) {
+          console.log('[GameState] Authenticating WebSocket with player address:', this.state.playerAddress);
+          webSocketManager.authenticate(this.state.playerAddress);
+        }
+        
+        // Subscribe to events once authenticated
+        if (authenticated) {
+          console.log('[GameState] WebSocket authenticated, subscribing to events');
+          webSocketManager.subscribe(['player_state', 'world_state', 'mission_update']);
+        }
+        
         this.addNotification({
           type: 'success',
           title: 'Real-time Connected',

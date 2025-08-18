@@ -13,8 +13,8 @@ import type {
   Rarity
 } from '@shared/models';
 import { calculateMissionDuration, calculateMissionRewards } from '../shared/mission-utils';
-
 interface WebSocketSession {
+  websocket: WebSocket;
   sessionId: string;
   playerAddress?: string;
   authenticated: boolean;
@@ -61,12 +61,15 @@ interface GameState {
  */
 export class GameDO extends DurableObject {
   private gameState: GameState;
-  private webSocketSessions: Map<string, WebSocketSession> = new Map();
+  private webSocketSessions: Map<string, WebSocketSession>;
   private env: Env;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.env = env;
+    
+    // Initialize WebSocket sessions
+    this.webSocketSessions = new Map();
     
     // Initialize empty game state
     this.gameState = {
@@ -268,51 +271,24 @@ export class GameDO extends DurableObject {
   // =============================================================================
 
   /**
-   * Add WebSocket session (without storing WebSocket object)
+   * Send message to specific session directly via WebSocket
    */
-  async addWebSocketSession(sessionId: string, playerAddress?: string, authenticated: boolean = false): Promise<{ success: boolean; error?: string }> {
-    console.log(`[GameDO] Adding WebSocket session ${sessionId}, authenticated: ${authenticated}, player: ${playerAddress}`);
-    
-    const session: WebSocketSession = {
-      sessionId,
-      playerAddress,
-      authenticated,
-      lastPing: Date.now()
-    };
-    
-    this.webSocketSessions.set(sessionId, session);
-    
-    // Send initial state if authenticated
-    if (authenticated && playerAddress) {
-      await this.sendPlayerStateUpdate(sessionId, playerAddress);
-      await this.sendWorldStateUpdate(sessionId);
+  private sendToSession(sessionId: string, message: GameWebSocketMessage) {
+    console.log(`[GameDO] Sending message to session ${sessionId}:`, message.type);
+    const session = this.webSocketSessions.get(sessionId);
+    if (session && session.websocket.readyState === WebSocket.READY_STATE_OPEN) {
+      session.websocket.send(JSON.stringify(message));
+      console.log(`[GameDO] Message sent successfully to session ${sessionId}`);
+    } else {
+      console.log(`[GameDO] Session ${sessionId} not found or WebSocket not open`);
     }
-    
-    return { success: true };
-  }
-
-  /**
-   * Remove WebSocket session
-   */
-  async removeWebSocketConnection(sessionId: string): Promise<{ success: boolean; error?: string }> {
-    this.webSocketSessions.delete(sessionId);
-    console.log(`[GameDO] Removed WebSocket session ${sessionId}`);
-    return { success: true };
-  }
-
-  /**
-   * Send message to specific session via global sendToSession function
-   */
-  private async sendToSession(sessionId: string, message: GameWebSocketMessage) {
-    // Import and use the global sendToSession function from websocket.ts
-    const { sendToSession } = await import('./websocket');
-    sendToSession(sessionId, message);
   }
 
   /**
    * Send player state update to specific session
    */
   private async sendPlayerStateUpdate(sessionId: string, playerAddress: string) {
+      console.log(`[GameDO] send playerStateUpdate ${sessionId}`);
     const player = this.gameState.players.get(playerAddress);
     const notifications = this.gameState.notifications.get(playerAddress) || [];
     
@@ -337,6 +313,7 @@ export class GameDO extends DurableObject {
    * Send world state update to specific session
    */
   private async sendWorldStateUpdate(sessionId: string) {
+      console.log(`[GameDO] send worldStateUpdate ${sessionId}`);
     const message: WorldStateUpdate = {
       type: 'world_state',
       timestamp: new Date(),
@@ -354,9 +331,32 @@ export class GameDO extends DurableObject {
    * Broadcast player state to all sessions for this player
    */
   private async broadcastPlayerStateUpdate(playerAddress: string) {
+    const player = this.gameState.players.get(playerAddress);
+    const notifications = this.gameState.notifications.get(playerAddress) || [];
+    
+    if (!player) return;
+
+    const message: PlayerStateUpdate = {
+      type: 'player_state',
+      timestamp: new Date(),
+      data: {
+        profile: player,
+        balance: player.balance,
+        activeMissions: player.activeMissions,
+        discoveredNodes: player.discoveredNodes,
+        notifications: notifications.slice(-5) // Latest 5 notifications
+      }
+    };
+
+    console.log(`[GameDO] Broadcasting player state update to player ${playerAddress}, ${this.webSocketSessions.size} sessions`);
+    
+    // Send to all sessions for this player
     for (const [sessionId, session] of this.webSocketSessions) {
-      if (session.authenticated && session.playerAddress === playerAddress) {
-        await this.sendPlayerStateUpdate(sessionId, playerAddress);
+        console.log(sessionId, session.playerAddress, session.authenticated, session.websocket.readyState);
+      if (session.playerAddress === playerAddress && session.authenticated && 
+          session.websocket.readyState === WebSocket.READY_STATE_OPEN) {
+        session.websocket.send(JSON.stringify(message));
+        console.log(`[GameDO] Sent player state update to session ${sessionId}`);
       }
     }
   }
@@ -365,9 +365,23 @@ export class GameDO extends DurableObject {
    * Broadcast world state to all authenticated sessions
    */
   private async broadcastWorldStateUpdate() {
+    const message: WorldStateUpdate = {
+      type: 'world_state',
+      timestamp: new Date(),
+      data: {
+        resourceNodes: Array.from(this.gameState.resourceNodes.values()),
+        missions: Array.from(this.gameState.missions.values()),
+        worldMetrics: this.gameState.worldMetrics
+      }
+    };
+
+    console.log('[GameDO] Broadcasting world state update to all clients');
+    
+    // Send to all authenticated sessions
     for (const [sessionId, session] of this.webSocketSessions) {
-      if (session.authenticated) {
-        await this.sendWorldStateUpdate(sessionId);
+      if (session.authenticated && session.websocket.readyState === WebSocket.READY_STATE_OPEN) {
+        session.websocket.send(JSON.stringify(message));
+        console.log(`[GameDO] Sent world state update to session ${sessionId}`);
       }
     }
   }
@@ -382,9 +396,13 @@ export class GameDO extends DurableObject {
       data: update
     };
 
+    console.log('[GameDO] Broadcasting mission update to all clients');
+    
+    // Send to all authenticated sessions
     for (const [sessionId, session] of this.webSocketSessions) {
-      if (session.authenticated) {
-        this.sendToSession(sessionId, message);
+      if (session.authenticated && session.websocket.readyState === WebSocket.READY_STATE_OPEN) {
+        session.websocket.send(JSON.stringify(message));
+        console.log(`[GameDO] Sent mission update to session ${sessionId}`);
       }
     }
   }
@@ -645,15 +663,6 @@ export class GameDO extends DurableObject {
     this.gameState.worldMetrics.lastUpdate = new Date();
 
     await this.saveGameState();
-
-    // Add notification
-    await this.addNotification(mission.playerAddress, {
-      id: crypto.randomUUID(),
-      type: 'mission_complete',
-      message: `Mission completed! Earned ${mission.rewards.credits} credits.`,
-      timestamp: new Date(),
-      read: false
-    });
 
     // Broadcast updates
     await this.broadcastPlayerStateUpdate(mission.playerAddress);
@@ -1027,6 +1036,9 @@ export class GameDO extends DurableObject {
     await this.ctx.storage.deleteAll();
     await this.initializeResourceNodes();
     
+    // Broadcast the reset state to all clients
+    await this.broadcastWorldStateUpdate();
+    
     return { success: true };
   }
 
@@ -1072,5 +1084,208 @@ export class GameDO extends DurableObject {
       activeSessions: this.webSocketSessions.size,
       worldMetrics: this.gameState.worldMetrics
     };
+  }
+
+  // =============================================================================
+  // Durable Object fetch method
+  // =============================================================================
+
+  /**
+   * Handle incoming requests - WebSocket upgrades and API calls
+   */
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    
+    // Handle WebSocket upgrade requests
+    if (request.headers.get('Upgrade') === 'websocket') {
+      return this.handleWebSocketUpgrade(request);
+    }
+    
+    // Handle API calls based on pathname
+    switch (url.pathname) {
+      case '/profile':
+        return this.handleProfileRequest(request);
+      case '/missions':
+        return this.handleMissionsRequest(request);
+      case '/notifications':
+        return this.handleNotificationsRequest(request);
+      case '/resources':
+        return this.handleResourcesRequest(request);
+      case '/stats':
+        return this.handleStatsRequest(request);
+      default:
+        return new Response('Not found', { status: 404 });
+    }
+  }
+
+  /**
+   * Handle WebSocket upgrade request
+   */
+  private handleWebSocketUpgrade(request: Request): Response {
+    const [client, server] = Object.values(new WebSocketPair());
+    const sessionId = crypto.randomUUID();
+    
+    // Accept the WebSocket connection
+    server.accept();
+    
+    // Create session (initially unauthenticated)
+    const session: WebSocketSession = {
+      websocket: server,
+      sessionId,
+      authenticated: false,
+      lastPing: Date.now()
+    };
+    
+    this.webSocketSessions.set(sessionId, session);
+    console.log(`[GameDO] New WebSocket session created: ${sessionId}`);
+    
+    // Set up event handlers
+    server.addEventListener('message', (event) => {
+      this.handleWebSocketMessage(sessionId, event);
+    });
+    
+    server.addEventListener('close', () => {
+      this.webSocketSessions.delete(sessionId);
+      console.log(`[GameDO] WebSocket session closed: ${sessionId}`);
+    });
+    
+    server.addEventListener('error', (error) => {
+      console.error(`[GameDO] WebSocket error for session ${sessionId}:`, error);
+      this.webSocketSessions.delete(sessionId);
+    });
+    
+    // Send initial connection status
+    this.sendToSession(sessionId, {
+      type: 'connection_status',
+      timestamp: new Date(),
+      data: {
+        status: 'connected',
+        authenticated: false
+      }
+    });
+    
+    return new Response(null, {
+      status: 101,
+      webSocket: client
+    });
+  }
+
+  /**
+   * Handle WebSocket messages from clients
+   */
+  private async handleWebSocketMessage(sessionId: string, event: MessageEvent) {
+    const session = this.webSocketSessions.get(sessionId);
+    if (!session) return;
+    
+    try {
+      const message = JSON.parse(event.data as string);
+      
+      switch (message.type) {
+        case 'authenticate':
+          await this.handleWebSocketAuth(sessionId, message.playerAddress);
+          break;
+          
+        case 'ping':
+          session.lastPing = Date.now();
+          this.sendToSession(sessionId, {
+            type: 'pong',
+            timestamp: new Date()
+          });
+          break;
+          
+        case 'subscribe':
+          if (session.authenticated && session.playerAddress) {
+            // Send initial state
+            await this.sendPlayerStateUpdate(sessionId, session.playerAddress);
+            await this.sendWorldStateUpdate(sessionId);
+            
+            this.sendToSession(sessionId, {
+              type: 'subscription_confirmed',
+              timestamp: new Date(),
+              data: { events: message.events || ['player_state', 'world_state'] }
+            });
+          }
+          break;
+          
+        default:
+          this.sendToSession(sessionId, {
+            type: 'error',
+            timestamp: new Date(),
+            data: { message: `Unknown message type: ${message.type}` }
+          });
+      }
+    } catch (error) {
+      console.error(`[GameDO] Error handling WebSocket message:`, error);
+      this.sendToSession(sessionId, {
+        type: 'error',
+        timestamp: new Date(),
+        data: { message: 'Invalid message format' }
+      });
+    }
+  }
+
+  /**
+   * Handle WebSocket authentication
+   */
+  private async handleWebSocketAuth(sessionId: string, playerAddress: string) {
+    const session = this.webSocketSessions.get(sessionId);
+    if (!session) return;
+    
+    if (playerAddress && typeof playerAddress === 'string') {
+      session.playerAddress = playerAddress;
+      session.authenticated = true;
+      
+      console.log(`[GameDO] WebSocket session ${sessionId} authenticated for player ${playerAddress}`);
+      
+      this.sendToSession(sessionId, {
+        type: 'connection_status',
+        timestamp: new Date(),
+        data: {
+          status: 'connected',
+          authenticated: true
+        }
+      });
+    } else {
+      this.sendToSession(sessionId, {
+        type: 'connection_status',
+        timestamp: new Date(),
+        data: {
+          status: 'connected',
+          authenticated: false,
+          error: 'Invalid player address'
+        }
+      });
+    }
+  }
+
+  /**
+   * Handle API requests that were previously handled separately
+   */
+  private async handleProfileRequest(request: Request): Promise<Response> {
+    // Implementation for profile requests
+    // This would handle the same logic as the existing API routes
+    return new Response('Profile API - implement as needed', { status: 200 });
+  }
+
+  private async handleMissionsRequest(request: Request): Promise<Response> {
+    // Implementation for mission requests
+    return new Response('Missions API - implement as needed', { status: 200 });
+  }
+
+  private async handleNotificationsRequest(request: Request): Promise<Response> {
+    // Implementation for notifications requests
+    return new Response('Notifications API - implement as needed', { status: 200 });
+  }
+
+  private async handleResourcesRequest(request: Request): Promise<Response> {
+    // Implementation for resources requests
+    return new Response('Resources API - implement as needed', { status: 200 });
+  }
+
+  private async handleStatsRequest(request: Request): Promise<Response> {
+    const stats = await this.getStats();
+    return new Response(JSON.stringify(stats), {
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }

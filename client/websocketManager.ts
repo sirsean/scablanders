@@ -133,14 +133,16 @@ export class WebSocketManager extends EventTarget {
   /**
    * Authenticate the WebSocket connection
    */
-  private authenticate(token: string): void {
+  authenticate(playerAddress: string): void {
     if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
+      console.warn('Cannot authenticate: WebSocket not connected');
       return;
     }
 
+    console.log('[WS Client] Authenticating with player address:', playerAddress);
     this.send({
       type: 'authenticate',
-      token
+      playerAddress
     });
   }
 

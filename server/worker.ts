@@ -172,9 +172,11 @@ export default {
     // Check if this is a WebSocket upgrade request
     const upgradeHeader = request.headers.get('Upgrade');
     if (upgradeHeader && upgradeHeader.toLowerCase() === 'websocket') {
-      // Handle WebSocket upgrade
+      // Handle WebSocket upgrade through GameDO
       if (new URL(request.url).pathname === '/ws') {
-        return handleWebSocket(request, env);
+        const gameId = env.GAME_DO.idFromName('game');
+        const gameStub = env.GAME_DO.get(gameId);
+        return gameStub.fetch(request);
       }
     }
     

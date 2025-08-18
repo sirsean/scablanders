@@ -1,5 +1,6 @@
 import { GameWebSocketMessage } from '@/shared/models';
 import { parseSessionToken } from './auth';
+import { GAME_BC_NAME, OutboundWSMessage } from '../shared/broadcast';
 
 interface WebSocketSession {
   websocket: WebSocket;
@@ -10,6 +11,35 @@ interface WebSocketSession {
 
 // Global map to track WebSocket connections
 const activeSessions = new Map<string, WebSocketSession>();
+
+// TODO: Set up proper cross-isolate communication when available
+// BroadcastChannel is not available in current environment
+
+/**
+ * Forward cross-isolate messages to appropriate WebSocket sessions
+ * Currently not used due to BroadcastChannel limitations
+ */
+function forwardToSessions(msg: OutboundWSMessage) {
+  console.log('[WS] Would forward cross-isolate message:', msg.scope, msg.payload.type);
+  
+  switch (msg.scope) {
+    case 'all':
+      broadcastToAll(msg.payload);
+      break;
+    case 'player':
+      if (msg.playerAddress) {
+        sendToPlayer(msg.playerAddress, msg.payload);
+      }
+      break;
+    case 'session':
+      if (msg.sessionId) {
+        sendToSession(msg.sessionId, msg.payload);
+      }
+      break;
+    default:
+      console.warn('[WS] Unknown message scope:', msg.scope);
+  }
+}
 
 /**
  * Handle WebSocket upgrade request and manage connections
@@ -96,29 +126,11 @@ export function handleWebSocket(request: Request, env: Env): Response {
   server.addEventListener('close', async () => {
     console.log(`WebSocket session ${sessionId} closed`);
     activeSessions.delete(sessionId);
-    
-    // Notify GameDO that session is closed
-    try {
-      const gameId = env.GAME_DO.idFromName('game');
-      const gameStub = env.GAME_DO.get(gameId);
-      await gameStub.removeWebSocketConnection(sessionId);
-    } catch (error) {
-      console.error('[WS] Error removing WebSocket connection:', error);
-    }
   });
 
   server.addEventListener('error', async (error) => {
     console.error(`WebSocket session ${sessionId} error:`, error);
     activeSessions.delete(sessionId);
-    
-    // Notify GameDO that session had an error
-    try {
-      const gameId = env.GAME_DO.idFromName('game');
-      const gameStub = env.GAME_DO.get(gameId);
-      await gameStub.removeWebSocketConnection(sessionId);
-    } catch (error) {
-      console.error('[WS] Error removing WebSocket connection:', error);
-    }
   });
 
   // Send initial connection status
@@ -131,29 +143,12 @@ export function handleWebSocket(request: Request, env: Env): Response {
     }
   });
 
-  // Register with GameDO and set up subscriptions
-  setTimeout(async () => {
-    try {
-      console.log(`[WS] Registering session ${sessionId} with GameDO`);
-      
-      const gameId = env.GAME_DO.idFromName('game');
-      const gameStub = env.GAME_DO.get(gameId);
-      
-      // Register session with GameDO (without WebSocket object)
-      await gameStub.addWebSocketSession(sessionId, playerAddress, authenticated);
-      
-      // Send subscription confirmed message
-      sendToSession(sessionId, {
-        type: 'subscription_confirmed',
-        timestamp: new Date(),
-        data: { events: ['player_state', 'world_state'] }
-      });
-      
-      console.log(`[WS] Session ${sessionId} registered successfully with GameDO`);
-    } catch (error) {
-      console.error('[WS] Error registering with GameDO:', error);
-    }
-  }, 100); // Small delay to ensure WebSocket is fully set up
+  // Send subscription confirmed message (no GameDO registration needed)
+  sendToSession(sessionId, {
+    type: 'subscription_confirmed',
+    timestamp: new Date(),
+    data: { events: ['player_state', 'world_state'] }
+  });
 
   return new Response(null, {
     status: 101,
@@ -226,11 +221,6 @@ async function handleAuthentication(sessionId: string, token: string, env: Env) 
           authenticated: true
         }
       });
-
-      // Register the authenticated session with GameDO
-      const gameId = env.GAME_DO.idFromName('game');
-      const gameStub = env.GAME_DO.get(gameId);
-      await gameStub.addWebSocketSession(sessionId, playerAddress, true);
 
       console.log(`WebSocket session ${sessionId} authenticated for player ${playerAddress}`);
     } else {
