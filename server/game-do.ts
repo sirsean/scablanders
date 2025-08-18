@@ -118,8 +118,8 @@ export class GameDO extends DurableObject {
     // Load persisted data first, then initialize resources
     this.initializeGameState();
     
-    // Schedule initial resource management alarm
-    this.scheduleResourceManagementAlarm();
+    // Run resource management immediately on startup, then schedule recurring alarms
+    this.initializeResourceManagement();
   }
 
   /**
@@ -819,6 +819,24 @@ export class GameDO extends DurableObject {
   // =============================================================================
   // Resource Management and Regeneration
   // =============================================================================
+
+  /**
+   * Initialize resource management: run immediately, then schedule recurring alarms
+   */
+  private async initializeResourceManagement() {
+    console.log('[GameDO] Initializing resource management system');
+    
+    try {
+      // Run resource management immediately on startup
+      await this.performResourceManagement();
+      console.log('[GameDO] Initial resource management check completed');
+    } catch (error) {
+      console.error('[GameDO] Error during initial resource management:', error);
+    }
+    
+    // Schedule recurring alarms
+    await this.scheduleResourceManagementAlarm();
+  }
 
   /**
    * Schedule the next resource management alarm
