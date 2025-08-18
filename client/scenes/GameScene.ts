@@ -21,8 +21,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
-    // Set desert background
-    this.cameras.main.setBackgroundColor('#8B4513');
+    // Add the world map background image
+    const bg = this.add.image(0, 0, 'world-map')
+      .setOrigin(0, 0)
+      .setDisplaySize(this.cameras.main.width, this.cameras.main.height)
+      .setDepth(-10); // ensure it stays behind everything
     
     // Add invisible background rectangle for click detection
     const background = this.add.rectangle(0, 0, this.cameras.main.width, this.cameras.main.height, 0x000000, 0);

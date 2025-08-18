@@ -30,6 +30,9 @@ export class BootScene extends Phaser.Scene {
     // Create simple colored rectangles as placeholder assets
     this.load.image('desert-bg', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
     
+    // Load the world map background image
+    this.load.image('world-map', 'assets/images/scablanders-map.png');
+    
     // Generate simple resource node textures
     this.load.image('ore-node', this.generateResourceTexture(0xFF4500, 20));
     this.load.image('scrap-node', this.generateResourceTexture(0x708090, 20));
