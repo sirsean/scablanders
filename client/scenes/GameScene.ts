@@ -14,7 +14,9 @@ export class GameScene extends Phaser.Scene {
   private missionIndicators: Map<string, Phaser.GameObjects.Graphics> = new Map();
   private missionRoutes: Map<string, Phaser.GameObjects.Graphics> = new Map();
   private missionDrifters: Map<string, Phaser.GameObjects.Container> = new Map();
+  private pendingTinyLoads: Map<string, Promise<string>> = new Map();
   private townMarker: Phaser.GameObjects.Container | null = null;
+  private missionRenderVersion = 0;
   
   constructor() {
     super({ key: 'GameScene' });
@@ -349,10 +351,46 @@ export class GameScene extends Phaser.Scene {
     glow.setBlendMode(Phaser.BlendModes.ADD);
   }
 
+  private async ensureDrifterTinyTexture(tokenId: number | string): Promise<string> {
+    const key = `drifter-${tokenId}-tiny`;
+    if (this.textures.exists(key)) return key;
+    if (this.pendingTinyLoads.has(key)) return this.pendingTinyLoads.get(key)!;
+
+    const loadPromise = new Promise<string>((resolve) => {
+      const onComplete = (loadedKey: string) => {
+        if (loadedKey === key) {
+          this.load.off(Phaser.Loader.Events.FILE_COMPLETE, onComplete);
+          this.load.off(Phaser.Loader.Events.LOAD_ERROR, onError as any);
+          resolve(key);
+        }
+      };
+      const onError = () => {
+        this.load.off(Phaser.Loader.Events.FILE_COMPLETE, onComplete);
+        this.load.off(Phaser.Loader.Events.LOAD_ERROR, onError as any);
+        resolve('generic-drifter');
+      };
+
+      this.load.on(Phaser.Loader.Events.FILE_COMPLETE, onComplete);
+      this.load.on(Phaser.Loader.Events.LOAD_ERROR, onError as any);
+      this.load.image(key, `/images/drifters/tiny/${tokenId}.jpeg`);
+      this.load.start();
+    });
+
+    this.pendingTinyLoads.set(key, loadPromise);
+    return loadPromise;
+  }
+
   private updateMissionRoutes(playerMissions: Mission[]) {
+    // Bump render version to invalidate any in-flight async icon loads
+    this.missionRenderVersion++;
+    const renderVersion = this.missionRenderVersion;
     // Clear existing routes and drifters
     this.missionRoutes.forEach(route => route.destroy());
-    this.missionDrifters.forEach(drifter => drifter.destroy());
+    this.missionDrifters.forEach(container => {
+      // Ensure children are destroyed to prevent ghost images
+      try { (container as any).removeAll?.(true); } catch {}
+      container.destroy();
+    });
     this.missionRoutes.clear();
     this.missionDrifters.clear();
     
@@ -360,7 +398,7 @@ export class GameScene extends Phaser.Scene {
     const activeMissions = playerMissions.filter(m => m.status === 'active');
     activeMissions.forEach(mission => {
       this.createMissionRoute(mission);
-      this.createMissionDrifter(mission);
+      this.createMissionDrifter(mission, renderVersion);
     });
   }
 
@@ -395,42 +433,93 @@ export class GameScene extends Phaser.Scene {
     this.missionRoutes.set(mission.id, routeGraphics);
   }
 
-  private createMissionDrifter(mission: Mission) {
+  private async createMissionDrifter(mission: Mission, renderVersion: number) {
     const currentState = gameState.getState();
     const targetNode = currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId);
     if (!targetNode) return;
     
     const drifterContainer = this.add.container(0, 0);
+
+    // If a newer render started while we were setting up, abort
+    if (renderVersion !== this.missionRenderVersion) {
+      drifterContainer.destroy();
+      return;
+    }
     
-    // Drifter icon (simple diamond shape)
-    const drifterIcon = this.add.graphics();
-    drifterIcon.fillStyle(0x00BFFF);
-    drifterIcon.fillCircle(0, 0, 6);
-    drifterIcon.lineStyle(2, 0xFFFFFF);
-    drifterIcon.strokeCircle(0, 0, 6);
-    
-    // Mission indicator
+    // Mission indicator ring
     const missionIndicator = this.add.graphics();
     missionIndicator.lineStyle(2, 0x00FF00);
-    missionIndicator.strokeCircle(0, 0, 12);
-    
-    // Team size indicator
-    const teamSize = mission.drifterIds.length;
-    const teamLabel = this.add.text(0, -18, `${teamSize}`, {
-      fontSize: '10px',
-      color: '#FFFFFF',
-      fontFamily: 'Courier New',
-      fontStyle: 'bold',
-      backgroundColor: 'rgba(0,0,0,0.8)',
-      padding: { x: 2, y: 1 }
-    }).setOrigin(0.5);
-    
-    drifterContainer.add([missionIndicator, drifterIcon, teamLabel]);
-    
+    missionIndicator.strokeCircle(0, 0, 14);
+
+    // Add tiny images for each drifter
+    const iconSize = 16;
+    const icons: Phaser.GameObjects.Image[] = [];
+    for (const drifterId of mission.drifterIds) {
+      if (renderVersion !== this.missionRenderVersion) {
+        // Abort if superseded
+        try { (drifterContainer as any).removeAll?.(true); } catch {}
+        drifterContainer.destroy();
+        return;
+      }
+      const key = await this.ensureDrifterTinyTexture(drifterId);
+      const img = this.add.image(0, 0, key).setDisplaySize(iconSize, iconSize).setOrigin(0.5);
+      icons.push(img);
+      drifterContainer.add(img);
+    }
+
+    // Layout icons in a cluster
+    this.layoutDrifterIcons(drifterContainer, icons, iconSize);
+
+    // Add ring on top
+    drifterContainer.add(missionIndicator);
+
+    // If superseded while loading, clean up and abort
+    if (renderVersion !== this.missionRenderVersion) {
+      try { (drifterContainer as any).removeAll?.(true); } catch {}
+      drifterContainer.destroy();
+      return;
+    }
+
     // Calculate and set initial position based on mission progress
     this.updateDrifterPosition(drifterContainer, mission, targetNode);
-    
+
     this.missionDrifters.set(mission.id, drifterContainer);
+  }
+
+  private layoutDrifterIcons(
+    container: Phaser.GameObjects.Container,
+    icons: Phaser.GameObjects.Image[],
+    iconSize: number
+  ) {
+    const n = icons.length;
+    if (n === 0) return;
+
+    if (n === 1) {
+      icons[0].setPosition(0, 0);
+      return;
+    }
+
+    if (n <= 4) {
+      const offsets = [
+        { x: 0, y: -8 },
+        { x: 0, y: 8 },
+        { x: -8, y: 0 },
+        { x: 8, y: 0 }
+      ];
+      for (let i = 0; i < n; i++) {
+        icons[i].setPosition(offsets[i].x, offsets[i].y);
+      }
+      return;
+    }
+
+    // 5 or more: circle layout
+    const radius = 10;
+    for (let i = 0; i < n; i++) {
+      const angle = (i / n) * Math.PI * 2;
+      const x = Math.cos(angle) * radius;
+      const y = Math.sin(angle) * radius;
+      icons[i].setPosition(x, y);
+    }
   }
 
   private updateDrifterPosition(drifterContainer: Phaser.GameObjects.Container, mission: Mission, targetNode: ResourceNode) {

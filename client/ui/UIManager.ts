@@ -362,6 +362,12 @@ export class UIManager {
             ">
               <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div style="display: flex; align-items: center; gap: 8px;">
+                  <img 
+                    src="/images/drifters/thumbnails/${drifter.tokenId}.jpeg"
+                    alt="${drifter.name} #${drifter.tokenId}"
+                    style="width: 48px; height: 48px; border-radius: 4px; object-fit: cover; border: 1px solid #333;"
+                    onerror="this.style.display='none'"
+                  />
                   <div style="
                     width: 16px; 
                     height: 16px; 

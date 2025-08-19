@@ -40,6 +40,9 @@ export class BootScene extends Phaser.Scene {
     
     // Generate UI textures
     this.load.image('panel-bg', this.generatePanelTexture(200, 150));
+
+    // Fallback tiny drifter texture
+    this.load.image('generic-drifter', this.generateResourceTexture(0x00BFFF, 8));
   }
 
   private generateResourceTexture(color: number, radius: number): string {
