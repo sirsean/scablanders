@@ -165,3 +165,11 @@ dist
 .env*
 !.env.example
 .wrangler/
+
+# Drifter original images (keep thumbnails and tiny versions)
+public/images/drifters/*.jpeg
+public/images/drifters/*.jpg
+public/images/drifters/*.png
+# Keep the thumbnail and tiny subdirectories
+!public/images/drifters/thumbnails/
+!public/images/drifters/tiny/
