@@ -54,9 +54,9 @@ export function calculateMissionRewards(
   // Mission type multipliers (risk vs reward)
   const missionTypeMultipliers = {
     scavenge: { credits: 0.8, resources: 1.0, variance: 0.1 }, // Safe, consistent
-    intercept: { credits: 1.1, resources: 0.5, variance: 0.2 }, // Good credits, fewer resources
+    strip_mine: { credits: 0.6, resources: 1.4, variance: 0.05 }, // Lower credits, high resources, very consistent
     combat: { credits: 1.4, resources: 1.3, variance: 0.3 }, // High risk, high reward
-    scouting: { credits: 1.0, resources: 0.7, variance: 0.15 } // Balanced
+    sabotage: { credits: 1.2, resources: 0.8, variance: 0.25 } // Disruption focused, moderate rewards
   };
   
   // Get multipliers
@@ -121,9 +121,9 @@ export function estimateMissionRewards(
   // Mission type multipliers
   const missionTypeMultipliers = {
     scavenge: { credits: 0.8, resources: 1.0, variance: 0.1 },
-    intercept: { credits: 1.1, resources: 0.5, variance: 0.2 },
+    strip_mine: { credits: 0.6, resources: 1.4, variance: 0.05 },
     combat: { credits: 1.4, resources: 1.3, variance: 0.3 },
-    scouting: { credits: 1.0, resources: 0.7, variance: 0.15 }
+    sabotage: { credits: 1.2, resources: 0.8, variance: 0.25 }
   };
   
   // Get multipliers
@@ -185,4 +185,80 @@ export function formatDuration(durationMs: number): string {
   }
   
   return `${hours}h ${minutes}m`;
+}
+
+/**
+ * Mission type definition for UI display
+ */
+export interface AvailableMissionType {
+  type: MissionType;
+  name: string;
+  description: string;
+  color: string;
+  borderColor: string;
+  enabled: boolean;
+}
+
+/**
+ * Determine available mission types based on node state
+ */
+export function getAvailableMissionTypes(
+  targetNode: ResourceNode,
+  activeMissions: any[],
+  playerAddress?: string
+): AvailableMissionType[] {
+  const missionTypes: AvailableMissionType[] = [];
+  
+  // Check if node is contested (has active missions from other players)
+  const contestedMissions = activeMissions.filter(m => 
+    m.targetNodeId === targetNode.id && 
+    m.status === 'active' && 
+    m.playerAddress !== playerAddress
+  );
+  
+  const isContested = contestedMissions.length > 0;
+  
+  if (isContested) {
+    // CONTESTED NODE: Combat & Sabotage missions
+    missionTypes.push(
+      {
+        type: 'combat',
+        name: 'COMBAT',
+        description: `Fight ${contestedMissions.length} active team${contestedMissions.length > 1 ? 's' : ''} for control`,
+        color: '#5c2a2a',
+        borderColor: '#7c4a4a',
+        enabled: true
+      },
+      {
+        type: 'sabotage',
+        name: 'SABOTAGE',
+        description: `Disrupt ${contestedMissions.length} ongoing operation${contestedMissions.length > 1 ? 's' : ''}`,
+        color: '#4a2a5c',
+        borderColor: '#6a4a7c',
+        enabled: true
+      }
+    );
+  } else {
+    // UNCONTESTED NODE: Scavenge & Strip-mine missions
+    missionTypes.push(
+      {
+        type: 'scavenge',
+        name: 'SCAVENGE',
+        description: 'Safe resource gathering with minimal risk',
+        color: '#2c5530',
+        borderColor: '#4a7c59',
+        enabled: true
+      },
+      {
+        type: 'strip_mine',
+        name: 'STRIP-MINE',
+        description: 'Maximum resource extraction, slower but efficient',
+        color: '#5c4a2a',
+        borderColor: '#7c6a4a',
+        enabled: true
+      }
+    );
+  }
+  
+  return missionTypes;
 }

@@ -33,6 +33,9 @@ export interface GameState {
   
   // UI state
   selectedResourceNode: string | null;
+  selectedDrifterIds: number[];
+  selectedMissionType: string | null;
+  drifterSortBy: 'combat' | 'scavenging' | 'tech' | 'speed';
   showMissionPanel: boolean;
   showMercenaryPanel: boolean;
   showProfilePanel: boolean;
@@ -72,6 +75,9 @@ class GameStateManager extends EventTarget {
     connectionStatus: 'disconnected',
     realTimeMode: false,
     selectedResourceNode: null,
+    selectedDrifterIds: [],
+    selectedMissionType: null,
+    drifterSortBy: 'combat',
     showMissionPanel: false,
     showMercenaryPanel: false,
     showProfilePanel: false,
@@ -391,23 +397,25 @@ class GameStateManager extends EventTarget {
   }
 
   // Mission operations
-  async startMission(drifterId: number, targetId: string, missionType: 'EXPLORE' | 'SCAVENGE' | 'RAID' | 'ESCORT') {
+  async startMission(drifterIds: number[], targetId: string, missionType: 'scavenge' | 'strip_mine' | 'combat' | 'sabotage') {
     try {
       const response = await this.apiCall('/missions/start', {
         method: 'POST',
         body: JSON.stringify({
-          drifterIds: [drifterId],
-          targetNodeId: targetId
+          drifterIds,
+          targetNodeId: targetId,
+          missionType
         })
       });
 
       const result = await response.json();
       
       if (result.success) {
+        const teamText = drifterIds.length === 1 ? `Drifter #${drifterIds[0]}` : `${drifterIds.length} drifters`;
         this.addNotification({
           type: 'mission',
           title: 'Mission Started!',
-          message: `${missionType} mission started with Drifter #${drifterId}`,
+          message: `${missionType.toUpperCase()} mission started with ${teamText}`,
         });
         
         // Refresh data
@@ -479,6 +487,41 @@ class GameStateManager extends EventTarget {
 
   toggleActiveMissionsPanel() {
     this.setState({ showActiveMissionsPanel: !this.state.showActiveMissionsPanel });
+  }
+
+  // Multi-drifter selection management
+  toggleDrifterSelection(drifterId: number) {
+    const currentSelection = [...this.state.selectedDrifterIds];
+    const index = currentSelection.indexOf(drifterId);
+    
+    if (index === -1) {
+      // Add to selection
+      currentSelection.push(drifterId);
+    } else {
+      // Remove from selection
+      currentSelection.splice(index, 1);
+    }
+    
+    this.setState({ selectedDrifterIds: currentSelection });
+  }
+
+  clearSelectedDrifters() {
+    this.setState({ selectedDrifterIds: [] });
+  }
+
+  setMissionType(missionType: string | null) {
+    this.setState({ selectedMissionType: missionType });
+  }
+
+  setDrifterSortBy(sortBy: 'combat' | 'scavenging' | 'tech' | 'speed') {
+    this.setState({ drifterSortBy: sortBy });
+  }
+
+  // Helper to check if a node is contested by active missions
+  isNodeContested(nodeId: string): boolean {
+    return this.state.activeMissions.some(mission => 
+      mission.targetNodeId === nodeId && mission.status === 'active'
+    );
   }
 
   async loadPlayerMissions() {

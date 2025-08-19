@@ -533,13 +533,46 @@ export class GameDO extends DurableObject {
     drifterIds: number[],
     targetNodeId: string
   ): Promise<{ success: boolean; missionId?: string; error?: string }> {
-    console.log(`[GameDO] Starting mission - Player: ${playerAddress}, Type: ${missionType}, Target: ${targetNodeId}`);
+    console.log(`[GameDO] Starting mission - Player: ${playerAddress}, Type: ${missionType}, Drifters: [${drifterIds.join(', ')}], Target: ${targetNodeId}`);
     
     const player = this.gameState.players.get(playerAddress);
     if (!player) {
       console.error(`[GameDO] Player not found: ${playerAddress}`);
       return { success: false, error: 'Player not found' };
     }
+
+    // Validate drifter IDs
+    if (!drifterIds || drifterIds.length === 0) {
+      return { success: false, error: 'At least one drifter is required' };
+    }
+
+    // Check all drifters are owned by the player
+    for (const drifterId of drifterIds) {
+      if (!player.ownedDrifters.includes(drifterId)) {
+        console.error(`[GameDO] Player ${playerAddress} does not own drifter ${drifterId}`);
+        return { success: false, error: `You don't own Drifter #${drifterId}` };
+      }
+    }
+
+    // Check no drifters are currently on active missions
+    const activeDrifters = new Set<number>();
+    for (const mission of this.gameState.missions.values()) {
+      if (mission.status === 'active') {
+        mission.drifterIds.forEach(id => activeDrifters.add(id));
+      }
+    }
+
+    const busyDrifters = drifterIds.filter(id => activeDrifters.has(id));
+    if (busyDrifters.length > 0) {
+      console.error(`[GameDO] Drifters currently on missions: [${busyDrifters.join(', ')}]`);
+      const busyList = busyDrifters.map(id => `#${id}`).join(', ');
+      return { 
+        success: false, 
+        error: `Drifter${busyDrifters.length > 1 ? 's' : ''} ${busyList} ${busyDrifters.length > 1 ? 'are' : 'is'} currently on another mission` 
+      };
+    }
+
+    console.log(`[GameDO] All ${drifterIds.length} drifter(s) are available for mission`);
 
     // Validate target node exists
     const targetNode = this.gameState.resourceNodes.get(targetNodeId);

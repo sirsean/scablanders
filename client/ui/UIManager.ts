@@ -1,7 +1,7 @@
 import type { GameState, GameNotification } from '../gameState';
 import { gameState } from '../gameState';
 import type { DrifterProfile, MissionType } from '@shared/models';
-import { calculateMissionDuration, estimateMissionRewards, formatDuration } from '../../shared/mission-utils';
+import { calculateMissionDuration, estimateMissionRewards, formatDuration, getAvailableMissionTypes } from '../../shared/mission-utils';
 import { ActiveMissionsPanel } from './ActiveMissionsPanel';
 
 export class UIManager {
@@ -50,7 +50,7 @@ export class UIManager {
     this.missionPanel.style.cssText = `
       position: fixed;
       left: 20px;
-      bottom: 20px;
+      bottom: 80px;
       width: 400px;
       max-height: 500px;
       background: rgba(0, 0, 0, 0.9);
@@ -61,6 +61,7 @@ export class UIManager {
       font-family: 'Courier New', monospace;
       display: none;
       overflow-y: auto;
+      z-index: 1050;
     `;
 
     this.missionPanel.innerHTML = `
@@ -281,28 +282,15 @@ export class UIManager {
       </div>
 
       <div style="margin-bottom: 16px;">
-        <h4 style="color: #FFD700; margin: 0 0 8px 0;">Select Drifter</h4>
+        <h4 style="color: #FFD700; margin: 0 0 8px 0;">Select Team</h4>
         <div id="drifter-selection">
-          ${this.renderDrifterSelection(state.ownedDrifters)}
+          ${this.renderDrifterSelection(state.ownedDrifters, state)}
         </div>
       </div>
 
       <div style="margin-bottom: 16px;">
         <h4 style="color: #FFD700; margin: 0 0 8px 0;">Mission Type</h4>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-          <button class="mission-type-btn" data-type="scavenge" style="background: #2c5530; border: 1px solid #4a7c59; color: #fff; padding: 8px; cursor: pointer; border-radius: 4px;">
-            SCAVENGE<br><small>Gather resources safely</small>
-          </button>
-          <button class="mission-type-btn" data-type="scouting" style="background: #4a5c2a; border: 1px solid #6b7c4a; color: #fff; padding: 8px; cursor: pointer; border-radius: 4px;">
-            SCOUTING<br><small>Discover new areas</small>
-          </button>
-          <button class="mission-type-btn" data-type="combat" style="background: #5c2a2a; border: 1px solid #7c4a4a; color: #fff; padding: 8px; cursor: pointer; border-radius: 4px;">
-            COMBAT<br><small>High risk, high reward</small>
-          </button>
-          <button class="mission-type-btn" data-type="intercept" style="background: #2a4a5c; border: 1px solid #4a6b7c; color: #fff; padding: 8px; cursor: pointer; border-radius: 4px;">
-            INTERCEPT<br><small>Steal from other missions</small>
-          </button>
-        </div>
+        ${this.renderMissionTypes(selectedResource, state)}
       </div>
 
       <button id="start-mission-btn" disabled style="width: 100%; padding: 12px; background: #666; border: 1px solid #888; color: #fff; cursor: not-allowed; border-radius: 4px;">
@@ -313,98 +301,281 @@ export class UIManager {
     this.setupMissionPanelHandlers();
   }
 
-  private renderDrifterSelection(drifters: DrifterProfile[]): string {
+  private renderDrifterSelection(drifters: DrifterProfile[], state: GameState): string {
     if (!drifters || drifters.length === 0) {
       return '<p style="color: #ff6b6b; font-size: 12px;">No owned Drifters available. You need to own Fringe Drifters NFTs to start missions.</p>';
     }
 
-    return drifters.map(drifter => `
-      <div class="drifter-option" data-id="${drifter.tokenId}" style="
-        border: 1px solid #444; 
-        padding: 8px; 
-        margin: 4px 0; 
-        cursor: pointer; 
-        border-radius: 4px;
-        background: rgba(255, 255, 255, 0.05);
-      ">
-        <div style="display: flex; justify-content: between;">
-          <strong>${drifter.name} #${drifter.tokenId}</strong>
-          <span style="color: #00ff00;">OWNED</span>
+    // Filter out drifters that are on active missions
+    const busyDrifterIds = new Set(
+      state.playerMissions
+        .filter(m => m.status === 'active')
+        .flatMap(m => m.drifterIds)
+    );
+
+    // Sort drifters based on selected sort criteria
+    const sortedDrifters = [...drifters].sort((a, b) => {
+      const sortBy = state.drifterSortBy;
+      return b[sortBy] - a[sortBy]; // Descending order (highest first)
+    });
+
+    // Limit to max 12 drifters
+    const displayDrifters = sortedDrifters.slice(0, 12);
+    const selectedIds = state.selectedDrifterIds || [];
+
+    return `
+      <!-- Sort Controls -->
+      <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+        <label style="font-size: 12px; color: #ccc;">Sort by:</label>
+        <select id="drifter-sort-select" style="
+          background: #333; 
+          border: 1px solid #666; 
+          color: #fff; 
+          padding: 4px 8px; 
+          border-radius: 4px;
+          font-size: 12px;
+        ">
+          <option value="combat" ${state.drifterSortBy === 'combat' ? 'selected' : ''}>Combat</option>
+          <option value="scavenging" ${state.drifterSortBy === 'scavenging' ? 'selected' : ''}>Scavenging</option>
+          <option value="tech" ${state.drifterSortBy === 'tech' ? 'selected' : ''}>Tech</option>
+          <option value="speed" ${state.drifterSortBy === 'speed' ? 'selected' : ''}>Speed</option>
+        </select>
+        <span style="font-size: 11px; color: #888;">(Showing ${displayDrifters.length}/${drifters.length})</span>
+      </div>
+
+      <!-- Drifter List -->
+      <div style="max-height: 200px; overflow-y: auto; margin-bottom: 12px;">
+        ${displayDrifters.map(drifter => {
+          const isSelected = selectedIds.includes(drifter.tokenId);
+          const isBusy = busyDrifterIds.has(drifter.tokenId);
+          
+          return `
+            <div class="drifter-option" data-id="${drifter.tokenId}" data-busy="${isBusy}" style="
+              border: 2px solid ${isSelected ? '#00ff00' : (isBusy ? '#666' : '#444')}; 
+              padding: 8px; 
+              margin: 4px 0; 
+              cursor: ${isBusy ? 'not-allowed' : 'pointer'}; 
+              border-radius: 4px;
+              background: ${isSelected ? 'rgba(0, 255, 0, 0.1)' : (isBusy ? 'rgba(100, 100, 100, 0.3)' : 'rgba(255, 255, 255, 0.05)')};
+              opacity: ${isBusy ? '0.6' : '1'};
+              position: relative;
+            ">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <div style="
+                    width: 16px; 
+                    height: 16px; 
+                    border: 2px solid ${isSelected ? '#00ff00' : '#666'}; 
+                    border-radius: 3px;
+                    background: ${isSelected ? '#00ff00' : 'transparent'};
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                  ">
+                    ${isSelected ? '<span style="color: #000; font-size: 10px; font-weight: bold;">✓</span>' : ''}
+                  </div>
+                  <strong style="color: ${isBusy ? '#999' : '#fff'};">${drifter.name} #${drifter.tokenId}</strong>
+                </div>
+                <div style="font-size: 11px;">
+                  ${isBusy ? '<span style="color: #ff6666;">ON MISSION</span>' : '<span style="color: #00ff00;">OWNED</span>'}
+                </div>
+              </div>
+              <div style="font-size: 11px; color: #ccc; margin-top: 4px;">
+                Combat: <span style="color: #ff6666;">${drifter.combat}</span> | 
+                Scavenging: <span style="color: #66ff66;">${drifter.scavenging}</span> | 
+                Tech: <span style="color: #6666ff;">${drifter.tech}</span> | 
+                Speed: <span style="color: #ffff66;">${drifter.speed}</span>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+
+      ${this.renderTeamSummary(selectedIds, drifters)}
+    `;
+  }
+
+  private renderTeamSummary(selectedIds: number[], drifters: DrifterProfile[]): string {
+    if (selectedIds.length === 0) {
+      return `
+        <div style="
+          background: rgba(100, 100, 100, 0.2); 
+          border: 1px solid #666; 
+          border-radius: 4px; 
+          padding: 12px; 
+          text-align: center;
+        ">
+          <p style="margin: 0; color: #999; font-size: 12px;">Select drifters to see team summary</p>
         </div>
-        <div style="font-size: 11px; color: #ccc; margin-top: 4px;">
-          Combat: ${drifter.combat} | Scavenging: ${drifter.scavenging} | Tech: ${drifter.tech} | Speed: ${drifter.speed}
+      `;
+    }
+
+    const selectedDrifters = drifters.filter(d => selectedIds.includes(d.tokenId));
+    const totalCombat = selectedDrifters.reduce((sum, d) => sum + d.combat, 0);
+    const totalScavenging = selectedDrifters.reduce((sum, d) => sum + d.scavenging, 0);
+    const totalTech = selectedDrifters.reduce((sum, d) => sum + d.tech, 0);
+    const slowestSpeed = Math.min(...selectedDrifters.map(d => d.speed));
+    const teamSize = selectedIds.length;
+
+    return `
+      <div style="
+        background: rgba(255, 215, 0, 0.1); 
+        border: 2px solid #ffd700; 
+        border-radius: 6px; 
+        padding: 12px;
+      ">
+        <h5 style="margin: 0 0 8px 0; color: #ffd700;">Team Summary (${teamSize} drifter${teamSize > 1 ? 's' : ''})</h5>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px;">
+          <div>Combat: <span style="color: #ff6666; font-weight: bold;">${totalCombat}</span></div>
+          <div>Scavenging: <span style="color: #66ff66; font-weight: bold;">${totalScavenging}</span></div>
+          <div>Tech: <span style="color: #6666ff; font-weight: bold;">${totalTech}</span></div>
+          <div>Speed: <span style="color: #ffff66; font-weight: bold;">${slowestSpeed}</span> (slowest)</div>
         </div>
       </div>
-    `).join('');
+    `;
+  }
+
+  private renderMissionTypes(selectedResource: any, state: GameState): string {
+    const availableMissionTypes = getAvailableMissionTypes(
+      selectedResource,
+      state.activeMissions,
+      state.playerAddress
+    );
+
+    if (availableMissionTypes.length === 0) {
+      return `
+        <div style="
+          background: rgba(100, 100, 100, 0.2); 
+          border: 1px solid #666; 
+          border-radius: 4px; 
+          padding: 12px; 
+          text-align: center;
+        ">
+          <p style="margin: 0; color: #999; font-size: 12px;">No mission types available for this node</p>
+        </div>
+      `;
+    }
+
+    return `
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        ${availableMissionTypes.map(missionType => `
+          <button 
+            class="mission-type-btn" 
+            data-type="${missionType.type}" 
+            style="
+              background: ${missionType.color}; 
+              border: 1px solid ${missionType.borderColor}; 
+              color: #fff; 
+              padding: 8px; 
+              cursor: ${missionType.enabled ? 'pointer' : 'not-allowed'}; 
+              border-radius: 4px;
+              opacity: ${missionType.enabled ? '1' : '0.6'};
+            "
+            ${!missionType.enabled ? 'disabled' : ''}
+          >
+            ${missionType.name}<br><small>${missionType.description}</small>
+          </button>
+        `).join('')}
+      </div>
+    `;
   }
 
   private setupMissionPanelHandlers() {
-    let selectedDrifter: number | null = null;
-    let selectedMissionType: string | null = null;
+    const state = gameState.getState();
 
-    // Drifter selection
+    // Drifter selection - handle multi-selection
     document.querySelectorAll('.drifter-option').forEach(option => {
-      option.addEventListener('click', () => {
-        // Clear previous selection
-        document.querySelectorAll('.drifter-option').forEach(o => {
-          (o as HTMLElement).style.borderColor = '#444';
-        });
+      option.addEventListener('click', (event) => {
+        event.preventDefault();
+        const drifterId = parseInt(option.getAttribute('data-id') || '0');
+        const isBusy = option.getAttribute('data-busy') === 'true';
         
-        // Highlight selected
-        (option as HTMLElement).style.borderColor = '#00ff00';
-        selectedDrifter = parseInt(option.getAttribute('data-id') || '0');
+        // Don't allow selection of busy drifters
+        if (isBusy) return;
         
-        this.updateStartButton(selectedDrifter, selectedMissionType);
+        // Toggle selection in game state
+        gameState.toggleDrifterSelection(drifterId);
       });
     });
+
+    // Drifter sort dropdown
+    const sortSelect = document.getElementById('drifter-sort-select');
+    if (sortSelect) {
+      sortSelect.addEventListener('change', (event) => {
+        const sortBy = (event.target as HTMLSelectElement).value as 'combat' | 'scavenging' | 'tech' | 'speed';
+        gameState.setDrifterSortBy(sortBy);
+      });
+    }
 
     // Mission type selection
     document.querySelectorAll('.mission-type-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        // Clear previous selection
+        // Clear previous selection styles
         document.querySelectorAll('.mission-type-btn').forEach(b => {
           (b as HTMLElement).style.transform = 'none';
+          (b as HTMLElement).style.boxShadow = 'none';
         });
         
         // Highlight selected
         (btn as HTMLElement).style.transform = 'scale(0.95)';
-        selectedMissionType = btn.getAttribute('data-type');
+        (btn as HTMLElement).style.boxShadow = '0 0 8px rgba(255, 215, 0, 0.5)';
         
-        this.updateStartButton(selectedDrifter, selectedMissionType);
+        const missionType = btn.getAttribute('data-type');
+        gameState.setMissionType(missionType);
+        
+        this.updateStartButton();
       });
     });
 
     // Start mission button
     document.getElementById('start-mission-btn')?.addEventListener('click', async () => {
-      if (selectedDrifter && selectedMissionType) {
-        const state = gameState.getState();
+      const currentState = gameState.getState();
+      const selectedIds = currentState.selectedDrifterIds || [];
+      const missionType = currentState.selectedMissionType;
+      
+      if (selectedIds.length > 0 && missionType && currentState.selectedResourceNode) {
+        // Send all selected drifters to the backend
         const result = await gameState.startMission(
-          selectedDrifter, 
-          state.selectedResourceNode!, 
-          selectedMissionType as any
+          selectedIds, 
+          currentState.selectedResourceNode, 
+          missionType as any
         );
         
         if (result.success) {
+          // Clear selections and close panel
+          gameState.clearSelectedDrifters();
+          gameState.setMissionType(null);
           gameState.toggleMissionPanel();
         }
       }
     });
   }
 
-  private updateStartButton(drifterId: number | null, missionType: string | null) {
+  private updateStartButton() {
     const button = document.getElementById('start-mission-btn') as HTMLButtonElement;
     if (!button) return;
 
-    if (drifterId && missionType) {
+    const state = gameState.getState();
+    const selectedIds = state.selectedDrifterIds || [];
+    const missionType = state.selectedMissionType;
+
+    if (selectedIds.length > 0 && missionType) {
       button.disabled = false;
       button.style.background = '#2c5530';
       button.style.cursor = 'pointer';
-      button.textContent = `Start ${missionType} Mission`;
+      const teamText = selectedIds.length === 1 ? '1 Drifter' : `${selectedIds.length} Drifters`;
+      button.textContent = `Start ${missionType.toUpperCase()} Mission (${teamText})`;
     } else {
       button.disabled = true;
       button.style.background = '#666';
       button.style.cursor = 'not-allowed';
-      button.textContent = 'Select Drifter & Mission Type';
+      if (selectedIds.length === 0 && !missionType) {
+        button.textContent = 'Select Drifters & Mission Type';
+      } else if (selectedIds.length === 0) {
+        button.textContent = 'Select Drifters';
+      } else {
+        button.textContent = 'Select Mission Type';
+      }
     }
   }
 

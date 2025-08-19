@@ -77,7 +77,7 @@ export interface Mission {
   };
 }
 
-export type MissionType = 'scavenge' | 'intercept' | 'combat' | 'scouting';
+export type MissionType = 'scavenge' | 'strip_mine' | 'combat' | 'sabotage';
 
 export interface ResourceNode {
   id: string;
