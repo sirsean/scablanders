@@ -1,10 +1,16 @@
 import Phaser from 'phaser';
 import type { ResourceNode, Mission } from '@shared/models';
 import { gameState, GameState } from '../gameState';
+import { getResourceTextureKey } from '../utils/resourceTextures';
 
 // Town coordinates - center of the map area
 const TOWN_X = 500;
 const TOWN_Y = 350;
+
+// Resource node display constants
+const RESOURCE_NODE_BASE_SCALE = 0.15; // Base scale for resource nodes (adjust to resize all nodes)
+const RESOURCE_NODE_RARITY_SCALE_MULTIPLIER = 1.2; // How much bigger rare/epic/legendary nodes are
+const RESOURCE_NODE_LABEL_OFFSET = 30; // Distance above the node to place the label
 
 export class GameScene extends Phaser.Scene {
   private resourceNodes: Map<string, Phaser.GameObjects.Image> = new Map();
@@ -190,8 +196,26 @@ export class GameScene extends Phaser.Scene {
     const { x, y } = coordinates;
     
     // Determine node appearance based on type and rarity
-    let textureKey = `${type}-node`;
-    let scale = rarity === 'rare' || rarity === 'epic' || rarity === 'legendary' ? 1.3 : 1.0;
+    let textureKey = getResourceTextureKey(type, rarity);
+    
+    // Fallback handling if texture doesn't exist (dev safety)
+    if (!this.textures.exists(textureKey)) {
+      console.warn(`Resource texture '${textureKey}' not found, falling back`);
+      // Try falling back to common variant of the same type
+      const fallbackKey = `${type}-common`;
+      if (this.textures.exists(fallbackKey)) {
+        textureKey = fallbackKey;
+      } else {
+        // Final fallback to ore-common
+        console.warn(`Fallback texture '${fallbackKey}' not found, using ore-common`);
+        textureKey = 'ore-common';
+      }
+    }
+    
+    // Scale down the large images to appropriate map size
+    let scale = rarity === 'rare' || rarity === 'epic' || rarity === 'legendary' 
+      ? RESOURCE_NODE_BASE_SCALE * RESOURCE_NODE_RARITY_SCALE_MULTIPLIER 
+      : RESOURCE_NODE_BASE_SCALE;
     let glowColor = this.getRarityColor(rarity);
     
     // Create the main node sprite
@@ -221,8 +245,8 @@ export class GameScene extends Phaser.Scene {
       this.selectResourceNode(id, resource);
     });
     
-    // Add node label
-    const labelY = y - (35 * scale);
+    // Add node label (positioned above the scaled node)
+    const labelY = y - RESOURCE_NODE_LABEL_OFFSET;
     const rarityText = rarity !== 'common' ? ` (${rarity.toUpperCase()})` : '';
     const label = this.add.text(x, labelY, `${type.toUpperCase()}${rarityText}\n${currentYield}`, {
       fontSize: '11px',

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { RESOURCE_TYPES, RARITIES_WITH_TEXTURE } from '../utils/resourceTextures';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -33,10 +34,15 @@ export class BootScene extends Phaser.Scene {
     // Load the world map background image
     this.load.image('world-map', 'assets/images/scablanders-map.png');
     
-    // Generate simple resource node textures
-    this.load.image('ore-node', this.generateResourceTexture(0xFF4500, 20));
-    this.load.image('scrap-node', this.generateResourceTexture(0x708090, 20));
-    this.load.image('organic-node', this.generateResourceTexture(0x8FBC8F, 20));
+    // Load resource node textures by type and rarity
+    for (const type of RESOURCE_TYPES) {
+      for (const rarity of RARITIES_WITH_TEXTURE) {
+        this.load.image(
+          `${type}-${rarity}`, 
+          `assets/images/resources/${type}-${rarity}.png`
+        );
+      }
+    }
     
     // Generate UI textures
     this.load.image('panel-bg', this.generatePanelTexture(200, 150));
