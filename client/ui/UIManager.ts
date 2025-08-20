@@ -49,19 +49,20 @@ export class UIManager {
     this.missionPanel.className = 'game-panel';
     this.missionPanel.style.cssText = `
       position: fixed;
-      left: 20px;
-      bottom: 80px;
-      width: 400px;
-      max-height: 500px;
-      background: rgba(0, 0, 0, 0.9);
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 800px;
+      height: 600px;
+      background: rgba(0, 0, 0, 0.95);
       border: 2px solid #444;
-      border-radius: 8px;
-      padding: 16px;
+      border-radius: 12px;
+      padding: 20px;
       color: #fff;
       font-family: 'Courier New', monospace;
       display: none;
-      overflow-y: auto;
       z-index: 1050;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
     `;
 
     this.missionPanel.innerHTML = `
@@ -73,6 +74,11 @@ export class UIManager {
         <p>Select a resource node to plan a mission.</p>
       </div>
     `;
+
+    // Prevent clicks inside the mission panel from bubbling to Phaser background
+    this.missionPanel.addEventListener('click', (event) => {
+      event.stopPropagation();
+    });
 
     document.body.appendChild(this.missionPanel);
   }
@@ -239,6 +245,10 @@ export class UIManager {
     const content = document.getElementById('mission-content');
     if (!content) return;
 
+    // Preserve scroll position of drifter list before re-render
+    const drifterList = document.getElementById('drifter-list-container') as HTMLElement;
+    const scrollTop = drifterList?.scrollTop || 0;
+
     if (!state.selectedResourceNode) {
       content.innerHTML = '<p>Select a resource node to plan a mission.</p>';
       return;
@@ -264,41 +274,71 @@ export class UIManager {
     const defaultEstimate = estimateMissionRewards(selectedResource, 'scavenge', estimatedDuration);
 
     content.innerHTML = `
-      <div style="margin-bottom: 16px;">
-        <h4 style="color: #00ff00; margin: 0 0 8px 0;">${selectedResource.type.toUpperCase()} NODE</h4>
-        <p style="margin: 4px 0;">Current Yield: <span style="color: #ffff00;">${selectedResource.currentYield}</span></p>
-        <p style="margin: 4px 0;">Location: (${selectedResource.coordinates.x}, ${selectedResource.coordinates.y})</p>
-        <p style="margin: 4px 0; color: #ffd700;">★ ${selectedResource.rarity.toUpperCase()} ★</p>
-        <p style="margin: 4px 0; color: #00bfff; font-weight: bold;">⏱️ Estimated Duration: ${durationText}</p>
-      </div>
+      <!-- Side-by-side layout container - full height -->
+      <div style="display: flex; gap: 20px; height: 100%;">
+        
+        <!-- Left Panel: Node Info, Rewards, Mission Types, Start Button -->
+        <div style="flex: 1; display: flex; flex-direction: column;">
+          
+          <!-- Node Information -->
+          <div style="margin-bottom: 16px; border: 2px solid #444; border-radius: 8px; padding: 16px; background: rgba(255, 255, 255, 0.02);">
+            <h4 style="color: #00ff00; margin: 0 0 12px 0; text-align: center;">${selectedResource.type.toUpperCase()} NODE</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px;">
+              <p style="margin: 4px 0;">Yield: <span style="color: #ffff00; font-weight: bold;">${selectedResource.currentYield}</span></p>
+              <p style="margin: 4px 0; color: #ffd700;">★ ${selectedResource.rarity.toUpperCase()}</p>
+              <p style="margin: 4px 0;">Location: (${selectedResource.coordinates.x}, ${selectedResource.coordinates.y})</p>
+              <p style="margin: 4px 0; color: #00bfff; font-weight: bold;">⏱️ ${durationText}</p>
+            </div>
+          </div>
 
-      <div style="margin-bottom: 16px;">
-        <h4 style="color: #FFD700; margin: 0 0 8px 0;">Expected Rewards (SCAVENGE)</h4>
-        <div style="background: rgba(255, 215, 0, 0.1); border: 1px solid #444; border-radius: 4px; padding: 8px; font-size: 12px;">
-          <p style="margin: 2px 0; color: #ffd700;">💰 Credits: ${defaultEstimate.creditsRange.min}-${defaultEstimate.creditsRange.max}</p>
-          <p style="margin: 2px 0; color: #00ff88;">📦 ${defaultEstimate.resourcesRange.type.toUpperCase()}: ${defaultEstimate.resourcesRange.min}-${defaultEstimate.resourcesRange.max}</p>
-          <p style="margin: 4px 0 0 0; color: #888; font-style: italic; font-size: 10px;">*Estimates may vary by mission type and actual yield</p>
+          <!-- Expected Rewards -->
+          <div style="margin-bottom: 16px;">
+            <h4 style="color: #FFD700; margin: 0 0 8px 0;">Expected Rewards (SCAVENGE)</h4>
+            <div style="background: rgba(255, 215, 0, 0.1); border: 1px solid #444; border-radius: 4px; padding: 12px;">
+              <p style="margin: 4px 0; color: #ffd700; font-size: 14px;">💰 Credits: <span style="font-weight: bold;">${defaultEstimate.creditsRange.min}-${defaultEstimate.creditsRange.max}</span></p>
+              <p style="margin: 4px 0; color: #00ff88; font-size: 14px;">📦 ${defaultEstimate.resourcesRange.type.toUpperCase()}: <span style="font-weight: bold;">${defaultEstimate.resourcesRange.min}-${defaultEstimate.resourcesRange.max}</span></p>
+              <p style="margin: 8px 0 0 0; color: #888; font-style: italic; font-size: 11px;">*Estimates may vary by mission type and actual yield</p>
+            </div>
+          </div>
+
+          <!-- Mission Types -->
+          <div style="margin-bottom: 16px;">
+            <h4 style="color: #FFD700; margin: 0 0 8px 0;">Mission Type</h4>
+            ${this.renderMissionTypes(selectedResource, state)}
+          </div>
+          
+          <!-- Start Mission Button -->
+          <div style="margin-top: auto;">
+            <button id="start-mission-btn" disabled style="width: 100%; padding: 14px 24px; background: #666; border: 1px solid #888; color: #fff; cursor: not-allowed; border-radius: 6px; font-size: 16px; font-weight: bold;">
+              Select Drifter & Mission Type
+            </button>
+          </div>
+        </div>
+        
+        <!-- Right Panel: Team Selection - Full Height -->
+        <div style="flex: 1; display: flex; flex-direction: column; height: 100%;">
+          <h4 style="color: #FFD700; margin: 0 0 12px 0;">Select Team</h4>
+          <div id="drifter-selection" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+            ${this.renderDrifterSelection(state.ownedDrifters, state)}
+          </div>
         </div>
       </div>
-
-      <div style="margin-bottom: 16px;">
-        <h4 style="color: #FFD700; margin: 0 0 8px 0;">Select Team</h4>
-        <div id="drifter-selection">
-          ${this.renderDrifterSelection(state.ownedDrifters, state)}
-        </div>
-      </div>
-
-      <div style="margin-bottom: 16px;">
-        <h4 style="color: #FFD700; margin: 0 0 8px 0;">Mission Type</h4>
-        ${this.renderMissionTypes(selectedResource, state)}
-      </div>
-
-      <button id="start-mission-btn" disabled style="width: 100%; padding: 12px; background: #666; border: 1px solid #888; color: #fff; cursor: not-allowed; border-radius: 4px;">
-        Select Drifter & Mission Type
-      </button>
     `;
 
     this.setupMissionPanelHandlers();
+    
+    // Update start button state to reflect current selections
+    this.updateStartButton();
+    
+    // Restore scroll position after re-render
+    if (scrollTop > 0) {
+      requestAnimationFrame(() => {
+        const newDrifterList = document.getElementById('drifter-list-container') as HTMLElement;
+        if (newDrifterList) {
+          newDrifterList.scrollTop = scrollTop;
+        }
+      });
+    }
   }
 
   private renderDrifterSelection(drifters: DrifterProfile[], state: GameState): string {
@@ -344,7 +384,7 @@ export class UIManager {
       </div>
 
       <!-- Drifter List -->
-      <div style="max-height: 200px; overflow-y: auto; margin-bottom: 12px;">
+      <div id="drifter-list-container" style="flex: 1; overflow-y: auto; margin-bottom: 12px; min-height: 0; max-height: 405px;">
         ${displayDrifters.map(drifter => {
           const isSelected = selectedIds.includes(drifter.tokenId);
           const isBusy = busyDrifterIds.has(drifter.tokenId);
@@ -462,26 +502,35 @@ export class UIManager {
       `;
     }
 
+    const selectedMissionType = state.selectedMissionType;
+
     return `
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-        ${availableMissionTypes.map(missionType => `
-          <button 
-            class="mission-type-btn" 
-            data-type="${missionType.type}" 
-            style="
-              background: ${missionType.color}; 
-              border: 1px solid ${missionType.borderColor}; 
-              color: #fff; 
-              padding: 8px; 
-              cursor: ${missionType.enabled ? 'pointer' : 'not-allowed'}; 
-              border-radius: 4px;
-              opacity: ${missionType.enabled ? '1' : '0.6'};
-            "
-            ${!missionType.enabled ? 'disabled' : ''}
-          >
-            ${missionType.name}<br><small>${missionType.description}</small>
-          </button>
-        `).join('')}
+        ${availableMissionTypes.map(missionType => {
+          const isSelected = selectedMissionType === missionType.type;
+          return `
+            <button 
+              class="mission-type-btn" 
+              data-type="${missionType.type}" 
+              style="
+                background: ${isSelected ? '#ffd700' : missionType.color}; 
+                border: 2px solid ${isSelected ? '#ffff00' : missionType.borderColor}; 
+                color: ${isSelected ? '#000' : '#fff'}; 
+                padding: 8px; 
+                cursor: ${missionType.enabled ? 'pointer' : 'not-allowed'}; 
+                border-radius: 4px;
+                opacity: ${missionType.enabled ? (isSelected ? '1' : '0.7') : '0.6'};
+                transform: ${isSelected ? 'scale(1.05)' : 'scale(1)'};
+                box-shadow: ${isSelected ? '0 0 12px rgba(255, 215, 0, 0.6)' : 'none'};
+                font-weight: ${isSelected ? 'bold' : 'normal'};
+                transition: all 0.2s ease;
+              "
+              ${!missionType.enabled ? 'disabled' : ''}
+            >
+              ${missionType.name}<br><small>${missionType.description}</small>
+            </button>
+          `;
+        }).join('')}
       </div>
     `;
   }
@@ -516,16 +565,6 @@ export class UIManager {
     // Mission type selection
     document.querySelectorAll('.mission-type-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        // Clear previous selection styles
-        document.querySelectorAll('.mission-type-btn').forEach(b => {
-          (b as HTMLElement).style.transform = 'none';
-          (b as HTMLElement).style.boxShadow = 'none';
-        });
-        
-        // Highlight selected
-        (btn as HTMLElement).style.transform = 'scale(0.95)';
-        (btn as HTMLElement).style.boxShadow = '0 0 8px rgba(255, 215, 0, 0.5)';
-        
         const missionType = btn.getAttribute('data-type');
         gameState.setMissionType(missionType);
         

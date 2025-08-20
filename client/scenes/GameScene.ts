@@ -323,11 +323,17 @@ export class GameScene extends Phaser.Scene {
   private handleBackgroundClick() {
     const currentState = gameState.getState();
     
-    // If mission panel is open, close it and deselect node
-    if (currentState.showMissionPanel) {
-      gameState.hideMissionPanel();
-      this.deselectCurrentNode();
+    // Check if any UI panel is open - if so, don't handle background click
+    // The UI panels should handle their own closing via close buttons or explicit actions
+    if (currentState.showMissionPanel || 
+        currentState.showMercenaryPanel || 
+        currentState.showProfilePanel || 
+        currentState.showActiveMissionsPanel) {
+      return; // Don't close panels on background click - only via close button or ESC
     }
+    
+    // Only deselect nodes if no panels are open
+    this.deselectCurrentNode();
   }
 
   private deselectCurrentNode() {
