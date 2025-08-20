@@ -31,11 +31,10 @@ interface PendingNotification {
 }
 
 interface ResourceManagementConfig {
-  minNodesPerType: Record<ResourceType, number>;
-  minTotalNodes: number;
-  maxTotalNodes: number;
-  regenerationInterval: number; // minutes
-  naturalRegenerationRate: number; // per hour
+  targetNodesPerType: Record<ResourceType, number>;
+  totalTargetNodes: number;
+  degradationCheckInterval: number; // minutes
+  degradationRate: number; // percentage per hour (negative)
   spawnArea: {
     minX: number;
     maxX: number;
@@ -97,20 +96,19 @@ export class GameDO extends DurableObject {
         lastUpdate: new Date()
       },
       resourceConfig: {
-        minNodesPerType: {
-          ore: 2,
-          scrap: 2,
-          organic: 1
+        targetNodesPerType: {
+          ore: 3,
+          scrap: 3,
+          organic: 2
         },
-        minTotalNodes: 5,
-        maxTotalNodes: 15,
-        regenerationInterval: 15, // Check every 15 minutes
-        naturalRegenerationRate: 10, // 10% per hour
+        totalTargetNodes: 8,
+        degradationCheckInterval: 15, // Check every 15 minutes
+        degradationRate: 10, // 10% per hour (negative effect)
         spawnArea: {
-          minX: 50,
-          maxX: 650,
-          minY: 50,
-          maxY: 450
+          minX: 30,
+          maxX: 1170, // 1200 - 30 margin
+          minY: 80,   // Account for title area
+          maxY: 770   // 800 - 30 margin
         }
       }
     };
@@ -229,45 +227,20 @@ export class GameDO extends DurableObject {
 
     console.log('[GameDO] Initializing resource nodes (no existing nodes found)');
     
-    // Create some sample resource nodes
-    const nodes: ResourceNode[] = [
-      {
-        id: 'ore-1',
-        type: 'ore' as ResourceType,
-        coordinates: { x: 100, y: 150 },
-        baseYield: 50,
-        currentYield: 50,
-        depletion: 0,
-        rarity: 'common' as Rarity,
-        discoveredBy: [],
-        lastHarvested: new Date(Date.now() - 1000 * 60 * 60), // 1 hour ago
-        isActive: true
-      },
-      {
-        id: 'scrap-1',
-        type: 'scrap' as ResourceType,
-        coordinates: { x: 300, y: 200 },
-        baseYield: 75,
-        currentYield: 75,
-        depletion: 0,
-        rarity: 'uncommon' as Rarity,
-        discoveredBy: [],
-        lastHarvested: new Date(Date.now() - 1000 * 60 * 30), // 30 minutes ago
-        isActive: true
-      },
-      {
-        id: 'organic-1',
-        type: 'organic' as ResourceType,
-        coordinates: { x: 500, y: 100 },
-        baseYield: 30,
-        currentYield: 30,
-        depletion: 0,
-        rarity: 'rare' as Rarity,
-        discoveredBy: [],
-        lastHarvested: new Date(Date.now() - 1000 * 60 * 15), // 15 minutes ago
-        isActive: true
-      }
+    // Create 8 initial resource nodes matching our target distribution
+    const nodesToCreate: ResourceType[] = [
+      'ore', 'ore', 'ore',         // 3 ore nodes
+      'scrap', 'scrap', 'scrap',   // 3 scrap nodes
+      'organic', 'organic'         // 2 organic nodes
     ];
+    
+    const nodes: ResourceNode[] = [];
+    
+    for (let i = 0; i < nodesToCreate.length; i++) {
+      const type = nodesToCreate[i];
+      const newNode = this.createRandomResourceNodeWithAntiOverlap(type);
+      nodes.push(newNode);
+    }
 
     for (const node of nodes) {
       this.gameState.resourceNodes.set(node.id, node);
@@ -872,13 +845,13 @@ export class GameDO extends DurableObject {
   }
 
   /**
-   * Schedule the next resource management alarm
+   * Schedule the next resource degradation alarm
    */
   private async scheduleResourceManagementAlarm() {
-    const intervalMs = this.gameState.resourceConfig.regenerationInterval * 60 * 1000;
+    const intervalMs = this.gameState.resourceConfig.degradationCheckInterval * 60 * 1000;
     const nextAlarmTime = new Date(Date.now() + intervalMs);
     
-    console.log(`[GameDO] Scheduling resource management alarm for ${nextAlarmTime.toISOString()}`);
+    console.log(`[GameDO] Scheduling resource degradation alarm for ${nextAlarmTime.toISOString()}`);
     await this.ctx.storage.setAlarm(nextAlarmTime);
   }
 
@@ -899,50 +872,59 @@ export class GameDO extends DurableObject {
   }
 
   /**
-   * Perform resource management: regeneration, cleanup, and spawning
+   * Perform resource management: degradation, cleanup, and spawning
    */
   private async performResourceManagement() {
-    console.log('[GameDO] Starting resource management cycle');
+    console.log('[GameDO] Starting resource degradation cycle');
     
     const config = this.gameState.resourceConfig;
+    const now = new Date();
     let changesMade = false;
     
-    // 1. Remove fully depleted nodes
-    const nodesToRemove: string[] = [];
+    // 1. Calculate hours elapsed since last update
+    const lastUpdate = this.gameState.worldMetrics.lastUpdate;
+    const hoursElapsed = (now.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60);
+    console.log(`[GameDO] Hours elapsed since last degradation: ${hoursElapsed.toFixed(2)}`);
+    
+    // 2. Apply degradation to all active nodes
+    const depleted: string[] = [];
+    const hourlyDegradationRate = config.degradationRate / 100; // Convert percentage to decimal
+    
     for (const [nodeId, node] of this.gameState.resourceNodes) {
-      if (node.currentYield <= 0 && !node.isActive) {
-        nodesToRemove.push(nodeId);
+      if (node.isActive && node.currentYield > 0) {
+        // Calculate degradation amount (minimum 1 per cycle to ensure steady degradation)
+        let degradationAmount = Math.floor(node.baseYield * hourlyDegradationRate * hoursElapsed);
+        
+        // Ensure at least 1 point of degradation per cycle for active nodes
+        if (degradationAmount < 1) {
+          degradationAmount = 1;
+        }
+        
+        const oldYield = node.currentYield;
+        node.currentYield = Math.max(0, node.currentYield - degradationAmount);
+        
+        console.log(`[GameDO] Node ${nodeId} degraded: ${oldYield} -> ${node.currentYield} (-${oldYield - node.currentYield})`);
+        changesMade = true;
+        
+        // Mark as inactive if fully degraded
+        if (node.currentYield <= 0) {
+          node.isActive = false;
+          depleted.push(nodeId);
+          console.log(`[GameDO] Node ${nodeId} has been fully degraded and is now inactive`);
+        }
       }
     }
     
-    if (nodesToRemove.length > 0) {
-      console.log(`[GameDO] Removing ${nodesToRemove.length} depleted nodes`);
-      for (const nodeId of nodesToRemove) {
+    // 3. Remove fully degraded nodes immediately
+    if (depleted.length > 0) {
+      console.log(`[GameDO] Removing ${depleted.length} fully degraded nodes`);
+      for (const nodeId of depleted) {
         this.gameState.resourceNodes.delete(nodeId);
       }
       changesMade = true;
     }
     
-    // 2. Natural regeneration of partially depleted nodes
-    const hourlyRegenRate = config.naturalRegenerationRate / 100; // Convert percentage to decimal
-    const intervalHours = config.regenerationInterval / 60; // Convert minutes to hours
-    const regenThisCycle = hourlyRegenRate * intervalHours;
-    
-    for (const [nodeId, node] of this.gameState.resourceNodes) {
-      if (node.depletion > 0 && node.isActive) {
-        const regenAmount = Math.floor(node.baseYield * regenThisCycle);
-        if (regenAmount > 0) {
-          const oldYield = node.currentYield;
-          node.currentYield = Math.min(node.baseYield, node.currentYield + regenAmount);
-          node.depletion = Math.max(0, node.depletion - regenAmount);
-          
-          console.log(`[GameDO] Node ${nodeId} regenerated: ${oldYield} -> ${node.currentYield} (+${node.currentYield - oldYield})`);
-          changesMade = true;
-        }
-      }
-    }
-    
-    // 3. Count current nodes by type
+    // 4. Count current active nodes by type
     const nodeCountsByType: Record<ResourceType, number> = {
       ore: 0,
       scrap: 0,
@@ -955,61 +937,39 @@ export class GameDO extends DurableObject {
       }
     }
     
-    // 4. Spawn new nodes if needed
     const totalActiveNodes = Object.values(nodeCountsByType).reduce((sum, count) => sum + count, 0);
-    console.log(`[GameDO] Current node counts: ore=${nodeCountsByType.ore}, scrap=${nodeCountsByType.scrap}, organic=${nodeCountsByType.organic}, total=${totalActiveNodes}`);
+    console.log(`[GameDO] Current active node counts: ore=${nodeCountsByType.ore}, scrap=${nodeCountsByType.scrap}, organic=${nodeCountsByType.organic}, total=${totalActiveNodes}`);
     
-    // Check if we need more nodes of any type
+    // 5. Spawn replacement nodes to maintain target counts
     const nodesToSpawn: { type: ResourceType; count: number }[] = [];
     
-    for (const [type, currentCount] of Object.entries(nodeCountsByType) as [ResourceType, number][]) {
-      const minNeeded = config.minNodesPerType[type];
-      if (currentCount < minNeeded) {
-        nodesToSpawn.push({ type, count: minNeeded - currentCount });
-      }
-    }
-    
-    // Also check if we're below minimum total
-    if (totalActiveNodes < config.minTotalNodes) {
-      const additionalNeeded = config.minTotalNodes - totalActiveNodes;
-      // Distribute among types that aren't at minimum
-      const typesNeedingMore = Object.entries(nodeCountsByType)
-        .filter(([type, count]) => count < config.minNodesPerType[type as ResourceType])
-        .map(([type]) => type as ResourceType);
-      
-      if (typesNeedingMore.length === 0) {
-        // All types at minimum, add to ore by default
-        const existing = nodesToSpawn.find(n => n.type === 'ore');
-        if (existing) {
-          existing.count += additionalNeeded;
-        } else {
-          nodesToSpawn.push({ type: 'ore', count: additionalNeeded });
-        }
+    // Check each resource type against its target
+    for (const [type, targetCount] of Object.entries(config.targetNodesPerType) as [ResourceType, number][]) {
+      const currentCount = nodeCountsByType[type];
+      if (currentCount < targetCount) {
+        nodesToSpawn.push({ type, count: targetCount - currentCount });
       }
     }
     
     // Spawn the needed nodes
     for (const { type, count } of nodesToSpawn) {
       for (let i = 0; i < count; i++) {
-        if (totalActiveNodes + i >= config.maxTotalNodes) {
-          console.log(`[GameDO] Reached maximum node limit (${config.maxTotalNodes}), stopping spawn`);
-          break;
-        }
-        
-        const newNode = this.createRandomResourceNode(type);
+        const newNode = this.createRandomResourceNodeWithAntiOverlap(type);
         this.gameState.resourceNodes.set(newNode.id, newNode);
-        console.log(`[GameDO] Spawned new ${type} node at (${newNode.coordinates.x}, ${newNode.coordinates.y})`);
+        console.log(`[GameDO] Spawned replacement ${type} node at (${newNode.coordinates.x}, ${newNode.coordinates.y}) with ${newNode.currentYield} yield`);
         changesMade = true;
       }
     }
     
-    // 5. Save changes and broadcast if anything changed
+    // 6. Update world metrics and save
+    this.gameState.worldMetrics.lastUpdate = now;
+    
     if (changesMade) {
       await this.saveGameState();
       await this.broadcastWorldStateUpdate();
-      console.log('[GameDO] Resource management cycle completed with changes');
+      console.log('[GameDO] Resource degradation cycle completed with changes');
     } else {
-      console.log('[GameDO] Resource management cycle completed with no changes needed');
+      console.log('[GameDO] Resource degradation cycle completed with no changes needed');
     }
   }
 
@@ -1059,6 +1019,88 @@ export class GameDO extends DurableObject {
       rarity: selectedRarity,
       discoveredBy: [],
       lastHarvested: new Date(0), // Never harvested
+      isActive: true
+    };
+  }
+
+  /**
+   * Create a random resource node with overlap prevention
+   */
+  private createRandomResourceNodeWithAntiOverlap(type: ResourceType): ResourceNode {
+    const config = this.gameState.resourceConfig;
+    const spawnArea = config.spawnArea;
+    const minDistance = 40; // Minimum distance between nodes in pixels
+    const maxAttempts = 10; // Maximum attempts to find a non-overlapping position
+    
+    // Get existing node positions
+    const existingPositions: { x: number; y: number }[] = [];
+    for (const node of this.gameState.resourceNodes.values()) {
+      if (node.isActive) {
+        existingPositions.push(node.coordinates);
+      }
+    }
+    
+    let x: number, y: number;
+    let attempts = 0;
+    let positionIsValid = false;
+    
+    // Try to find a non-overlapping position
+    do {
+      x = Math.floor(Math.random() * (spawnArea.maxX - spawnArea.minX)) + spawnArea.minX;
+      y = Math.floor(Math.random() * (spawnArea.maxY - spawnArea.minY)) + spawnArea.minY;
+      
+      // Check if this position is far enough from existing nodes
+      positionIsValid = true;
+      for (const existing of existingPositions) {
+        const distance = Math.sqrt(Math.pow(x - existing.x, 2) + Math.pow(y - existing.y, 2));
+        if (distance < minDistance) {
+          positionIsValid = false;
+          break;
+        }
+      }
+      
+      attempts++;
+    } while (!positionIsValid && attempts < maxAttempts);
+    
+    // If we couldn't find a good position after maxAttempts, just use the last generated position
+    if (!positionIsValid) {
+      console.log(`[GameDO] Could not find non-overlapping position after ${maxAttempts} attempts, using position (${x}, ${y})`);
+    }
+    
+    // Generate rarity and yield (same logic as createRandomResourceNode)
+    const rarities: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+    const rarityWeights = [50, 30, 15, 4, 1];
+    
+    let selectedRarity: Rarity = 'common';
+    const roll = Math.random() * 100;
+    let cumulative = 0;
+    
+    for (let i = 0; i < rarities.length; i++) {
+      cumulative += rarityWeights[i];
+      if (roll <= cumulative) {
+        selectedRarity = rarities[i];
+        break;
+      }
+    }
+    
+    const baseYields = {
+      ore: { common: 40, uncommon: 60, rare: 80, epic: 120, legendary: 200 },
+      scrap: { common: 50, uncommon: 75, rare: 100, epic: 150, legendary: 250 },
+      organic: { common: 25, uncommon: 40, rare: 60, epic: 90, legendary: 150 }
+    };
+    
+    const baseYield = baseYields[type][selectedRarity];
+    
+    return {
+      id: `${type}-${crypto.randomUUID()}`,
+      type,
+      coordinates: { x, y },
+      baseYield,
+      currentYield: baseYield,
+      depletion: 0,
+      rarity: selectedRarity,
+      discoveredBy: [],
+      lastHarvested: new Date(0),
       isActive: true
     };
   }
