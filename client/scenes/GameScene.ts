@@ -13,14 +13,15 @@ const RESOURCE_NODE_RARITY_SCALE_MULTIPLIER = 1.2; // How much bigger rare/epic/
 const RESOURCE_NODE_LABEL_OFFSET = 30; // Distance above the node to place the label
 
 export class GameScene extends Phaser.Scene {
-  private resourceNodes: Map<string, Phaser.GameObjects.Image> = new Map();
+  private resourceNodes = new Map<string, Phaser.GameObjects.Image>();
   private worldData: any = null;
   private selectedNode: string | null = null;
-  private nodeLabels: Map<string, Phaser.GameObjects.Text> = new Map();
-  private missionIndicators: Map<string, Phaser.GameObjects.Graphics> = new Map();
-  private missionRoutes: Map<string, Phaser.GameObjects.Graphics> = new Map();
-  private missionDrifters: Map<string, Phaser.GameObjects.Container> = new Map();
-  private pendingTinyLoads: Map<string, Promise<string>> = new Map();
+  private nodeLabels = new Map<string, Phaser.GameObjects.Text>();
+  private nodeGlows = new Map<string, Phaser.GameObjects.Arc>(); // Track glow circles
+  private missionIndicators = new Map<string, Phaser.GameObjects.Graphics>();
+  private missionRoutes = new Map<string, Phaser.GameObjects.Graphics>();
+  private missionDrifters = new Map<string, Phaser.GameObjects.Container>();
+  private pendingTinyLoads = new Map<string, Promise<string>>();
   private townMarker: Phaser.GameObjects.Container | null = null;
   private missionRenderVersion = 0;
   
@@ -91,25 +92,61 @@ export class GameScene extends Phaser.Scene {
   private updateResourceNodes(serverNodes: ResourceNode[]) {
     const serverNodeMap = new Map(serverNodes.map(node => [node.id, node]));
     
-    // Remove nodes that no longer exist on server
+    console.log(`[GameScene] 🔄 Processing resource node updates:`);
+    console.log(`[GameScene]   - Server has ${serverNodes.length} nodes`);
+    console.log(`[GameScene]   - Client has ${this.resourceNodes.size} nodes`);
+    
+    // AGGRESSIVE CLEANUP: Remove any nodes that either:
+    // 1. No longer exist on server, OR 
+    // 2. Have 0 yield (even if server still has them)
+    const nodesToRemove: string[] = [];
+    
     for (const [nodeId] of this.resourceNodes) {
-      if (!serverNodeMap.has(nodeId)) {
-        console.log(`[GameScene] Removing deleted node: ${nodeId}`);
-        this.removeResourceNode(nodeId);
+      const serverNode = serverNodeMap.get(nodeId);
+      if (!serverNode) {
+        // Node no longer exists on server
+        console.log(`[GameScene] ❌ Removing server-deleted node: ${nodeId}`);
+        nodesToRemove.push(nodeId);
+      } else if (serverNode.currentYield <= 0 || !serverNode.isActive) {
+        // Node has 0 yield or is inactive - remove from client immediately
+        console.log(`[GameScene] 💀 Removing depleted node: ${nodeId} (yield: ${serverNode.currentYield}, active: ${serverNode.isActive})`);
+        nodesToRemove.push(nodeId);
       }
     }
     
+    // Remove all identified nodes
+    for (const nodeId of nodesToRemove) {
+      this.removeResourceNode(nodeId);
+    }
+    
     // Update existing nodes or create new ones
+    // Only process active nodes with yield > 0
     for (const serverNode of serverNodes) {
+      if (serverNode.currentYield <= 0 || !serverNode.isActive) {
+        // Skip depleted/inactive nodes - they should not be displayed
+        console.log(`[GameScene] 🚫 Skipping depleted/inactive node: ${serverNode.id} (yield: ${serverNode.currentYield}, active: ${serverNode.isActive})`);
+        continue;
+      }
+      
       const existingNode = this.resourceNodes.get(serverNode.id);
       
       if (!existingNode) {
-        // Create new node
-        console.log(`[GameScene] Creating new resource node: ${serverNode.id}`);
+        // Create new node (only if it has yield and is active)
+        console.log(`[GameScene] ✨ Creating new resource node: ${serverNode.id} (${serverNode.type}, ${serverNode.currentYield} yield)`);
         this.createResourceNodeFromServerData(serverNode);
       } else {
         // Update existing node if changed
         this.updateExistingResourceNode(serverNode);
+      }
+    }
+    
+    console.log(`[GameScene] 🏁 Resource update complete. Client now has ${this.resourceNodes.size} nodes`);
+    
+    // Final validation - log any remaining nodes with 0 yield (this shouldn't happen)
+    for (const [nodeId] of this.resourceNodes) {
+      const serverNode = serverNodeMap.get(nodeId);
+      if (serverNode && serverNode.currentYield <= 0) {
+        console.warn(`[GameScene] ⚠️ WARNING: Node ${nodeId} still displayed but has 0 yield!`);
       }
     }
   }
@@ -146,11 +183,12 @@ export class GameScene extends Phaser.Scene {
   }
   
   /**
-   * Remove a resource node and its label
+   * Remove a resource node, its label, and glow circle
    */
   private removeResourceNode(nodeId: string) {
     const nodeSprite = this.resourceNodes.get(nodeId);
     const nodeLabel = this.nodeLabels.get(nodeId);
+    const nodeGlow = this.nodeGlows.get(nodeId);
     
     if (nodeSprite) {
       nodeSprite.destroy();
@@ -160,6 +198,12 @@ export class GameScene extends Phaser.Scene {
     if (nodeLabel) {
       nodeLabel.destroy();
       this.nodeLabels.delete(nodeId);
+    }
+    
+    // Clean up glow circle if it exists
+    if (nodeGlow) {
+      nodeGlow.destroy();
+      this.nodeGlows.delete(nodeId);
     }
   }
   
@@ -223,10 +267,12 @@ export class GameScene extends Phaser.Scene {
     node.setScale(scale);
     node.setInteractive({ cursor: 'pointer' });
     
-    // Add glow effect for rare nodes
+    // Add glow effect for rare nodes and store reference
+    let glow: Phaser.GameObjects.Arc | null = null;
     if (rarity !== 'common') {
-      const glow = this.add.circle(x, y, 35, glowColor, 0.3);
+      glow = this.add.circle(x, y, 35, glowColor, 0.3);
       glow.setBlendMode(Phaser.BlendModes.ADD);
+      this.nodeGlows.set(id, glow); // Store for cleanup
     }
     
     // Create hover effects
@@ -263,32 +309,47 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateMissionIndicators(missions: any[]) {
-    // Clear existing indicators
-    this.missionIndicators.forEach(indicator => indicator.destroy());
+    console.log(`[GameScene] 🎯 Updating mission indicators for ${missions.length} missions`);
+    
+    // Clear existing indicators completely
+    this.missionIndicators.forEach((indicator, missionId) => {
+      console.log(`[GameScene] 🗑️ Destroying indicator for mission: ${missionId}`);
+      indicator.destroy();
+    });
     this.missionIndicators.clear();
     
+    // Filter to only active missions with valid target nodes
+    const activeMissions = missions.filter(mission => 
+      mission.status === 'active' && mission.targetNodeId
+    );
+    
+    console.log(`[GameScene] 🎯 Creating indicators for ${activeMissions.length} active missions`);
+    
     // Add indicators for active missions
-    missions.forEach(mission => {
-      if (mission.targetNodeId) {
-        const node = this.resourceNodes.get(mission.targetNodeId);
-        if (node) {
-          const indicator = this.add.graphics();
-          indicator.lineStyle(3, 0x00FF00);
-          indicator.strokeCircle(node.x, node.y, 40);
-          
-          // Animate the indicator
-          this.tweens.add({
-            targets: indicator,
-            alpha: { from: 1, to: 0.3 },
-            duration: 1000,
-            yoyo: true,
-            repeat: -1
-          });
-          
-          this.missionIndicators.set(mission.id, indicator);
-        }
+    activeMissions.forEach(mission => {
+      const node = this.resourceNodes.get(mission.targetNodeId);
+      if (node) {
+        console.log(`[GameScene] ➕ Creating contested indicator for node: ${mission.targetNodeId}`);
+        const indicator = this.add.graphics();
+        indicator.lineStyle(3, 0x00FF00);
+        indicator.strokeCircle(node.x, node.y, 40);
+        
+        // Animate the indicator
+        this.tweens.add({
+          targets: indicator,
+          alpha: { from: 1, to: 0.3 },
+          duration: 1000,
+          yoyo: true,
+          repeat: -1
+        });
+        
+        this.missionIndicators.set(mission.id, indicator);
+      } else {
+        console.warn(`[GameScene] ⚠️ Cannot create indicator - node ${mission.targetNodeId} not found`);
       }
     });
+    
+    console.log(`[GameScene] 🎯 Mission indicators update complete. Active: ${this.missionIndicators.size}`);
   }
 
   private selectResourceNode(nodeId: string, nodeData: any) {

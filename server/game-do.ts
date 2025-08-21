@@ -300,11 +300,15 @@ export class GameDO extends DurableObject {
    */
   private async sendWorldStateUpdate(sessionId: string) {
       console.log(`[GameDO] send worldStateUpdate ${sessionId}`);
+    // Only send active nodes with yield > 0
+    const activeNodes = Array.from(this.gameState.resourceNodes.values())
+      .filter(node => node.isActive && node.currentYield > 0);
+    
     const message: WorldStateUpdate = {
       type: 'world_state',
       timestamp: new Date(),
       data: {
-        resourceNodes: Array.from(this.gameState.resourceNodes.values()),
+        resourceNodes: activeNodes,
         missions: Array.from(this.gameState.missions.values()),
         worldMetrics: this.gameState.worldMetrics
       }
@@ -351,17 +355,21 @@ export class GameDO extends DurableObject {
    * Broadcast world state to all authenticated sessions
    */
   private async broadcastWorldStateUpdate() {
+    // Only send active nodes with yield > 0
+    const activeNodes = Array.from(this.gameState.resourceNodes.values())
+      .filter(node => node.isActive && node.currentYield > 0);
+    
     const message: WorldStateUpdate = {
       type: 'world_state',
       timestamp: new Date(),
       data: {
-        resourceNodes: Array.from(this.gameState.resourceNodes.values()),
+        resourceNodes: activeNodes,
         missions: Array.from(this.gameState.missions.values()),
         worldMetrics: this.gameState.worldMetrics
       }
     };
 
-    console.log('[GameDO] Broadcasting world state update to all clients');
+    console.log(`[GameDO] Broadcasting world state update to all clients (${activeNodes.length} active nodes)`);
     
     // Send to all authenticated sessions
     for (const [sessionId, session] of this.webSocketSessions) {

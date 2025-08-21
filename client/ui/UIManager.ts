@@ -10,6 +10,7 @@ export class UIManager {
   private mercenaryPanel: HTMLElement | null = null;
   private profilePanel: HTMLElement | null = null;
   private activeMissionsPanel: HTMLElement | null = null;
+  private buttonUpdateInterval: number | null = null;
 
   constructor() {
     this.createUIElements();
@@ -19,6 +20,36 @@ export class UIManager {
     gameState.onStateChange((state) => {
       this.updateUI(state);
     });
+    
+    // Start real-time button updates (every 5 seconds)
+    this.startButtonUpdateTimer();
+  }
+  
+  /**
+   * Start a timer to update button highlighting every 5 seconds
+   * This ensures the Active Missions button updates when missions complete
+   */
+  private startButtonUpdateTimer() {
+    if (this.buttonUpdateInterval) {
+      clearInterval(this.buttonUpdateInterval);
+    }
+    
+    this.buttonUpdateInterval = setInterval(() => {
+      const state = gameState.getState();
+      if (state.isAuthenticated && state.playerMissions) {
+        this.updateActiveMissionsButton(state);
+      }
+    }, 5000) as any; // Check every 5 seconds
+  }
+  
+  /**
+   * Stop the button update timer
+   */
+  private stopButtonUpdateTimer() {
+    if (this.buttonUpdateInterval) {
+      clearInterval(this.buttonUpdateInterval);
+      this.buttonUpdateInterval = null;
+    }
   }
 
   private createUIElements() {
@@ -775,6 +806,86 @@ export class UIManager {
       if (connectButton) connectButton.style.display = 'block';
       if (walletInfo) walletInfo.style.display = 'none';
     }
+    
+    // Update Active Missions button highlighting
+    this.updateActiveMissionsButton(state);
+  }
+  
+  /**
+   * Check if there are completed missions ready for reward collection
+   */
+  private hasCompletedMissions(state: GameState): boolean {
+    if (!state.playerMissions || state.playerMissions.length === 0) {
+      return false;
+    }
+    
+    const now = new Date();
+    return state.playerMissions.some(mission => {
+      if (mission.status !== 'active') return false;
+      
+      const completionTime = mission.completionTime instanceof Date 
+        ? mission.completionTime 
+        : new Date(mission.completionTime);
+      
+      return now >= completionTime;
+    });
+  }
+  
+  /**
+   * Update the Active Missions button with highlighting when rewards are ready
+   */
+  private updateActiveMissionsButton(state: GameState) {
+    const button = document.getElementById('toggle-missions');
+    if (!button) return;
+    
+    const hasCompleted = this.hasCompletedMissions(state);
+    const completedCount = this.getCompletedMissionsCount(state);
+    
+    if (hasCompleted) {
+      // Highlight the button when there are completed missions
+      button.style.background = 'linear-gradient(45deg, #FFD700, #FFA500)';
+      button.style.border = '2px solid #FFD700';
+      button.style.boxShadow = '0 0 15px rgba(255, 215, 0, 0.6)';
+      button.style.animation = 'pulse 2s infinite';
+      button.style.color = '#000';
+      button.style.fontWeight = 'bold';
+      
+      // Update button text to show count
+      if (completedCount === 1) {
+        button.textContent = 'Active Missions (1 Complete!)';
+      } else {
+        button.textContent = `Active Missions (${completedCount} Complete!)`;
+      }
+    } else {
+      // Reset to normal styling
+      button.style.background = '#444';
+      button.style.border = '1px solid #666';
+      button.style.boxShadow = 'none';
+      button.style.animation = 'none';
+      button.style.color = '#fff';
+      button.style.fontWeight = 'normal';
+      button.textContent = 'Active Missions';
+    }
+  }
+  
+  /**
+   * Get the count of completed missions ready for collection
+   */
+  private getCompletedMissionsCount(state: GameState): number {
+    if (!state.playerMissions || state.playerMissions.length === 0) {
+      return 0;
+    }
+    
+    const now = new Date();
+    return state.playerMissions.filter(mission => {
+      if (mission.status !== 'active') return false;
+      
+      const completionTime = mission.completionTime instanceof Date 
+        ? mission.completionTime 
+        : new Date(mission.completionTime);
+      
+      return now >= completionTime;
+    }).length;
   }
 
   private getNotificationColor(type: string): string {

@@ -79,4 +79,24 @@ world.get('/missions', async (c) => {
   }
 });
 
+// POST /api/world/debug/trigger-resource-management - Manually trigger resource management
+world.post('/debug/trigger-resource-management', async (c) => {
+  try {
+    const gameId = c.env.GAME_DO.idFromName('game');
+    const gameStub = c.env.GAME_DO.get(gameId);
+    
+    console.log('[DEBUG] Manually triggering resource management');
+    const result = await gameStub.triggerResourceManagement();
+    
+    return c.json({
+      success: result.success,
+      summary: result.summary,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Debug trigger error:', error);
+    return c.json({ error: 'Failed to trigger resource management' }, 500);
+  }
+});
+
 export default world;
