@@ -77,7 +77,8 @@ export class GameScene extends Phaser.Scene {
   private updateWorldDisplay(state: GameState) {
     if (state.resourceNodes && state.resourceNodes.length > 0) {
       this.updateResourceNodes(state.resourceNodes);
-      this.updateMissionIndicators(state.activeMissions);
+      // Use playerMissions for indicators too, not global activeMissions
+      this.updateMissionIndicators(state.playerMissions || []);
     }
     
     // Update mission routes and drifter positions
@@ -329,10 +330,11 @@ export class GameScene extends Phaser.Scene {
     activeMissions.forEach(mission => {
       const node = this.resourceNodes.get(mission.targetNodeId);
       if (node) {
-        console.log(`[GameScene] ➕ Creating contested indicator for node: ${mission.targetNodeId}`);
+        console.log(`[GameScene] ➥ Creating contested indicator for node: ${mission.targetNodeId} at (${node.x}, ${node.y})`);
         const indicator = this.add.graphics();
         indicator.lineStyle(3, 0x00FF00);
         indicator.strokeCircle(node.x, node.y, 40);
+        console.log(`[GameScene] 🟢 Drew large mission indicator circle at (${node.x}, ${node.y}) with radius 40 for mission ${mission.id.slice(-6)}`);
         
         // Animate the indicator
         this.tweens.add({
@@ -472,12 +474,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateMissionRoutes(playerMissions: Mission[]) {
+    console.log(`[GameScene] 🎬 updateMissionRoutes called with ${playerMissions.length} missions`);
+    console.log(`[GameScene]   ALL mission statuses:`, playerMissions.map(m => `${m.id.slice(-6)}:${m.status}`));
+    
     // Bump render version to invalidate any in-flight async icon loads
     this.missionRenderVersion++;
     const renderVersion = this.missionRenderVersion;
+    
+    console.log(`[GameScene] 🧹 Cleaning up existing routes and drifters (${this.missionRoutes.size} routes, ${this.missionDrifters.size} drifters)`);
+    
     // Clear existing routes and drifters
-    this.missionRoutes.forEach(route => route.destroy());
-    this.missionDrifters.forEach(container => {
+    this.missionRoutes.forEach((route, missionId) => {
+      console.log(`[GameScene] 🗑️ Destroying route for mission ${missionId.slice(-6)}`);
+      route.destroy();
+    });
+    this.missionDrifters.forEach((container, missionId) => {
+      console.log(`[GameScene] 🗑️ Destroying drifter container for mission ${missionId.slice(-6)} at position (${container.x}, ${container.y})`);
       // Ensure children are destroyed to prevent ghost images
       try { (container as any).removeAll?.(true); } catch {}
       container.destroy();
@@ -487,16 +499,25 @@ export class GameScene extends Phaser.Scene {
     
     // Create routes and drifters for active player missions
     const activeMissions = playerMissions.filter(m => m.status === 'active');
+    console.log(`[GameScene] 🚀 Creating new routes/drifters for ${activeMissions.length} active missions`);
+    
     activeMissions.forEach(mission => {
+      console.log(`[GameScene] 🎯 Processing active mission ${mission.id.slice(-6)} targeting node ${mission.targetNodeId}`);
       this.createMissionRoute(mission);
       this.createMissionDrifter(mission, renderVersion);
     });
+    
+    console.log(`[GameScene] 🏁 updateMissionRoutes complete. Now have ${this.missionRoutes.size} routes and ${this.missionDrifters.size} drifters`);
   }
 
   private createMissionRoute(mission: Mission) {
     const currentState = gameState.getState();
     const targetNode = currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId);
-    if (!targetNode) return;
+    if (!targetNode) {
+      console.warn(`[GameScene] ⚠️ Skipping route creation - target node ${mission.targetNodeId} not found for mission ${mission.id}`);
+      console.warn(`[GameScene]   - Available resource node IDs:`, currentState.resourceNodes?.map(n => n.id) || []);
+      return;
+    }
     
     const { x: nodeX, y: nodeY } = targetNode.coordinates;
     const routeGraphics = this.add.graphics();
@@ -527,9 +548,24 @@ export class GameScene extends Phaser.Scene {
   private async createMissionDrifter(mission: Mission, renderVersion: number) {
     const currentState = gameState.getState();
     const targetNode = currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId);
-    if (!targetNode) return;
+    if (!targetNode) {
+      console.warn(`[GameScene] ⚠️ Skipping drifter creation - target node ${mission.targetNodeId} not found for mission ${mission.id}`);
+      console.warn(`[GameScene]   - Available resource node IDs:`, currentState.resourceNodes?.map(n => n.id) || []);
+      console.warn(`[GameScene]   - Looking for node ID: ${mission.targetNodeId}`);
+      
+      // Check if we have the node in our rendered nodes map
+      const clientNode = this.resourceNodes.get(mission.targetNodeId);
+      if (clientNode) {
+        console.warn(`[GameScene]   - 😱 WEIRD: Node exists in client render map but not in gameState!`);
+      } else {
+        console.warn(`[GameScene]   - Node not in client render map either`);
+      }
+      return;
+    }
     
+    // Create container at (0,0) but hide it initially to prevent showing green circle at wrong position
     const drifterContainer = this.add.container(0, 0);
+    drifterContainer.setVisible(false); // Hide until properly positioned
 
     // If a newer render started while we were setting up, abort
     if (renderVersion !== this.missionRenderVersion) {
@@ -541,6 +577,7 @@ export class GameScene extends Phaser.Scene {
     const missionIndicator = this.add.graphics();
     missionIndicator.lineStyle(2, 0x00FF00);
     missionIndicator.strokeCircle(0, 0, 14);
+    console.log(`[GameScene] 🟢 Created mission indicator ring for mission ${mission.id.slice(-6)} at container position (0, 0) - will be positioned later`);
 
     // Add tiny images for each drifter
     const iconSize = 16;
@@ -614,32 +651,92 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateDrifterPosition(drifterContainer: Phaser.GameObjects.Container, mission: Mission, targetNode: ResourceNode) {
-    const now = new Date();
-    const startTime = mission.startTime instanceof Date ? mission.startTime : new Date(mission.startTime);
-    const endTime = mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime);
-    
-    const totalDuration = endTime.getTime() - startTime.getTime();
-    const elapsed = now.getTime() - startTime.getTime();
-    const progress = Math.max(0, Math.min(1, elapsed / totalDuration));
-    
-    const { x: nodeX, y: nodeY } = targetNode.coordinates;
-    let currentX: number, currentY: number;
-    
-    if (progress <= 0.5) {
-      // First half: traveling to resource node
-      const outboundProgress = progress * 2; // 0 to 1
-      currentX = TOWN_X + (nodeX - TOWN_X) * outboundProgress;
-      currentY = TOWN_Y + (nodeY - TOWN_Y) * outboundProgress;
-    } else {
-      // Second half: traveling back to town
-      const returnProgress = (progress - 0.5) * 2; // 0 to 1
-      currentX = nodeX + (TOWN_X - nodeX) * returnProgress;
-      currentY = nodeY + (TOWN_Y - nodeY) * returnProgress;
+    try {
+      const now = new Date();
+      const startTime = mission.startTime instanceof Date ? mission.startTime : new Date(mission.startTime);
+      const endTime = mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime);
+      
+      // Validate dates
+      if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+        console.warn('Invalid mission dates, hiding drifter container');
+        drifterContainer.setVisible(false);
+        return;
+      }
+      
+      const totalDuration = endTime.getTime() - startTime.getTime();
+      const elapsed = now.getTime() - startTime.getTime();
+      
+      // Prevent division by zero
+      if (totalDuration <= 0) {
+        console.warn('Invalid mission duration, hiding drifter container');
+        drifterContainer.setVisible(false);
+        return;
+      }
+      
+      const progress = Math.max(0, Math.min(1, elapsed / totalDuration));
+      
+      const { x: nodeX, y: nodeY } = targetNode.coordinates;
+      
+      // Validate coordinates
+      if (typeof nodeX !== 'number' || typeof nodeY !== 'number' || isNaN(nodeX) || isNaN(nodeY)) {
+        console.warn('Invalid target node coordinates, hiding drifter container');
+        drifterContainer.setVisible(false);
+        return;
+      }
+      
+      let currentX: number, currentY: number;
+      
+      if (progress <= 0.5) {
+        // First half: traveling to resource node
+        const outboundProgress = progress * 2; // 0 to 1
+        currentX = TOWN_X + (nodeX - TOWN_X) * outboundProgress;
+        currentY = TOWN_Y + (nodeY - TOWN_Y) * outboundProgress;
+      } else {
+        // Second half: traveling back to town
+        const returnProgress = (progress - 0.5) * 2; // 0 to 1
+        currentX = nodeX + (TOWN_X - nodeX) * returnProgress;
+        currentY = nodeY + (TOWN_Y - nodeY) * returnProgress;
+      }
+      
+      // Validate calculated position
+      if (isNaN(currentX) || isNaN(currentY)) {
+        console.warn('Invalid calculated position, hiding drifter container');
+        drifterContainer.setVisible(false);
+        return;
+      }
+      
+      // Add subtle floating motion
+      const bobOffset = Math.sin(this.time.now * 0.003) * 2;
+      const finalX = currentX;
+      const finalY = currentY + bobOffset;
+      
+      // Validate final position before setting
+      if (isNaN(finalX) || isNaN(finalY)) {
+        console.warn('Invalid final position, destroying drifter container');
+        // Find and remove this container from our tracking
+        for (const [missionId, container] of this.missionDrifters.entries()) {
+          if (container === drifterContainer) {
+            console.warn(`[GameScene] 🗑️ Destroying invalid drifter container for mission ${missionId}`);
+            this.missionDrifters.delete(missionId);
+            break;
+          }
+        }
+        drifterContainer.destroy();
+        return;
+      }
+      
+      // Log when we move container from (0,0) to its proper position
+      if (drifterContainer.x === 0 && drifterContainer.y === 0) {
+        console.log(`[GameScene] 📍 Moving drifter container for mission ${mission.id.slice(-6)} from (0,0) to (${finalX}, ${finalY})`);
+      }
+      
+      // Make sure container is visible and set position
+      drifterContainer.setVisible(true);
+      drifterContainer.setPosition(finalX, finalY);
+    } catch (error) {
+      console.error('Error updating drifter position, hiding container:', error);
+      drifterContainer.setVisible(false);
     }
-    
-    // Add subtle floating motion
-    const bobOffset = Math.sin(this.time.now * 0.003) * 2;
-    drifterContainer.setPosition(currentX, currentY + bobOffset);
   }
 
   private getResourceColor(type: string): number {
@@ -687,5 +784,35 @@ export class GameScene extends Phaser.Scene {
         }
       });
     }
+    
+    // Periodic cleanup check for orphaned containers (every 5 seconds)
+    if (Math.floor(this.time.now / 5000) !== this.lastCleanupCheck) {
+      this.lastCleanupCheck = Math.floor(this.time.now / 5000);
+      this.checkForOrphanedContainers();
+    }
+  }
+  
+  private lastCleanupCheck = 0;
+  
+  private checkForOrphanedContainers() {
+    // Get current mission IDs
+    const currentMissionIds = new Set(gameState.getState().playerMissions?.map(m => m.id) || []);
+    
+    // Check for containers whose missions no longer exist
+    this.missionDrifters.forEach((container, missionId) => {
+      if (!currentMissionIds.has(missionId)) {
+        console.warn(`[GameScene] 🧟 Mission ${missionId.slice(-6)} no longer exists, destroying its container at (${container.x}, ${container.y})`);
+        this.missionDrifters.delete(missionId);
+        container.destroy();
+        return;
+      }
+      
+      // Also look for any containers that are at (0,0) and visible - these are likely orphaned
+      if (container.x === 0 && container.y === 0 && container.visible) {
+        console.warn(`[GameScene] 👻 Found orphaned drifter container at (0,0) for mission ${missionId.slice(-6)}, destroying it`);
+        this.missionDrifters.delete(missionId);
+        container.destroy();
+      }
+    });
   }
 }

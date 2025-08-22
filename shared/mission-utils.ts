@@ -1,12 +1,25 @@
-import type { ResourceNode, MissionType } from './models';
+import type { ResourceNode, MissionType, DrifterProfile } from './models';
+
+// Type alias for drifter stats to avoid circular imports
+export type DrifterStats = Pick<DrifterProfile, 'combat' | 'scavenging' | 'tech' | 'speed'>;
 
 // Town coordinates (center of the map area)
 export const TOWN_COORDINATES = { x: 500, y: 350 };
 
+// Base speed value for mission duration calculations
+export const BASE_SPEED = 100;
+
+// Maximum speed factor to cap mission duration for very slow drifters
+export const MAX_SPEED_FACTOR = 5.0; // Max 5x slower than base speed
+
+// Drifter stat multiplier constants
+export const SCAVENGING_MULTIPLIER = 0.005; // 0.5% per point
+export const TECH_MULTIPLIER = 0.003; // 0.3% per point
+
 /**
  * Calculate mission duration based on distance from town to target node
  */
-export function calculateMissionDuration(targetNode: ResourceNode): number {
+export function calculateMissionDuration(targetNode: ResourceNode, drifters: DrifterStats[] = []): number {
   // Calculate distance from town to target node
   const dx = targetNode.coordinates.x - TOWN_COORDINATES.x;
   const dy = targetNode.coordinates.y - TOWN_COORDINATES.y;
@@ -23,7 +36,18 @@ export function calculateMissionDuration(targetNode: ResourceNode): number {
   const normalizedDistance = Math.min(distance / maxExpectedDistance, 1.0);
   const additionalMinutes = normalizedDistance * 45; // 0-45 additional minutes
   
-  const totalMinutes = baseDurationMinutes + additionalMinutes;
+  let totalMinutes = baseDurationMinutes + additionalMinutes;
+  
+  // Apply team speed modifier if drifters are provided
+  if (drifters.length > 0) {
+    // Team speed is determined by the slowest drifter
+    const teamSpeed = Math.min(...drifters.map(d => d.speed)) || BASE_SPEED;
+    // Faster drifters = less time (speed of 200 = half the time)
+    // Cap maximum speed factor to prevent extremely long missions
+    const speedFactor = Math.min(BASE_SPEED / teamSpeed, MAX_SPEED_FACTOR);
+    totalMinutes *= speedFactor;
+  }
+  
   const durationMs = Math.round(totalMinutes * 60 * 1000); // Convert to milliseconds
   
   return durationMs;
@@ -35,7 +59,8 @@ export function calculateMissionDuration(targetNode: ResourceNode): number {
 export function calculateMissionRewards(
   targetNode: ResourceNode, 
   missionType: MissionType, 
-  durationMs: number
+  durationMs: number,
+  drifters: DrifterStats[] = []
 ): { credits: number; resources: Record<string, number> } {
   
   // Base rewards
@@ -53,8 +78,8 @@ export function calculateMissionRewards(
   
   // Mission type multipliers (risk vs reward)
   const missionTypeMultipliers = {
-    scavenge: { credits: 0.8, resources: 1.0, variance: 0.1 }, // Safe, consistent
-    strip_mine: { credits: 0.6, resources: 1.4, variance: 0.05 }, // Lower credits, high resources, very consistent
+    scavenge: { credits: 0.7, resources: 0.9, variance: 0.1 }, // Safe but modest rewards
+    strip_mine: { credits: 1.0, resources: 1.5, variance: 0.05 }, // Industrial operation - better rewards, very consistent
     combat: { credits: 1.4, resources: 1.3, variance: 0.3 }, // High risk, high reward
     sabotage: { credits: 1.2, resources: 0.8, variance: 0.25 } // Disruption focused, moderate rewards
   };
@@ -70,9 +95,23 @@ export function calculateMissionRewards(
   const durationMinutes = durationMs / 1000 / 60;
   const distanceBonus = 1.0 + ((durationMinutes - 15) / 45) * 0.2; // Up to 20% bonus for max distance
   
+  // Calculate drifter team stat bonuses
+  let teamScavengingBonus = 1.0;
+  let teamTechBonus = 1.0;
+  
+  if (drifters.length > 0) {
+    // Sum up the team's scavenging and tech stats
+    const totalScavenging = drifters.reduce((sum, d) => sum + d.scavenging, 0);
+    const totalTech = drifters.reduce((sum, d) => sum + d.tech, 0);
+    
+    // Apply bonuses based on team stats
+    teamScavengingBonus = 1.0 + (totalScavenging * SCAVENGING_MULTIPLIER);
+    teamTechBonus = 1.0 + (totalTech * TECH_MULTIPLIER);
+  }
+  
   // Calculate base values with all multipliers
-  const totalCreditsMultiplier = rarityMult * typeMults.credits * yieldFactor * distanceBonus;
-  const totalResourcesMultiplier = rarityMult * typeMults.resources * yieldFactor * distanceBonus;
+  const totalCreditsMultiplier = rarityMult * typeMults.credits * yieldFactor * distanceBonus * teamTechBonus;
+  const totalResourcesMultiplier = rarityMult * typeMults.resources * yieldFactor * distanceBonus * teamScavengingBonus;
   
   // Apply some variance based on mission type
   const creditsVariance = typeMults.variance;
@@ -83,12 +122,26 @@ export function calculateMissionRewards(
   const resourcesMultiplier = 1.0 + (Math.random() - 0.5) * 2 * resourcesVariance; // ±variance
   
   const finalCredits = Math.floor(baseCredits * totalCreditsMultiplier * creditsMultiplier);
-  const finalResources = Math.floor(baseResources * totalResourcesMultiplier * resourcesMultiplier);
+  const baseResourcesExtracted = Math.floor(baseResources * totalResourcesMultiplier * resourcesMultiplier);
+  
+  // Cap resource extraction based on team size and mission type
+  const teamSize = drifters.length || 1; // Default to 1 if no team provided
+  
+  // Maximum extraction per drifter per mission (tunable values)
+  const extractionLimits = {
+    scavenge: 8,    // Conservative extraction per drifter
+    strip_mine: 12, // More efficient extraction per drifter
+    combat: 10,     // Moderate extraction during combat
+    sabotage: 6     // Focused on disruption, less extraction
+  };
+  
+  const maxTeamExtraction = teamSize * extractionLimits[missionType];
+  const cappedResources = Math.min(baseResourcesExtracted, maxTeamExtraction);
   
   return {
     credits: Math.max(50, finalCredits), // Minimum 50 credits
     resources: {
-      [targetNode.type]: Math.max(5, Math.min(finalResources, targetNode.currentYield)) // Can't extract more than available
+      [targetNode.type]: Math.max(0, Math.min(cappedResources, targetNode.currentYield))
     }
   };
 }
@@ -99,7 +152,8 @@ export function calculateMissionRewards(
 export function estimateMissionRewards(
   targetNode: ResourceNode, 
   missionType: MissionType, 
-  durationMs: number
+  durationMs: number,
+  drifters: DrifterStats[] = []
 ): { 
   creditsRange: { min: number; max: number }; 
   resourcesRange: { min: number; max: number; type: string } 
@@ -120,8 +174,8 @@ export function estimateMissionRewards(
   
   // Mission type multipliers
   const missionTypeMultipliers = {
-    scavenge: { credits: 0.8, resources: 1.0, variance: 0.1 },
-    strip_mine: { credits: 0.6, resources: 1.4, variance: 0.05 },
+    scavenge: { credits: 0.7, resources: 0.9, variance: 0.1 },
+    strip_mine: { credits: 1.0, resources: 1.5, variance: 0.05 },
     combat: { credits: 1.4, resources: 1.3, variance: 0.3 },
     sabotage: { credits: 1.2, resources: 0.8, variance: 0.25 }
   };
@@ -137,9 +191,23 @@ export function estimateMissionRewards(
   const durationMinutes = durationMs / 1000 / 60;
   const distanceBonus = 1.0 + ((durationMinutes - 15) / 45) * 0.2;
   
+  // Calculate drifter team stat bonuses
+  let teamScavengingBonus = 1.0;
+  let teamTechBonus = 1.0;
+  
+  if (drifters.length > 0) {
+    // Sum up the team's scavenging and tech stats
+    const totalScavenging = drifters.reduce((sum, d) => sum + d.scavenging, 0);
+    const totalTech = drifters.reduce((sum, d) => sum + d.tech, 0);
+    
+    // Apply bonuses based on team stats
+    teamScavengingBonus = 1.0 + (totalScavenging * SCAVENGING_MULTIPLIER);
+    teamTechBonus = 1.0 + (totalTech * TECH_MULTIPLIER);
+  }
+  
   // Calculate base values with all multipliers
-  const totalCreditsMultiplier = rarityMult * typeMults.credits * yieldFactor * distanceBonus;
-  const totalResourcesMultiplier = rarityMult * typeMults.resources * yieldFactor * distanceBonus;
+  const totalCreditsMultiplier = rarityMult * typeMults.credits * yieldFactor * distanceBonus * teamTechBonus;
+  const totalResourcesMultiplier = rarityMult * typeMults.resources * yieldFactor * distanceBonus * teamScavengingBonus;
   
   // Calculate range based on variance
   const creditsVariance = typeMults.variance;
@@ -151,11 +219,34 @@ export function estimateMissionRewards(
   const creditsMin = Math.max(50, Math.floor(baseCreditsValue * (1 - creditsVariance)));
   const creditsMax = Math.floor(baseCreditsValue * (1 + creditsVariance));
   
-  const resourcesMin = Math.max(5, Math.floor(baseResourcesValue * (1 - resourcesVariance)));
-  const resourcesMax = Math.min(
-    Math.floor(baseResourcesValue * (1 + resourcesVariance)), 
-    targetNode.currentYield
-  );
+  const baseResourcesMin = Math.floor(baseResourcesValue * (1 - resourcesVariance));
+  const baseResourcesMax = Math.floor(baseResourcesValue * (1 + resourcesVariance));
+  
+  // Cap resource extraction based on team size and mission type (for estimates)
+  const teamSize = drifters.length || 1; // Default to 1 if no team provided
+  
+  // Maximum extraction per drifter per mission (same as in calculateMissionRewards)
+  const extractionLimits = {
+    scavenge: 8,    // Conservative extraction per drifter
+    strip_mine: 12, // More efficient extraction per drifter
+    combat: 10,     // Moderate extraction during combat
+    sabotage: 6     // Focused on disruption, less extraction
+  };
+  
+  const maxTeamExtraction = teamSize * extractionLimits[missionType];
+  
+  // Apply team extraction cap only to max, preserving variance for min
+  const teamCappedResourcesMax = Math.min(baseResourcesMax, maxTeamExtraction);
+  // Min is not capped by extraction limit, only by variance calculation
+  const teamCappedResourcesMin = baseResourcesMin;
+  
+  // Then cap by currentYield and apply minimums
+  const cappedResourcesMax = Math.min(teamCappedResourcesMax, targetNode.currentYield);
+  const cappedResourcesMin = Math.min(teamCappedResourcesMin, targetNode.currentYield);
+  
+  // Apply minimums, but ensure min never exceeds max
+  const resourcesMax = Math.max(0, cappedResourcesMax);
+  const resourcesMin = Math.max(0, Math.min(cappedResourcesMin, resourcesMax));
   
   return {
     creditsRange: { min: creditsMin, max: creditsMax },
@@ -261,4 +352,52 @@ export function getAvailableMissionTypes(
   }
   
   return missionTypes;
+}
+
+/**
+ * Calculate live estimates for mission planning UI
+ * Combines duration and reward calculations into a single call
+ */
+export function calculateLiveEstimates(
+  targetNode: ResourceNode,
+  missionType: MissionType,
+  drifters: DrifterStats[] = []
+): {
+  duration: number;
+  rewards: {
+    creditsRange: { min: number; max: number };
+    resourcesRange: { min: number; max: number; type: string };
+  };
+  teamStats?: {
+    speed: number;
+    scavengingBonus: number;
+    techBonus: number;
+  };
+} {
+  // Calculate mission duration with drifter speed bonus
+  const duration = calculateMissionDuration(targetNode, drifters);
+  
+  // Calculate rewards estimate with drifter stat bonuses
+  const rewards = estimateMissionRewards(targetNode, missionType, duration, drifters);
+  
+  // Calculate team stats for display
+  let teamStats = undefined;
+  
+  if (drifters.length > 0) {
+    const speed = Math.min(...drifters.map(d => d.speed)) || BASE_SPEED;
+    const totalScavenging = drifters.reduce((sum, d) => sum + d.scavenging, 0);
+    const totalTech = drifters.reduce((sum, d) => sum + d.tech, 0);
+    
+    teamStats = {
+      speed,
+      scavengingBonus: totalScavenging * SCAVENGING_MULTIPLIER,
+      techBonus: totalTech * TECH_MULTIPLIER
+    };
+  }
+  
+  return {
+    duration,
+    rewards,
+    teamStats
+  };
 }

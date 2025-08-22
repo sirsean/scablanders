@@ -12,7 +12,8 @@ import type {
   ResourceType,
   Rarity
 } from '@shared/models';
-import { calculateMissionDuration, calculateMissionRewards } from '../shared/mission-utils';
+import { calculateMissionDuration, calculateMissionRewards, type DrifterStats } from '../shared/mission-utils';
+import { getDrifterStats } from './drifters';
 interface WebSocketSession {
   websocket: WebSocket;
   sessionId: string;
@@ -565,10 +566,24 @@ export class GameDO extends DurableObject {
     const missionId = crypto.randomUUID();
     const now = new Date();
     
-    // Calculate mission duration and rewards using shared utilities
-    const duration = calculateMissionDuration(targetNode);
-    console.log(`[GameDO] duration: ${duration}`);
-    const rewards = calculateMissionRewards(targetNode, missionType, duration);
+    // Load drifter stats for team-aware calculations
+    const teamStats: DrifterStats[] = [];
+    for (const drifterId of drifterIds) {
+      const drifterProfile = getDrifterStats(drifterId);
+      if (drifterProfile) {
+        teamStats.push({
+          combat: drifterProfile.combat,
+          scavenging: drifterProfile.scavenging,
+          tech: drifterProfile.tech,
+          speed: drifterProfile.speed
+        });
+      }
+    }
+    
+    // Calculate mission duration and rewards using shared utilities with drifter stats
+    const duration = calculateMissionDuration(targetNode, teamStats);
+    console.log(`[GameDO] duration: ${duration} (with ${teamStats.length} drifters)`);
+    const rewards = calculateMissionRewards(targetNode, missionType, duration, teamStats);
     console.log(`[GameDO] rewards: ${rewards}`);
     
     console.log(`[GameDO] Mission duration calculated: ${duration / 1000 / 60} minutes based on distance to node at (${targetNode.coordinates.x}, ${targetNode.coordinates.y})`);

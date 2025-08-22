@@ -1,7 +1,7 @@
 import type { GameState, GameNotification } from '../gameState';
 import { gameState } from '../gameState';
 import type { DrifterProfile, MissionType } from '@shared/models';
-import { calculateMissionDuration, estimateMissionRewards, formatDuration, getAvailableMissionTypes } from '../../shared/mission-utils';
+import { calculateLiveEstimates, formatDuration, getAvailableMissionTypes, type DrifterStats } from '../../shared/mission-utils';
 import { ActiveMissionsPanel } from './ActiveMissionsPanel';
 
 export class UIManager {
@@ -297,12 +297,22 @@ export class UIManager {
       return;
     }
 
-    // Calculate estimated mission duration using shared utility
-    const estimatedDuration = calculateMissionDuration(selectedResource);
-    const durationText = formatDuration(estimatedDuration);
+    // Calculate live estimates based on selected drifters and mission type
+    const selectedDrifterIds = state.selectedDrifterIds || [];
+    const selectedMissionType = state.selectedMissionType || 'scavenge';
     
-    // Default to scavenge for initial estimates (most common/safe mission type)
-    const defaultEstimate = estimateMissionRewards(selectedResource, 'scavenge', estimatedDuration);
+    // Get drifter stats for the selected team
+    const selectedDrifters = state.ownedDrifters.filter(d => selectedDrifterIds.includes(d.tokenId));
+    const teamStats: DrifterStats[] = selectedDrifters.map(d => ({
+      combat: d.combat,
+      scavenging: d.scavenging, 
+      tech: d.tech,
+      speed: d.speed
+    }));
+    
+    // Calculate live estimates using selected team and mission type
+    const liveEstimates = calculateLiveEstimates(selectedResource, selectedMissionType, teamStats);
+    const durationText = formatDuration(liveEstimates.duration);
 
     content.innerHTML = `
       <!-- Side-by-side layout container - full height -->
@@ -324,11 +334,18 @@ export class UIManager {
 
           <!-- Expected Rewards -->
           <div style="margin-bottom: 16px;">
-            <h4 style="color: #FFD700; margin: 0 0 8px 0;">Expected Rewards (SCAVENGE)</h4>
+            <h4 style="color: #FFD700; margin: 0 0 8px 0;">Expected Rewards (${selectedMissionType.toUpperCase()})</h4>
             <div style="background: rgba(255, 215, 0, 0.1); border: 1px solid #444; border-radius: 4px; padding: 12px;">
-              <p style="margin: 4px 0; color: #ffd700; font-size: 14px;">💰 Credits: <span style="font-weight: bold;">${defaultEstimate.creditsRange.min}-${defaultEstimate.creditsRange.max}</span></p>
-              <p style="margin: 4px 0; color: #00ff88; font-size: 14px;">📦 ${defaultEstimate.resourcesRange.type.toUpperCase()}: <span style="font-weight: bold;">${defaultEstimate.resourcesRange.min}-${defaultEstimate.resourcesRange.max}</span></p>
-              <p style="margin: 8px 0 0 0; color: #888; font-style: italic; font-size: 11px;">*Estimates may vary by mission type and actual yield</p>
+              <p style="margin: 4px 0; color: #ffd700; font-size: 14px;">💰 Credits: <span style="font-weight: bold;">${liveEstimates.rewards.creditsRange.min}-${liveEstimates.rewards.creditsRange.max}</span></p>
+              <p style="margin: 4px 0; color: #00ff88; font-size: 14px;">📦 ${liveEstimates.rewards.resourcesRange.type.toUpperCase()}: <span style="font-weight: bold;">${liveEstimates.rewards.resourcesRange.min}-${liveEstimates.rewards.resourcesRange.max}</span></p>
+              ${liveEstimates.teamStats ? `
+                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #666;">
+                  <p style="margin: 2px 0; color: #ccc; font-size: 12px;">⚡ Team Speed: <span style="color: #ffff66;">${liveEstimates.teamStats.speed}</span> (${liveEstimates.teamStats.speed > 100 ? 'Fast' : liveEstimates.teamStats.speed < 100 ? 'Slow' : 'Normal'})</p>
+                  <p style="margin: 2px 0; color: #ccc; font-size: 12px;">🔍 Scavenging Bonus: <span style="color: #66ff66;">+${(liveEstimates.teamStats.scavengingBonus * 100).toFixed(1)}%</span></p>
+                  <p style="margin: 2px 0; color: #ccc; font-size: 12px;">💻 Tech Bonus: <span style="color: #6666ff;">+${(liveEstimates.teamStats.techBonus * 100).toFixed(1)}%</span></p>
+                </div>
+              ` : ''}
+              <p style="margin: 8px 0 0 0; color: #888; font-style: italic; font-size: 11px;">*Estimates update based on selected team and mission type</p>
             </div>
           </div>
 
@@ -581,6 +598,9 @@ export class UIManager {
         
         // Toggle selection in game state
         gameState.toggleDrifterSelection(drifterId);
+        
+        // Update estimates when drifter selection changes
+        setTimeout(() => this.updateMissionPanel(gameState.getState()), 50);
       });
     });
 
@@ -599,7 +619,8 @@ export class UIManager {
         const missionType = btn.getAttribute('data-type');
         gameState.setMissionType(missionType);
         
-        this.updateStartButton();
+        // Update estimates when mission type changes
+        this.updateMissionPanel(gameState.getState());
       });
     });
 
