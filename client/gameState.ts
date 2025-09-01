@@ -4,626 +4,599 @@ import { webSocketManager } from './websocketManager';
 import type { PlayerStateUpdate, WorldStateUpdate, MissionUpdate, ConnectionStatusUpdate } from '@shared/models';
 
 export interface GameState {
-  // Authentication
-  isAuthenticated: boolean;
-  playerAddress: string | null;
-  
-  // Player data
-  profile: PlayerProfile | null;
-  ownedDrifters: DrifterProfile[];
-  playerMissions: Mission[]; // Player's specific missions
-  
-  // World data
-  resourceNodes: ResourceNode[];
-  activeMissions: Mission[]; // All active missions (for map display)
-  worldMetrics: {
-    totalActiveMissions: number;
-    totalCompletedMissions: number;
-    economicActivity: number;
-    lastUpdate: Date;
-  } | null;
-  availableMercenaries: DrifterProfile[];
-  
-  // Connection state
-  wsConnected: boolean;
-  wsAuthenticated: boolean;
-  wsReconnectAttempts: number;
-  connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
-  realTimeMode: boolean; // Whether updates come from WebSocket or polling
-  
-  // UI state
-  selectedResourceNode: string | null;
-  selectedDrifterIds: number[];
-  selectedMissionType: string | null;
-  drifterSortBy: 'combat' | 'scavenging' | 'tech' | 'speed';
-  showMissionPanel: boolean;
-  showMercenaryPanel: boolean;
-  showProfilePanel: boolean;
-  showActiveMissionsPanel: boolean;
-  notifications: GameNotification[];
-  
-  // Loading states
-  isLoadingProfile: boolean;
-  isLoadingWorld: boolean;
-  isLoadingMercenaries: boolean;
-  isLoadingPlayerMissions: boolean;
+	// Authentication
+	isAuthenticated: boolean;
+	playerAddress: string | null;
+
+	// Player data
+	profile: PlayerProfile | null;
+	ownedDrifters: DrifterProfile[];
+	playerMissions: Mission[]; // Player's specific missions
+
+	// World data
+	resourceNodes: ResourceNode[];
+	activeMissions: Mission[]; // All active missions (for map display)
+	worldMetrics: {
+		totalActiveMissions: number;
+		totalCompletedMissions: number;
+		economicActivity: number;
+		lastUpdate: Date;
+	} | null;
+
+	// Connection state
+	wsConnected: boolean;
+	wsAuthenticated: boolean;
+	wsReconnectAttempts: number;
+	connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
+	realTimeMode: boolean; // Whether updates come from WebSocket or polling
+
+	// UI state
+	selectedResourceNode: string | null;
+	selectedDrifterIds: number[];
+	selectedMissionType: string | null;
+	drifterSortBy: 'combat' | 'scavenging' | 'tech' | 'speed';
+	showMissionPanel: boolean;
+	showMercenaryPanel: boolean;
+	showProfilePanel: boolean;
+	showActiveMissionsPanel: boolean;
+	notifications: GameNotification[];
+
+	// Loading states
+	isLoadingProfile: boolean;
+	isLoadingWorld: boolean;
+	isLoadingPlayerMissions: boolean;
 }
 
 export interface GameNotification {
-  id: string;
-  type: 'success' | 'error' | 'info' | 'mission' | 'combat';
-  title: string;
-  message: string;
-  timestamp: Date;
-  duration?: number; // ms, defaults to 5000
+	id: string;
+	type: 'success' | 'error' | 'info' | 'mission' | 'combat';
+	title: string;
+	message: string;
+	timestamp: Date;
+	duration?: number; // ms, defaults to 5000
 }
 
 class GameStateManager extends EventTarget {
-  private state: GameState = {
-    isAuthenticated: false,
-    playerAddress: null,
-    profile: null,
-    ownedDrifters: [],
-    playerMissions: [],
-    resourceNodes: [],
-    activeMissions: [],
-    worldMetrics: null,
-    availableMercenaries: [],
-    wsConnected: false,
-    wsAuthenticated: false,
-    wsReconnectAttempts: 0,
-    connectionStatus: 'disconnected',
-    realTimeMode: false,
-    selectedResourceNode: null,
-    selectedDrifterIds: [],
-    selectedMissionType: null,
-    drifterSortBy: 'combat',
-    showMissionPanel: false,
-    showMercenaryPanel: false,
-    showProfilePanel: false,
-    showActiveMissionsPanel: false,
-    notifications: [],
-    isLoadingProfile: false,
-    isLoadingWorld: false,
-    isLoadingMercenaries: false,
-    isLoadingPlayerMissions: false,
-  };
+	private state: GameState = {
+		isAuthenticated: false,
+		playerAddress: null,
+		profile: null,
+		ownedDrifters: [],
+		playerMissions: [],
+		resourceNodes: [],
+		activeMissions: [],
+		worldMetrics: null,
+		wsConnected: false,
+		wsAuthenticated: false,
+		wsReconnectAttempts: 0,
+		connectionStatus: 'disconnected',
+		realTimeMode: false,
+		selectedResourceNode: null,
+		selectedDrifterIds: [],
+		selectedMissionType: null,
+		drifterSortBy: 'combat',
+		showMissionPanel: false,
+		showMercenaryPanel: false,
+		showProfilePanel: false,
+		showActiveMissionsPanel: false,
+		notifications: [],
+		isLoadingProfile: false,
+		isLoadingWorld: false,
+		isLoadingPlayerMissions: false,
+	};
 
-  constructor() {
-    super();
-    this.setupAuthListener();
-    this.setupWebSocketListeners();
-    this.startPeriodicUpdates();
-  }
+	constructor() {
+		super();
+		this.setupAuthListener();
+		this.setupWebSocketListeners();
+		this.startPeriodicUpdates();
+	}
 
-  getState(): GameState {
-    return { ...this.state };
-  }
+	getState(): GameState {
+		return { ...this.state };
+	}
 
-  private setState(updates: Partial<GameState>) {
-    const oldState = { ...this.state };
-    this.state = { ...this.state, ...updates };
-    
-    // Emit state change event
-    this.dispatchEvent(new CustomEvent('statechange', {
-      detail: { oldState, newState: this.state }
-    }));
-  }
+	private setState(updates: Partial<GameState>) {
+		const oldState = { ...this.state };
+		this.state = { ...this.state, ...updates };
 
-  private setupAuthListener() {
-    auth.onStateChange((authState) => {
-      this.setState({
-        isAuthenticated: authState.isAuthenticated,
-        playerAddress: authState.address
-      });
+		// Emit state change event
+		this.dispatchEvent(
+			new CustomEvent('statechange', {
+				detail: { oldState, newState: this.state },
+			}),
+		);
+	}
 
-      if (authState.isAuthenticated && authState.address) {
-        // Load player data when authenticated
-        this.loadPlayerProfile();
-        this.loadWorldState();
-        this.loadMercenaries();
-        this.loadPlayerMissions();
-        
-        // Connect WebSocket for real-time updates
-        this.connectWebSocket();
-      } else {
-        // Clear data when not authenticated
-        this.setState({
-          profile: null,
-          ownedDrifters: [],
-          activeMissions: [],
-          playerMissions: []
-        });
-        
-        // Disconnect WebSocket
-        this.disconnectWebSocket();
-      }
-    });
-  }
+	private setupAuthListener() {
+		auth.onStateChange((authState) => {
+			this.setState({
+				isAuthenticated: authState.isAuthenticated,
+				playerAddress: authState.address,
+			});
 
-  private setupWebSocketListeners() {
-    console.log('[GameState] Setting up WebSocket listeners');
-    
-    // Listen for connection status changes
-    webSocketManager.addEventListener('connectionStatus', (event) => {
-      const { status, authenticated } = event.detail;
-      console.log('[GameState] WebSocket connection status changed:', { status, authenticated });
-      
-      this.setState({
-        connectionStatus: status,
-        wsConnected: status === 'connected',
-        wsAuthenticated: authenticated || false
-      });
-      
-      if (status === 'connected') {
-        this.setState({ 
-          realTimeMode: true,
-          wsReconnectAttempts: 0 
-        });
-        
-        // Authenticate the WebSocket if we have a player address and aren't already authenticated
-        if (!authenticated && this.state.playerAddress) {
-          console.log('[GameState] Authenticating WebSocket with player address:', this.state.playerAddress);
-          webSocketManager.authenticate(this.state.playerAddress);
-        }
-        
-        // Subscribe to events once authenticated
-        if (authenticated) {
-          console.log('[GameState] WebSocket authenticated, subscribing to events');
-          webSocketManager.subscribe(['player_state', 'world_state', 'mission_update']);
-        }
-        
-        this.addNotification({
-          type: 'success',
-          title: 'Real-time Connected',
-          message: authenticated ? 'WebSocket authenticated' : 'WebSocket connected',
-          duration: 3000
-        });
-      } else if (status === 'reconnecting') {
-        this.setState({ 
-          wsReconnectAttempts: this.state.wsReconnectAttempts + 1 
-        });
-      } else if (status === 'disconnected') {
-        this.setState({ 
-          realTimeMode: false 
-        });
-        this.addNotification({
-          type: 'info',
-          title: 'Connection Lost',
-          message: 'Switched to periodic updates',
-          duration: 3000
-        });
-      }
-    });
+			if (authState.isAuthenticated && authState.address) {
+				// Load player data when authenticated
+				this.loadPlayerProfile();
+				this.loadWorldState();
+				this.loadPlayerMissions();
 
-    // Listen for player state updates
-    webSocketManager.addEventListener('playerStateUpdate', (event) => {
-      const update = event.detail as PlayerStateUpdate['data'];
-      console.log('[GameState] Received player state update:', update);
-      
-      if (update.profile) {
-        console.log('[GameState] Updating profile from WebSocket:', update.profile);
-        this.setState({ profile: update.profile });
-      }
-      
-      // NOTE: Persistent notifications are handled separately and should NOT be displayed as toast notifications
-      // The real-time notification system (WebSocket 'notification' events) handles toast notifications
-      // Persistent notifications in update.notifications are for historical/UI purposes only
-    });
+				// Connect WebSocket for real-time updates
+				this.connectWebSocket();
+			} else {
+				// Clear data when not authenticated
+				this.setState({
+					profile: null,
+					ownedDrifters: [],
+					activeMissions: [],
+					playerMissions: [],
+				});
 
-    // Listen for world state updates
-    webSocketManager.addEventListener('worldStateUpdate', (event) => {
-      const update = event.detail as WorldStateUpdate['data'];
-      console.log('[GameState] Received world state update:', update);
-      
-      if (update.resourceNodes) {
-        console.log('[GameState] Updating resource nodes from WebSocket:', update.resourceNodes);
-        this.setState({ resourceNodes: update.resourceNodes });
-      }
-      
-      if (update.missions) {
-        console.log('[GameState] Updating missions from WebSocket:', update.missions);
-        this.setState({ activeMissions: update.missions });
-      }
-      
-      if (update.worldMetrics) {
-        console.log('[GameState] Updating world metrics from WebSocket:', update.worldMetrics);
-        this.setState({ worldMetrics: update.worldMetrics });
-      }
-    });
+				// Disconnect WebSocket
+				this.disconnectWebSocket();
+			}
+		});
+	}
 
-    // Listen for mission updates
-    webSocketManager.addEventListener('missionUpdate', (event) => {
-      const update = event.detail; // This is the data field from the WebSocket message
-      console.log('[GameState] Received mission update:', update);
-      
-      // Update specific mission in player missions
-      if (update.mission && this.state.playerMissions) {
-        const updatedPlayerMissions = this.state.playerMissions.map(mission =>
-          mission.id === update.mission.id ? update.mission : mission
-        );
-        this.setState({ playerMissions: updatedPlayerMissions });
-      }
-      
-      // Update specific mission in active missions
-      if (update.mission && this.state.activeMissions) {
-        const updatedActiveMissions = this.state.activeMissions.map(mission =>
-          mission.id === update.mission.id ? update.mission : mission
-        );
-        this.setState({ activeMissions: updatedActiveMissions });
-      }
-      
-      if (update.notification) {
-        // Use new notification system with ACK
-        this.handleServerNotification({
-          id: crypto.randomUUID(),
-          type: update.notification.type as any,
-          title: update.notification.title,
-          message: update.notification.message
-        });
-      }
-    });
-    
-    // Listen for direct notifications from server
-    webSocketManager.addEventListener('notification', (event) => {
-      const notification = event.detail; // This is the notification data from the server
-      console.log('[GameState] Received server notification:', notification);
-      
-      // Use server notification system with ACK
-      this.handleServerNotification({
-        id: notification.id,
-        type: notification.type as any,
-        title: notification.title,
-        message: notification.message
-      });
-    });
-  }
+	private setupWebSocketListeners() {
+		console.log('[GameState] Setting up WebSocket listeners');
 
-  // WebSocket connection management
-  async connectWebSocket() {
-    if (!this.state.isAuthenticated) {
-      console.warn('Cannot connect WebSocket: not authenticated');
-      return;
-    }
+		// Listen for connection status changes
+		webSocketManager.addEventListener('connectionStatus', (event) => {
+			const { status, authenticated } = event.detail;
+			console.log('[GameState] WebSocket connection status changed:', { status, authenticated });
 
-    this.setState({ connectionStatus: 'connecting' });
-    
-    try {
-      await webSocketManager.connect();
-    } catch (error) {
-      console.error('WebSocket connection failed:', error);
-      this.setState({ connectionStatus: 'disconnected' });
-    }
-  }
+			this.setState({
+				connectionStatus: status,
+				wsConnected: status === 'connected',
+				wsAuthenticated: authenticated || false,
+			});
 
-  disconnectWebSocket() {
-    webSocketManager.disconnect();
-    this.setState({
-      wsConnected: false,
-      wsAuthenticated: false,
-      connectionStatus: 'disconnected',
-      realTimeMode: false,
-      wsReconnectAttempts: 0
-    });
-  }
+			if (status === 'connected') {
+				this.setState({
+					realTimeMode: true,
+					wsReconnectAttempts: 0,
+				});
 
-  // API calls with error handling
-  private async apiCall(endpoint: string, options?: RequestInit): Promise<Response> {
-    try {
-      const response = await fetch(`/api${endpoint}`, {
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...options?.headers
-        },
-        ...options
-      });
+				// Authenticate the WebSocket if we have a player address and aren't already authenticated
+				if (!authenticated && this.state.playerAddress) {
+					console.log('[GameState] Authenticating WebSocket with player address:', this.state.playerAddress);
+					webSocketManager.authenticate(this.state.playerAddress);
+				}
 
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Network error' }));
-        throw new Error(error.error || `HTTP ${response.status}`);
-      }
+				// Subscribe to events once authenticated
+				if (authenticated) {
+					console.log('[GameState] WebSocket authenticated, subscribing to events');
+					webSocketManager.subscribe(['player_state', 'world_state', 'mission_update']);
+				}
 
-      return response;
-    } catch (error) {
-      console.error(`API call failed for ${endpoint}:`, error);
-      this.addNotification({
-        type: 'error',
-        title: 'Network Error',
-        message: `Failed to ${endpoint}: ${error.message}`,
-      });
-      throw error;
-    }
-  }
+				this.addNotification({
+					type: 'success',
+					title: 'Real-time Connected',
+					message: authenticated ? 'WebSocket authenticated' : 'WebSocket connected',
+					duration: 3000,
+				});
+			} else if (status === 'reconnecting') {
+				this.setState({
+					wsReconnectAttempts: this.state.wsReconnectAttempts + 1,
+				});
+			} else if (status === 'disconnected') {
+				this.setState({
+					realTimeMode: false,
+				});
+				this.addNotification({
+					type: 'info',
+					title: 'Connection Lost',
+					message: 'Switched to periodic updates',
+					duration: 3000,
+				});
+			}
+		});
 
-  async loadPlayerProfile() {
-    if (this.state.isLoadingProfile) return;
+		// Listen for player state updates
+		webSocketManager.addEventListener('playerStateUpdate', (event) => {
+			const update = event.detail as PlayerStateUpdate['data'];
+			console.log('[GameState] Received player state update:', update);
 
-    this.setState({ isLoadingProfile: true });
+			if (update.profile) {
+				console.log('[GameState] Updating profile from WebSocket:', update.profile);
+				this.setState({ profile: update.profile });
+			}
 
-    try {
-      const response = await this.apiCall('/profile');
-      const profile = await response.json();
-      
-      this.setState({ 
-        profile,
-        isLoadingProfile: false
-      });
-    } catch (error) {
-      this.setState({ isLoadingProfile: false });
-    }
-  }
+			// NOTE: Persistent notifications are handled separately and should NOT be displayed as toast notifications
+			// The real-time notification system (WebSocket 'notification' events) handles toast notifications
+			// Persistent notifications in update.notifications are for historical/UI purposes only
+		});
 
-  async loadWorldState() {
-    if (this.state.isLoadingWorld) return;
+		// Listen for world state updates
+		webSocketManager.addEventListener('worldStateUpdate', (event) => {
+			const update = event.detail as WorldStateUpdate['data'];
+			console.log('[GameState] Received world state update:', update);
 
-    this.setState({ isLoadingWorld: true });
+			if (update.resourceNodes) {
+				console.log('[GameState] Updating resource nodes from WebSocket:', update.resourceNodes);
+				this.setState({ resourceNodes: update.resourceNodes });
+			}
 
-    try {
-      const response = await this.apiCall('/world/state');
-      const data = await response.json();
-      
-      this.setState({ 
-        resourceNodes: data.resourceNodes || [],
-        activeMissions: data.activeMissions || [],
-        worldMetrics: data.worldMetrics || null,
-        isLoadingWorld: false
-      });
-    } catch (error) {
-      this.setState({ isLoadingWorld: false });
-    }
-  }
+			if (update.missions) {
+				console.log('[GameState] Updating missions from WebSocket:', update.missions);
+				this.setState({ activeMissions: update.missions });
+			}
 
-  async loadMercenaries() {
-    if (this.state.isLoadingMercenaries) return;
+			if (update.worldMetrics) {
+				console.log('[GameState] Updating world metrics from WebSocket:', update.worldMetrics);
+				this.setState({ worldMetrics: update.worldMetrics });
+			}
+		});
 
-    this.setState({ isLoadingMercenaries: true });
+		// Listen for mission updates
+		webSocketManager.addEventListener('missionUpdate', (event) => {
+			const update = event.detail; // This is the data field from the WebSocket message
+			console.log('[GameState] Received mission update:', update);
 
-    try {
-      const response = await this.apiCall('/mercenaries');
-      const data = await response.json();
-      
-      // Separate owned from available mercenaries
-      const owned = data.mercenaries.filter((m: any) => m.hireCost === 0);
-      
-      this.setState({ 
-        availableMercenaries: data.mercenaries,
-        ownedDrifters: owned,
-        isLoadingMercenaries: false
-      });
-    } catch (error) {
-      this.setState({ isLoadingMercenaries: false });
-    }
-  }
+			// Update specific mission in player missions
+			if (update.mission && this.state.playerMissions) {
+				const updatedPlayerMissions = this.state.playerMissions.map((mission) =>
+					mission.id === update.mission.id ? update.mission : mission,
+				);
+				this.setState({ playerMissions: updatedPlayerMissions });
+			}
 
-  // Mission operations
-  async startMission(drifterIds: number[], targetId: string, missionType: 'scavenge' | 'strip_mine' | 'combat' | 'sabotage') {
-    try {
-      const response = await this.apiCall('/missions/start', {
-        method: 'POST',
-        body: JSON.stringify({
-          drifterIds,
-          targetNodeId: targetId,
-          missionType
-        })
-      });
+			// Update specific mission in active missions
+			if (update.mission && this.state.activeMissions) {
+				const updatedActiveMissions = this.state.activeMissions.map((mission) =>
+					mission.id === update.mission.id ? update.mission : mission,
+				);
+				this.setState({ activeMissions: updatedActiveMissions });
+			}
 
-      const result = await response.json();
-      
-      if (result.success) {
-        const teamText = drifterIds.length === 1 ? `Drifter #${drifterIds[0]}` : `${drifterIds.length} drifters`;
-        this.addNotification({
-          type: 'mission',
-          title: 'Mission Started!',
-          message: `${missionType.toUpperCase()} mission started with ${teamText}`,
-        });
-        
-        // Refresh data
-        await this.loadWorldState();
-        await this.loadPlayerProfile();
-        await this.loadPlayerMissions();
-      }
-      
-      return result;
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
+			if (update.notification) {
+				// Use new notification system with ACK
+				this.handleServerNotification({
+					id: crypto.randomUUID(),
+					type: update.notification.type as any,
+					title: update.notification.title,
+					message: update.notification.message,
+				});
+			}
+		});
 
-  async interceptMission(missionId: string, drifterId: number) {
-    try {
-      const response = await this.apiCall('/missions/intercept', {
-        method: 'POST',
-        body: JSON.stringify({
-          missionId,
-          drifterId
-        })
-      });
+		// Listen for direct notifications from server
+		webSocketManager.addEventListener('notification', (event) => {
+			const notification = event.detail; // This is the notification data from the server
+			console.log('[GameState] Received server notification:', notification);
 
-      const result = await response.json();
-      
-      if (result.success) {
-        this.addNotification({
-          type: 'combat',
-          title: 'Intercept Started!',
-          message: `Intercepting mission with Drifter #${drifterId}`,
-        });
-        
-        // Refresh data
-        await this.loadWorldState();
-        await this.loadPlayerProfile();
-      }
-      
-      return result;
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
+			// Use server notification system with ACK
+			this.handleServerNotification({
+				id: notification.id,
+				type: notification.type as any,
+				title: notification.title,
+				message: notification.message,
+			});
+		});
+	}
 
-  // UI state management
-  selectResourceNode(nodeId: string | null) {
-    this.setState({ selectedResourceNode: nodeId });
-  }
+	// WebSocket connection management
+	async connectWebSocket() {
+		if (!this.state.isAuthenticated) {
+			console.warn('Cannot connect WebSocket: not authenticated');
+			return;
+		}
 
-  toggleMissionPanel() {
-    this.setState({ showMissionPanel: !this.state.showMissionPanel });
-  }
+		this.setState({ connectionStatus: 'connecting' });
 
-  showMissionPanel() {
-    this.setState({ showMissionPanel: true });
-  }
+		try {
+			await webSocketManager.connect();
+		} catch (error) {
+			console.error('WebSocket connection failed:', error);
+			this.setState({ connectionStatus: 'disconnected' });
+		}
+	}
 
-  hideMissionPanel() {
-    this.setState({ showMissionPanel: false });
-  }
+	disconnectWebSocket() {
+		webSocketManager.disconnect();
+		this.setState({
+			wsConnected: false,
+			wsAuthenticated: false,
+			connectionStatus: 'disconnected',
+			realTimeMode: false,
+			wsReconnectAttempts: 0,
+		});
+	}
 
-  toggleMercenaryPanel() {
-    this.setState({ showMercenaryPanel: !this.state.showMercenaryPanel });
-  }
+	// API calls with error handling
+	private async apiCall(endpoint: string, options?: RequestInit): Promise<Response> {
+		try {
+			const response = await fetch(`/api${endpoint}`, {
+				credentials: 'include',
+				headers: {
+					'Content-Type': 'application/json',
+					...options?.headers,
+				},
+				...options,
+			});
 
-  toggleProfilePanel() {
-    this.setState({ showProfilePanel: !this.state.showProfilePanel });
-  }
+			if (!response.ok) {
+				const error = await response.json().catch(() => ({ error: 'Network error' }));
+				throw new Error(error.error || `HTTP ${response.status}`);
+			}
 
-  toggleActiveMissionsPanel() {
-    this.setState({ showActiveMissionsPanel: !this.state.showActiveMissionsPanel });
-  }
+			return response;
+		} catch (error) {
+			console.error(`API call failed for ${endpoint}:`, error);
+			this.addNotification({
+				type: 'error',
+				title: 'Network Error',
+				message: `Failed to ${endpoint}: ${error.message}`,
+			});
+			throw error;
+		}
+	}
 
-  // Multi-drifter selection management
-  toggleDrifterSelection(drifterId: number) {
-    const currentSelection = [...this.state.selectedDrifterIds];
-    const index = currentSelection.indexOf(drifterId);
-    
-    if (index === -1) {
-      // Add to selection
-      currentSelection.push(drifterId);
-    } else {
-      // Remove from selection
-      currentSelection.splice(index, 1);
-    }
-    
-    this.setState({ selectedDrifterIds: currentSelection });
-  }
+	async loadPlayerProfile() {
+		if (this.state.isLoadingProfile) return;
 
-  clearSelectedDrifters() {
-    this.setState({ selectedDrifterIds: [] });
-  }
+		this.setState({ isLoadingProfile: true });
 
-  setMissionType(missionType: string | null) {
-    this.setState({ selectedMissionType: missionType });
-  }
+		try {
+			const response = await this.apiCall('/profile');
+			const profile = await response.json();
 
-  setDrifterSortBy(sortBy: 'combat' | 'scavenging' | 'tech' | 'speed') {
-    this.setState({ drifterSortBy: sortBy });
-  }
+			this.setState({
+				profile,
+				isLoadingProfile: false,
+			});
+		} catch (error) {
+			this.setState({ isLoadingProfile: false });
+		}
+	}
 
-  // Helper to check if a node is contested by active missions
-  isNodeContested(nodeId: string): boolean {
-    return this.state.activeMissions.some(mission => 
-      mission.targetNodeId === nodeId && mission.status === 'active'
-    );
-  }
+	async loadWorldState() {
+		if (this.state.isLoadingWorld) return;
 
-  async loadPlayerMissions() {
-    if (!this.state.playerAddress || this.state.isLoadingPlayerMissions) return;
+		this.setState({ isLoadingWorld: true });
 
-    this.setState({ isLoadingPlayerMissions: true });
+		try {
+			const response = await this.apiCall('/world/state');
+			const data = await response.json();
 
-    try {
-      const response = await this.apiCall(`/missions/player/${this.state.playerAddress}`);
-      const data = await response.json();
-      
-      this.setState({ 
-        playerMissions: data.missions || [],
-        isLoadingPlayerMissions: false
-      });
-    } catch (error) {
-      this.setState({ isLoadingPlayerMissions: false });
-    }
-  }
+			this.setState({
+				resourceNodes: data.resourceNodes || [],
+				activeMissions: data.activeMissions || [],
+				worldMetrics: data.worldMetrics || null,
+				isLoadingWorld: false,
+			});
+		} catch (error) {
+			this.setState({ isLoadingWorld: false });
+		}
+	}
 
-  // Notification system
-  addNotification(notification: Omit<GameNotification, 'id' | 'timestamp'>) {
-    const newNotification: GameNotification = {
-      ...notification,
-      id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      timestamp: new Date(),
-      duration: notification.duration || 5000
-    };
+	// Mission operations
+	async startMission(drifterIds: number[], targetId: string, missionType: 'scavenge' | 'strip_mine' | 'combat' | 'sabotage') {
+		try {
+			const response = await this.apiCall('/missions/start', {
+				method: 'POST',
+				body: JSON.stringify({
+					drifterIds,
+					targetNodeId: targetId,
+					missionType,
+				}),
+			});
 
-    const notifications = [newNotification, ...this.state.notifications].slice(0, 10); // Keep last 10
-    this.setState({ notifications });
+			const result = await response.json();
 
-    // Auto-remove after duration
-    setTimeout(() => {
-      this.removeNotification(newNotification.id);
-    }, newNotification.duration);
-  }
+			if (result.success) {
+				const teamText = drifterIds.length === 1 ? `Drifter #${drifterIds[0]}` : `${drifterIds.length} drifters`;
+				this.addNotification({
+					type: 'mission',
+					title: 'Mission Started!',
+					message: `${missionType.toUpperCase()} mission started with ${teamText}`,
+				});
 
-  removeNotification(id: string) {
-    const notifications = this.state.notifications.filter(n => n.id !== id);
-    this.setState({ notifications });
-  }
+				// Refresh data
+				await this.loadWorldState();
+				await this.loadPlayerProfile();
+				await this.loadPlayerMissions();
+			}
 
-  // Handle server notifications with ACK protocol
-  private handleServerNotification(notification: Omit<GameNotification, 'timestamp'>) {
-    const fullNotification: GameNotification = {
-      ...notification,
-      timestamp: new Date(),
-      duration: notification.duration || 5000
-    };
+			return result;
+		} catch (error) {
+			return { success: false, error: error.message };
+		}
+	}
 
-    // Add to UI
-    const notifications = [fullNotification, ...this.state.notifications].slice(0, 10);
-    this.setState({ notifications });
+	async interceptMission(missionId: string, drifterId: number) {
+		try {
+			const response = await this.apiCall('/missions/intercept', {
+				method: 'POST',
+				body: JSON.stringify({
+					missionId,
+					drifterId,
+				}),
+			});
 
-    // Send ACK to server
-    this.sendNotificationAck([fullNotification.id]);
+			const result = await response.json();
 
-    // Auto-remove after duration
-    setTimeout(() => {
-      this.removeNotification(fullNotification.id);
-    }, fullNotification.duration);
-  }
+			if (result.success) {
+				this.addNotification({
+					type: 'combat',
+					title: 'Intercept Started!',
+					message: `Intercepting mission with Drifter #${drifterId}`,
+				});
 
-  // Send notification acknowledgment via WebSocket
-  private sendNotificationAck(notificationIds: string[]) {
-    if (this.state.wsConnected && webSocketManager) {
-      webSocketManager.sendMessage({
-        type: 'notification_ack',
-        timestamp: new Date(),
-        data: {
-          notificationIds
-        }
-      });
-      console.log('[GameState] Sent ACK for notifications:', notificationIds);
-    }
-  }
+				// Refresh data
+				await this.loadWorldState();
+				await this.loadPlayerProfile();
+			}
 
-  // Periodic updates (every 30 seconds) - only when WebSocket is not connected
-  private startPeriodicUpdates() {
-    setInterval(() => {
-      if (this.state.isAuthenticated && !this.state.realTimeMode) {
-        console.log('[GameState] Periodic update (WebSocket disconnected)');
-        this.loadPlayerProfile();
-        this.loadWorldState();
-        this.loadPlayerMissions();
-      }
-    }, 30000);
-  }
+			return result;
+		} catch (error) {
+			return { success: false, error: error.message };
+		}
+	}
 
-  // Event listener helpers
-  onStateChange(callback: (state: GameState) => void) {
-    const handler = (event: CustomEvent) => {
-      callback(event.detail.newState);
-    };
-    this.addEventListener('statechange', handler);
-    
-    // Call immediately with current state
-    callback(this.getState());
-    
-    return () => this.removeEventListener('statechange', handler);
-  }
+	// UI state management
+	selectResourceNode(nodeId: string | null) {
+		this.setState({ selectedResourceNode: nodeId });
+	}
+
+	toggleMissionPanel() {
+		this.setState({ showMissionPanel: !this.state.showMissionPanel });
+	}
+
+	showMissionPanel() {
+		this.setState({ showMissionPanel: true });
+	}
+
+	hideMissionPanel() {
+		this.setState({ showMissionPanel: false });
+	}
+
+	toggleMercenaryPanel() {
+		this.setState({ showMercenaryPanel: !this.state.showMercenaryPanel });
+	}
+
+	toggleProfilePanel() {
+		this.setState({ showProfilePanel: !this.state.showProfilePanel });
+	}
+
+	toggleActiveMissionsPanel() {
+		this.setState({ showActiveMissionsPanel: !this.state.showActiveMissionsPanel });
+	}
+
+	// Multi-drifter selection management
+	toggleDrifterSelection(drifterId: number) {
+		const currentSelection = [...this.state.selectedDrifterIds];
+		const index = currentSelection.indexOf(drifterId);
+
+		if (index === -1) {
+			// Add to selection
+			currentSelection.push(drifterId);
+		} else {
+			// Remove from selection
+			currentSelection.splice(index, 1);
+		}
+
+		this.setState({ selectedDrifterIds: currentSelection });
+	}
+
+	clearSelectedDrifters() {
+		this.setState({ selectedDrifterIds: [] });
+	}
+
+	setMissionType(missionType: string | null) {
+		this.setState({ selectedMissionType: missionType });
+	}
+
+	setDrifterSortBy(sortBy: 'combat' | 'scavenging' | 'tech' | 'speed') {
+		this.setState({ drifterSortBy: sortBy });
+	}
+
+	// Helper to check if a node is contested by active missions
+	isNodeContested(nodeId: string): boolean {
+		return this.state.activeMissions.some((mission) => mission.targetNodeId === nodeId && mission.status === 'active');
+	}
+
+	async loadPlayerMissions() {
+		if (!this.state.playerAddress || this.state.isLoadingPlayerMissions) return;
+
+		this.setState({ isLoadingPlayerMissions: true });
+
+		try {
+			const response = await this.apiCall(`/missions/player/${this.state.playerAddress}`);
+			const data = await response.json();
+
+			this.setState({
+				playerMissions: data.missions || [],
+				isLoadingPlayerMissions: false,
+			});
+		} catch (error) {
+			this.setState({ isLoadingPlayerMissions: false });
+		}
+	}
+
+	// Notification system
+	addNotification(notification: Omit<GameNotification, 'id' | 'timestamp'>) {
+		const newNotification: GameNotification = {
+			...notification,
+			id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+			timestamp: new Date(),
+			duration: notification.duration || 5000,
+		};
+
+		const notifications = [newNotification, ...this.state.notifications].slice(0, 10); // Keep last 10
+		this.setState({ notifications });
+
+		// Auto-remove after duration
+		setTimeout(() => {
+			this.removeNotification(newNotification.id);
+		}, newNotification.duration);
+	}
+
+	removeNotification(id: string) {
+		const notifications = this.state.notifications.filter((n) => n.id !== id);
+		this.setState({ notifications });
+	}
+
+	// Handle server notifications with ACK protocol
+	private handleServerNotification(notification: Omit<GameNotification, 'timestamp'>) {
+		const fullNotification: GameNotification = {
+			...notification,
+			timestamp: new Date(),
+			duration: notification.duration || 5000,
+		};
+
+		// Add to UI
+		const notifications = [fullNotification, ...this.state.notifications].slice(0, 10);
+		this.setState({ notifications });
+
+		// Send ACK to server
+		this.sendNotificationAck([fullNotification.id]);
+
+		// Auto-remove after duration
+		setTimeout(() => {
+			this.removeNotification(fullNotification.id);
+		}, fullNotification.duration);
+	}
+
+	// Send notification acknowledgment via WebSocket
+	private sendNotificationAck(notificationIds: string[]) {
+		if (this.state.wsConnected && webSocketManager) {
+			webSocketManager.sendMessage({
+				type: 'notification_ack',
+				timestamp: new Date(),
+				data: {
+					notificationIds,
+				},
+			});
+			console.log('[GameState] Sent ACK for notifications:', notificationIds);
+		}
+	}
+
+	// Periodic updates (every 30 seconds) - only when WebSocket is not connected
+	private startPeriodicUpdates() {
+		setInterval(() => {
+			if (this.state.isAuthenticated && !this.state.realTimeMode) {
+				console.log('[GameState] Periodic update (WebSocket disconnected)');
+				this.loadPlayerProfile();
+				this.loadWorldState();
+				this.loadPlayerMissions();
+			}
+		}, 30000);
+	}
+
+	// Event listener helpers
+	onStateChange(callback: (state: GameState) => void) {
+		const handler = (event: CustomEvent) => {
+			callback(event.detail.newState);
+		};
+		this.addEventListener('statechange', handler);
+
+		// Call immediately with current state
+		callback(this.getState());
+
+		return () => this.removeEventListener('statechange', handler);
+	}
 }
 
 // Singleton instance
