@@ -3,6 +3,7 @@ import { gameState } from '../gameState';
 import type { DrifterProfile, MissionType } from '@shared/models';
 import { calculateLiveEstimates, formatDuration, getAvailableMissionTypes, type DrifterStats } from '../../shared/mission-utils';
 import { ActiveMissionsPanel } from './ActiveMissionsPanel';
+import { MarketPanel } from './MarketPanel';
 
 export class UIManager {
 	private notificationContainer: HTMLElement | null = null;
@@ -10,6 +11,7 @@ export class UIManager {
 	private mercenaryPanel: HTMLElement | null = null;
 	private profilePanel: HTMLElement | null = null;
 	private activeMissionsPanel: HTMLElement | null = null;
+	private marketPanel: HTMLElement | null = null;
 	private buttonUpdateInterval: number | null = null;
 
 	constructor() {
@@ -58,6 +60,7 @@ export class UIManager {
 		this.createMercenaryPanel();
 		this.createProfilePanel();
 		this.createActiveMissionsPanel();
+		this.createMarketPanel();
 	}
 
 	private createNotificationContainer() {
@@ -187,6 +190,11 @@ export class UIManager {
 		document.body.appendChild(this.activeMissionsPanel);
 	}
 
+	private createMarketPanel() {
+		this.marketPanel = MarketPanel.createMarketPanel();
+		document.body.appendChild(this.marketPanel);
+	}
+
 	private setupEventListeners() {
 		// Panel close buttons
 		document.getElementById('close-mission-panel')?.addEventListener('click', () => {
@@ -203,6 +211,10 @@ export class UIManager {
 
 		document.getElementById('close-active-missions-panel')?.addEventListener('click', () => {
 			gameState.toggleActiveMissionsPanel();
+		});
+
+		document.getElementById('close-market-panel')?.addEventListener('click', () => {
+			gameState.toggleMarketPanel();
 		});
 
 		// Keyboard shortcuts
@@ -262,6 +274,13 @@ export class UIManager {
 			} else {
 				// Stop the live timer when panel is hidden
 				ActiveMissionsPanel.stopLiveTimer();
+			}
+		}
+
+		if (this.marketPanel) {
+			this.marketPanel.style.display = state.showMarketPanel ? 'block' : 'none';
+			if (state.showMarketPanel) {
+				MarketPanel.updateMarketPanel(state.availableVehicles, state.isLoadingMarket);
 			}
 		}
 

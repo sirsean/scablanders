@@ -1,4 +1,4 @@
-import type { PlayerProfile, Mission, DrifterProfile, ResourceNode } from '@shared/models';
+import type { PlayerProfile, Mission, DrifterProfile, ResourceNode, Vehicle } from '@shared/models';
 import { auth } from './auth';
 import { webSocketManager } from './websocketManager';
 import type { PlayerStateUpdate, WorldStateUpdate, MissionUpdate, ConnectionStatusUpdate } from '@shared/models';
@@ -23,6 +23,9 @@ export interface GameState {
 		lastUpdate: Date;
 	} | null;
 
+	// Market data
+	availableVehicles: Vehicle[];
+
 	// Connection state
 	wsConnected: boolean;
 	wsAuthenticated: boolean;
@@ -39,12 +42,14 @@ export interface GameState {
 	showMercenaryPanel: boolean;
 	showProfilePanel: boolean;
 	showActiveMissionsPanel: boolean;
+	showMarketPanel: boolean;
 	notifications: GameNotification[];
 
 	// Loading states
 	isLoadingProfile: boolean;
 	isLoadingWorld: boolean;
 	isLoadingPlayerMissions: boolean;
+	isLoadingMarket: boolean;
 }
 
 export interface GameNotification {
@@ -66,6 +71,7 @@ class GameStateManager extends EventTarget {
 		resourceNodes: [],
 		activeMissions: [],
 		worldMetrics: null,
+		availableVehicles: [],
 		wsConnected: false,
 		wsAuthenticated: false,
 		wsReconnectAttempts: 0,
@@ -79,10 +85,12 @@ class GameStateManager extends EventTarget {
 		showMercenaryPanel: false,
 		showProfilePanel: false,
 		showActiveMissionsPanel: false,
+		showMarketPanel: false,
 		notifications: [],
 		isLoadingProfile: false,
 		isLoadingWorld: false,
 		isLoadingPlayerMissions: false,
+		isLoadingMarket: false,
 	};
 
 	constructor() {
@@ -120,6 +128,7 @@ class GameStateManager extends EventTarget {
 				this.loadPlayerProfile();
 				this.loadWorldState();
 				this.loadPlayerMissions();
+				this.loadMarketVehicles();
 
 				// Connect WebSocket for real-time updates
 				this.connectWebSocket();
@@ -372,6 +381,24 @@ class GameStateManager extends EventTarget {
 		}
 	}
 
+	async loadMarketVehicles() {
+		if (this.state.isLoadingMarket) return;
+
+		this.setState({ isLoadingMarket: true });
+
+		try {
+			const response = await this.apiCall('/market/vehicles');
+			const data = await response.json();
+
+			this.setState({
+				availableVehicles: data.vehicles || [],
+				isLoadingMarket: false,
+			});
+		} catch (error) {
+			this.setState({ isLoadingMarket: false });
+		}
+	}
+
 	// Mission operations
 	async startMission(drifterIds: number[], targetId: string, missionType: 'scavenge' | 'strip_mine' | 'combat' | 'sabotage') {
 		try {
@@ -436,6 +463,36 @@ class GameStateManager extends EventTarget {
 		}
 	}
 
+	async purchaseVehicle(vehicleId: string) {
+		try {
+			const response = await this.apiCall('/market/vehicles/purchase', {
+				method: 'POST',
+				body: JSON.stringify({ vehicleId }),
+			});
+
+			const result = await response.json();
+
+			if (result.success) {
+				this.addNotification({
+					type: 'success',
+					title: 'Vehicle Purchased',
+					message: `You have successfully purchased a new vehicle!`,
+				});
+				await this.loadPlayerProfile();
+			} else {
+				this.addNotification({
+					type: 'error',
+					title: 'Purchase Failed',
+					message: result.error || 'Failed to purchase vehicle.',
+				});
+			}
+
+			return result;
+		} catch (error) {
+			return { success: false, error: error.message };
+		}
+	}
+
 	// UI state management
 	selectResourceNode(nodeId: string | null) {
 		this.setState({ selectedResourceNode: nodeId });
@@ -463,6 +520,10 @@ class GameStateManager extends EventTarget {
 
 	toggleActiveMissionsPanel() {
 		this.setState({ showActiveMissionsPanel: !this.state.showActiveMissionsPanel });
+	}
+
+	toggleMarketPanel() {
+		this.setState({ showMarketPanel: !this.state.showMarketPanel });
 	}
 
 	// Multi-drifter selection management

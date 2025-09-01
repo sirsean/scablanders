@@ -85,6 +85,13 @@ document.addEventListener('DOMContentLoaded', () => {
 		profileButton.style.marginRight = '8px';
 		profileButton.addEventListener('click', () => gameState.toggleProfilePanel());
 		authPanel.insertBefore(profileButton, authPanel.firstChild);
+
+		const marketButton = document.createElement('button');
+		marketButton.textContent = 'Market';
+		marketButton.className = 'button';
+		marketButton.style.marginRight = '8px';
+		marketButton.addEventListener('click', () => gameState.toggleMarketPanel());
+		authPanel.insertBefore(marketButton, authPanel.firstChild);
 	}
 });
 
