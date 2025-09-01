@@ -87,40 +87,40 @@ This document tracks the development roadmap for **Scablanders**, a casual web-b
 
 ## Upcoming Roadmap
 
-### Phase 4: Phaser 3 Client (Upcoming)
+### Phase 4: Phaser 3 Client (In Progress)
 
 #### 4.1 Game Scenes Architecture
-- [ ] **BootScene** - Asset loading and initialization
-- [ ] **MapScene** - Scablands map with interactive elements
-  - [ ] Background image of desert landscape
+- [x] **BootScene** - Asset loading and initialization
+- [x] **GameScene (MapScene)** - Scablands map with interactive elements
+  - [x] Background image of desert landscape
   - [ ] Fog-of-war overlay for unexplored areas
-  - [ ] Resource node icons (appear when discovered)
-  - [ ] Mission markers showing active expeditions
-- [ ] **UIScene** - HTML overlay for complex interfaces
-  - [ ] Login button and wallet connection
-  - [ ] Credits balance counter
-  - [ ] Navigation to Mercenary Hall, Market, Black Market
-  - [ ] Notification log panel
+  - [x] Resource node icons (appear when discovered)
+  - [x] Mission markers showing active expeditions
+- [x] **UIManager (UIScene)** - HTML overlay for complex interfaces
+  - [x] Login button and wallet connection
+  - [x] Credits balance counter
+  - [x] Navigation to Mercenary Hall, Profile, and Active Missions panels
+  - [x] Notification log panel (via toast notifications)
 
 #### 4.2 Map Interactions
-- [ ] **Resource node clicking**
-  - [ ] Open "Send Mission" modal
-  - [ ] Show drifter selection with hire costs
-  - [ ] Submit mission and update UI immediately
+- [x] **Resource node clicking**
+  - [x] Open "Send Mission" modal
+  - [x] Show drifter selection with hire costs
+  - [x] Submit mission and update UI immediately
 - [ ] **Mission marker interactions**
   - [ ] Show mission details on hover
   - [ ] "Ambush" option for other players' missions
-  - [ ] Track progress with moving markers
-- [ ] **Real-time updates**
-  - [ ] WebSocket connection to `/ws` for live events
+  - [x] Track progress with moving markers
+- [x] **Real-time updates**
+  - [x] WebSocket connection to `/ws` for live events
   - [ ] Fallback to polling every 20 seconds
-  - [ ] Update resource availability and mission status
+  - [x] Update resource availability and mission status
 
-#### 4.3 Town Interface
-- [ ] **Mercenary Hall**
-  - [ ] Paginated grid of available drifters
-  - [ ] Show stats, hire cost, availability status
-  - [ ] "Owned" badge for player's NFTs
+#### 4.3 UI Panels
+- [x] **Mercenary Hall**
+  - [x] Paginated grid of available drifters
+  - [x] Show stats, hire cost, availability status
+  - [x] "Owned" badge for player's NFTs
 - [ ] **Market & Upgrades**
   - [ ] List available upgrades with costs
   - [ ] Purchase confirmation and balance updates
@@ -128,6 +128,10 @@ This document tracks the development roadmap for **Scablanders**, a casual web-b
   - [ ] List active missions available to intercept
   - [ ] Cost calculator for bandit hiring
   - [ ] Anonymous ambush interface
+- [x] **Active Missions Panel**
+  - [x] List of active missions with progress bars
+  - [x] Live countdown timers
+  - [x] "Collect Rewards" button for completed missions
 
 ### Phase 5: Notifications & Polish (Upcoming)
 
