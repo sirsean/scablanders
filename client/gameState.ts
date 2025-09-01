@@ -344,6 +344,7 @@ class GameStateManager extends EventTarget {
 
 			this.setState({
 				profile,
+				ownedDrifters: profile.ownedDrifters || [],
 				isLoadingProfile: false,
 			});
 		} catch (error) {
