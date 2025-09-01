@@ -108,7 +108,7 @@ This document tracks the development roadmap for **Scablanders**, a casual web-b
   - [x] Show drifter selection with hire costs
   - [x] Submit mission and update UI immediately
 - [ ] **Mission marker interactions**
-  - [ ] Show mission details on hover
+  - [x] Show mission details on hover
   - [ ] "Ambush" option for other players' missions
   - [x] Track progress with moving markers
 - [x] **Real-time updates**
