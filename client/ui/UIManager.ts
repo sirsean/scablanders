@@ -401,14 +401,23 @@ export class UIManager {
 		// Filter out drifters that are on active missions
 		const busyDrifterIds = new Set(state.playerMissions.filter((m) => m.status === 'active').flatMap((m) => m.drifterIds));
 
-		// Sort drifters based on selected sort criteria
+		// Sort drifters based on availability first, then by selected sort criteria
 		const sortedDrifters = [...drifters].sort((a, b) => {
+			const aIsBusy = busyDrifterIds.has(a.tokenId);
+			const bIsBusy = busyDrifterIds.has(b.tokenId);
+
+			if (aIsBusy && !bIsBusy) {
+				return 1; // a (busy) comes after b (available)
+			}
+			if (!aIsBusy && bIsBusy) {
+				return -1; // a (available) comes before b (busy)
+			}
+
 			const sortBy = state.drifterSortBy;
 			return b[sortBy] - a[sortBy]; // Descending order (highest first)
 		});
 
-		// Limit to max 12 drifters
-		const displayDrifters = sortedDrifters.slice(0, 12);
+		const displayDrifters = sortedDrifters;
 		const selectedIds = state.selectedDrifterIds || [];
 
 		return `
