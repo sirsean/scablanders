@@ -54,10 +54,21 @@ export interface PlayerProfile {
 	address: string;
 	balance: number;
 	ownedDrifters: DrifterProfile[];
+	vehicles: Vehicle[];
 	discoveredNodes: string[];
 	upgrades: UpgradeType[];
 	activeMissions: string[];
 	lastLogin: Date;
+}
+
+export interface Vehicle {
+	id: string;
+	name: string;
+	description: string;
+	speed: number; // e.g., 120 (120% of base speed)
+	maxDrifters: number;
+	maxCargo: number;
+	cost: number;
 }
 
 export interface DrifterProfile {

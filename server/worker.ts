@@ -7,6 +7,7 @@ import auth from './routes/auth';
 import profile from './routes/profile';
 import world from './routes/world';
 import missions from './routes/missions';
+import market from './routes/market';
 
 import { getPlayerOwnedDrifters } from './nft';
 import { handleWebSocket } from './websocket';
@@ -154,6 +155,7 @@ app.route('/api/auth', auth);
 app.route('/api/profile', profile);
 app.route('/api/world', world);
 app.route('/api/missions', missions);
+app.route('/api/market', market);
 
 // 404 handler for unmatched API routes
 app.notFound((c) => {
