@@ -54,18 +54,27 @@ export interface PlayerProfile {
 	address: string;
 	balance: number;
 	ownedDrifters: DrifterProfile[];
-	vehicles: Vehicle[];
+	vehicles: PlayerVehicle[];
 	discoveredNodes: string[];
 	upgrades: UpgradeType[];
 	activeMissions: string[];
 	lastLogin: Date;
 }
 
+export interface PlayerVehicle {
+	instanceId: string;
+	vehicleId: string;
+	status: 'idle' | 'on_mission';
+}
+
 export interface Vehicle {
 	id: string;
 	name: string;
 	description: string;
-	speed: number; // e.g., 120 (120% of base speed)
+	speed: number; // Same unit as Drifter speed; higher = faster. Typical range: 10–100.
+	combat: number; // Same unit scale as drifters; contributes to team combat
+	scavenging: number; // Same unit scale as drifters; contributes to team scavenging
+	tech: number; // Same unit scale as drifters; contributes to team tech
 	maxDrifters: number;
 	maxCargo: number;
 	cost: number;
@@ -89,6 +98,7 @@ export interface Mission {
 	type: MissionType;
 	playerAddress: string;
 	drifterIds: number[];
+	vehicleInstanceId: string | null;
 	targetNodeId: string;
 	startTime: Date;
 	completionTime: Date;
@@ -168,6 +178,7 @@ export interface StartMissionRequest {
 	playerAddress: string;
 	drifterIds: number[];
 	targetNodeId: string;
+	vehicleInstanceId?: string | null;
 }
 
 export interface StartMissionResponse {

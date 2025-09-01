@@ -14,6 +14,7 @@ import type {
 } from '@shared/models';
 import { calculateMissionDuration, calculateMissionRewards, type DrifterStats } from '../shared/mission-utils';
 import { getDrifterStats } from './drifters';
+import { getVehicle } from './vehicles';
 interface WebSocketSession {
 	websocket: WebSocket;
 	sessionId: string;
@@ -492,13 +493,13 @@ export class GameDO extends DurableObject {
 	/**
 	 * Update player's owned Drifters
 	 */
-	async updateOwnedDrifters(address: string, drifterIds: number[]): Promise<{ success: boolean; error?: string }> {
+	async updateOwnedDrifters(address: string, drifters: DrifterProfile[]): Promise<{ success: boolean; error?: string }> {
 		const player = this.gameState.players.get(address);
 		if (!player) {
 			return { success: false, error: 'Player not found' };
 		}
 
-		player.ownedDrifters = drifterIds;
+		player.ownedDrifters = drifters;
 		await this.saveGameState();
 
 		// Broadcast update
@@ -521,7 +522,14 @@ export class GameDO extends DurableObject {
 		if (!player.vehicles) {
 			player.vehicles = [];
 		}
-		player.vehicles.push(vehicle);
+
+		const newVehicleInstance = {
+			instanceId: crypto.randomUUID(),
+			vehicleId: vehicle.id,
+			status: 'idle' as const,
+		};
+
+		player.vehicles.push(newVehicleInstance);
 
 		await this.saveGameState();
 		await this.broadcastPlayerStateUpdate(playerAddress);
@@ -536,14 +544,15 @@ export class GameDO extends DurableObject {
 	/**
 	 * Start a mission
 	 */
-	async startMission(
+async startMission(
 		playerAddress: string,
 		missionType: MissionType,
 		drifterIds: number[],
 		targetNodeId: string,
+		vehicleInstanceId?: string | null,
 	): Promise<{ success: boolean; missionId?: string; error?: string }> {
 		console.log(
-			`[GameDO] Starting mission - Player: ${playerAddress}, Type: ${missionType}, Drifters: [${drifterIds.join(', ')}], Target: ${targetNodeId}`,
+			`[GameDO] Starting mission - Player: ${playerAddress}, Type: ${missionType}, Drifters: [${drifterIds.join(', ')}], Target: ${targetNodeId}, VehicleInstance: ${vehicleInstanceId}`,
 		);
 
 		const player = this.gameState.players.get(playerAddress);
@@ -559,7 +568,8 @@ export class GameDO extends DurableObject {
 
 		// Check all drifters are owned by the player
 		for (const drifterId of drifterIds) {
-			if (!player.ownedDrifters.includes(drifterId)) {
+			const drifter = player.ownedDrifters.find((d) => d.tokenId === drifterId);
+			if (!drifter) {
 				console.error(`[GameDO] Player ${playerAddress} does not own drifter ${drifterId}`);
 				return { success: false, error: `You don't own Drifter #${drifterId}` };
 			}
@@ -585,6 +595,29 @@ export class GameDO extends DurableObject {
 
 		console.log(`[GameDO] All ${drifterIds.length} drifter(s) are available for mission`);
 
+		// Validate vehicle (optional)
+		let vehicle: ReturnType<typeof getVehicle> | undefined;
+		let vehicleInstance: { instanceId: string; vehicleId: string; status: 'idle' | 'on_mission' } | undefined;
+		if (vehicleInstanceId) {
+			vehicleInstance = player.vehicles.find((v) => v.instanceId === vehicleInstanceId);
+			if (!vehicleInstance) {
+				return { success: false, error: 'Vehicle not found or not owned by player' };
+			}
+
+			if (vehicleInstance.status !== 'idle') {
+				return { success: false, error: 'Vehicle is currently on another mission' };
+			}
+
+			vehicle = getVehicle(vehicleInstance.vehicleId);
+			if (!vehicle) {
+				return { success: false, error: 'Vehicle data not found' };
+			}
+
+			if (drifterIds.length > vehicle.maxDrifters) {
+				return { success: false, error: `Vehicle only has space for ${vehicle.maxDrifters} drifters` };
+			}
+		}
+
 		// Validate target node exists
 		const targetNode = this.gameState.resourceNodes.get(targetNodeId);
 		if (!targetNode) {
@@ -609,9 +642,19 @@ export class GameDO extends DurableObject {
 			}
 		}
 
+		// If a vehicle is used, treat its bonuses as an additional team member for reward calculations
+		if (vehicle) {
+			teamStats.push({
+				combat: (vehicle as any).combat ?? 0,
+				scavenging: (vehicle as any).scavenging ?? 0,
+				tech: (vehicle as any).tech ?? 0,
+				speed: vehicle.speed,
+			});
+		}
+
 		// Calculate mission duration and rewards using shared utilities with drifter stats
-		const duration = calculateMissionDuration(targetNode, teamStats);
-		console.log(`[GameDO] duration: ${duration} (with ${teamStats.length} drifters)`);
+		const duration = calculateMissionDuration(targetNode, teamStats, vehicle || undefined);
+		console.log(`[GameDO] duration: ${duration} (with ${teamStats.length} drifter/vehicle entries and vehicle ${vehicle ? vehicle.name : 'On Foot'})`);
 		const rewards = calculateMissionRewards(targetNode, missionType, duration, teamStats);
 		console.log(`[GameDO] rewards: ${rewards}`);
 
@@ -627,6 +670,7 @@ export class GameDO extends DurableObject {
 			type: missionType,
 			playerAddress,
 			drifterIds,
+			vehicleInstanceId: vehicleInstanceId ?? null,
 			targetNodeId,
 			startTime: now,
 			completionTime: new Date(now.getTime() + duration),
@@ -637,6 +681,9 @@ export class GameDO extends DurableObject {
 		// Add to game state
 		this.gameState.missions.set(missionId, mission);
 		player.activeMissions.push(missionId);
+		if (vehicleInstance) {
+			vehicleInstance.status = 'on_mission';
+		}
 
 		console.log(`[GameDO] Mission ${missionId} created and added to player ${playerAddress}`);
 		console.log(`[GameDO] Player now has ${player.activeMissions.length} active missions: ${player.activeMissions}`);
@@ -731,6 +778,14 @@ export class GameDO extends DurableObject {
 		// Mark mission as completed
 		mission.status = 'completed';
 
+		// Update vehicle status (if any)
+		if (mission.vehicleInstanceId) {
+			const vehicleInstance = player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
+			if (vehicleInstance) {
+				vehicleInstance.status = 'idle';
+			}
+		}
+
 		// Update world metrics
 		this.gameState.worldMetrics.totalActiveMissions--;
 		this.gameState.worldMetrics.totalCompletedMissions++;
@@ -774,6 +829,42 @@ export class GameDO extends DurableObject {
 	 */
 	async getMission(missionId: string): Promise<Mission | null> {
 		return this.gameState.missions.get(missionId) || null;
+	}
+
+	/**
+	 * Reconcile a player's vehicle statuses: set any vehicles marked on_mission to idle
+	 * if there is no active mission referencing that vehicle instance.
+	 */
+	async reconcileVehicleStatusesForPlayer(playerAddress: string): Promise<{ success: boolean; resetCount: number; stuckVehicles: string[] }> {
+		const player = this.gameState.players.get(playerAddress);
+		if (!player) {
+			return { success: false, resetCount: 0, stuckVehicles: [] };
+		}
+
+		// Gather vehicle instance IDs referenced by this player's active missions
+		const activeVehicleIds = new Set<string>();
+		for (const mission of this.gameState.missions.values()) {
+			if (mission.status === 'active' && mission.playerAddress === playerAddress && mission.vehicleInstanceId) {
+				activeVehicleIds.add(mission.vehicleInstanceId);
+			}
+		}
+
+		let resetCount = 0;
+		const stuckVehicles: string[] = [];
+		for (const v of player.vehicles || []) {
+			if (v.status === 'on_mission' && !activeVehicleIds.has(v.instanceId)) {
+				v.status = 'idle';
+				resetCount++;
+				stuckVehicles.push(v.instanceId);
+			}
+		}
+
+		if (resetCount > 0) {
+			await this.saveGameState();
+			await this.broadcastPlayerStateUpdate(playerAddress);
+		}
+
+		return { success: true, resetCount, stuckVehicles };
 	}
 
 	/**
@@ -1259,28 +1350,6 @@ export class GameDO extends DurableObject {
 			activeSessions: this.webSocketSessions.size,
 			worldMetrics: this.gameState.worldMetrics,
 		};
-	}
-
-	async purchaseVehicle(playerAddress: string, vehicle: Vehicle): Promise<{ success: boolean; newBalance?: number; error?: string }> {
-		const player = this.gameState.players.get(playerAddress);
-		if (!player) {
-			return { success: false, error: 'Player not found' };
-		}
-
-		if (player.balance < vehicle.cost) {
-			return { success: false, error: 'Insufficient credits' };
-		}
-
-		player.balance -= vehicle.cost;
-		if (!player.vehicles) {
-			player.vehicles = [];
-		}
-		player.vehicles.push(vehicle);
-
-		await this.saveGameState();
-		await this.broadcastPlayerStateUpdate(playerAddress);
-
-		return { success: true, newBalance: player.balance };
 	}
 
 	// =============================================================================

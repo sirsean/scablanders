@@ -54,46 +54,7 @@ document.getElementById('disconnect-wallet')?.addEventListener('click', async ()
 	await auth.disconnect();
 });
 
-// Add bottom control panel button handlers
-document.getElementById('toggle-mercenaries')?.addEventListener('click', () => {
-	gameState.toggleMercenaryPanel();
-});
-
-document.getElementById('toggle-missions')?.addEventListener('click', () => {
-	gameState.toggleActiveMissionsPanel();
-});
-
-document.getElementById('toggle-profile')?.addEventListener('click', () => {
-	gameState.toggleProfilePanel();
-});
-
-// Add top bar button handlers for panels
-document.addEventListener('DOMContentLoaded', () => {
-	// Add mercenaries button to UI
-	const authPanel = document.getElementById('auth-panel');
-	if (authPanel) {
-		const mercButton = document.createElement('button');
-		mercButton.textContent = 'Drifters (M)';
-		mercButton.className = 'button';
-		mercButton.style.marginRight = '8px';
-		mercButton.addEventListener('click', () => gameState.toggleMercenaryPanel());
-		authPanel.insertBefore(mercButton, authPanel.firstChild);
-
-		const profileButton = document.createElement('button');
-		profileButton.textContent = 'Profile (P)';
-		profileButton.className = 'button';
-		profileButton.style.marginRight = '8px';
-		profileButton.addEventListener('click', () => gameState.toggleProfilePanel());
-		authPanel.insertBefore(profileButton, authPanel.firstChild);
-
-		const marketButton = document.createElement('button');
-		marketButton.textContent = 'Market';
-		marketButton.className = 'button';
-		marketButton.style.marginRight = '8px';
-		marketButton.addEventListener('click', () => gameState.toggleMarketPanel());
-		authPanel.insertBefore(marketButton, authPanel.firstChild);
-	}
-});
+// Action menu buttons are created by UIManager. Listeners are attached there.
 
 console.log('Scablanders Phase 4 client initialized');
 console.log('🎮 Game Controls:');

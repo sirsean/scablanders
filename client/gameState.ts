@@ -37,12 +37,14 @@ export interface GameState {
 	selectedResourceNode: string | null;
 	selectedDrifterIds: number[];
 	selectedMissionType: string | null;
+	selectedVehicleInstanceId: string | null;
 	drifterSortBy: 'combat' | 'scavenging' | 'tech' | 'speed';
 	showMissionPanel: boolean;
 	showMercenaryPanel: boolean;
 	showProfilePanel: boolean;
 	showActiveMissionsPanel: boolean;
 	showMarketPanel: boolean;
+	showVehiclePanel: boolean;
 	notifications: GameNotification[];
 
 	// Loading states
@@ -80,12 +82,14 @@ class GameStateManager extends EventTarget {
 		selectedResourceNode: null,
 		selectedDrifterIds: [],
 		selectedMissionType: null,
+		selectedVehicleInstanceId: null,
 		drifterSortBy: 'combat',
 		showMissionPanel: false,
 		showMercenaryPanel: false,
 		showProfilePanel: false,
 		showActiveMissionsPanel: false,
 		showMarketPanel: false,
+		showVehiclePanel: false,
 		notifications: [],
 		isLoadingProfile: false,
 		isLoadingWorld: false,
@@ -400,7 +404,12 @@ class GameStateManager extends EventTarget {
 	}
 
 	// Mission operations
-	async startMission(drifterIds: number[], targetId: string, missionType: 'scavenge' | 'strip_mine' | 'combat' | 'sabotage') {
+async startMission(
+		drifterIds: number[],
+		targetId: string,
+		missionType: 'scavenge' | 'strip_mine' | 'combat' | 'sabotage',
+		vehicleInstanceId?: string | null,
+	) {
 		try {
 			const response = await this.apiCall('/missions/start', {
 				method: 'POST',
@@ -408,6 +417,7 @@ class GameStateManager extends EventTarget {
 					drifterIds,
 					targetNodeId: targetId,
 					missionType,
+					vehicleInstanceId: vehicleInstanceId ?? null,
 				}),
 			});
 
@@ -493,6 +503,40 @@ class GameStateManager extends EventTarget {
 		}
 	}
 
+	// Maintenance utilities
+	async reconcileVehicles() {
+		try {
+			const response = await this.apiCall('/missions/reconcile-vehicles', {
+				method: 'POST',
+			});
+			const result = await response.json();
+			if (result.success) {
+				const resetCount = result.resetCount || 0;
+				this.addNotification({
+					type: 'success',
+					title: 'Vehicles Reconciled',
+					message: resetCount > 0 ? `Reset ${resetCount} stuck vehicle${resetCount === 1 ? '' : 's'} to idle.` : 'No stuck vehicles found.',
+				});
+				await this.loadPlayerProfile();
+				await this.loadPlayerMissions();
+			} else {
+				this.addNotification({
+					type: 'error',
+					title: 'Reconcile Failed',
+					message: result.error || 'Failed to reconcile vehicles.',
+				});
+			}
+			return result;
+		} catch (error) {
+			this.addNotification({
+				type: 'error',
+				title: 'Network Error',
+				message: `Failed to /missions/reconcile-vehicles: ${error.message}`,
+			});
+			return { success: false, error: error.message };
+		}
+	}
+
 	// UI state management
 	selectResourceNode(nodeId: string | null) {
 		this.setState({ selectedResourceNode: nodeId });
@@ -526,6 +570,10 @@ class GameStateManager extends EventTarget {
 		this.setState({ showMarketPanel: !this.state.showMarketPanel });
 	}
 
+	toggleVehiclePanel() {
+		this.setState({ showVehiclePanel: !this.state.showVehiclePanel });
+	}
+
 	// Multi-drifter selection management
 	toggleDrifterSelection(drifterId: number) {
 		const currentSelection = [...this.state.selectedDrifterIds];
@@ -552,6 +600,10 @@ class GameStateManager extends EventTarget {
 
 	setDrifterSortBy(sortBy: 'combat' | 'scavenging' | 'tech' | 'speed') {
 		this.setState({ drifterSortBy: sortBy });
+	}
+
+	selectVehicleInstance(vehicleInstanceId: string | null) {
+		this.setState({ selectedVehicleInstanceId: vehicleInstanceId });
 	}
 
 	// Helper to check if a node is contested by active missions

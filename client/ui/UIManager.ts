@@ -1,9 +1,11 @@
 import type { GameState, GameNotification } from '../gameState';
 import { gameState } from '../gameState';
+import { getVehicleData } from '../utils/vehicleUtils';
 import type { DrifterProfile, MissionType } from '@shared/models';
-import { calculateLiveEstimates, formatDuration, getAvailableMissionTypes, type DrifterStats } from '../../shared/mission-utils';
+import { calculateLiveEstimates, formatDuration, getAvailableMissionTypes, type DrifterStats, BASE_SPEED } from '../../shared/mission-utils';
 import { ActiveMissionsPanel } from './ActiveMissionsPanel';
 import { MarketPanel } from './MarketPanel';
+import { VehiclePanel } from './VehiclePanel';
 
 export class UIManager {
 	private notificationContainer: HTMLElement | null = null;
@@ -12,11 +14,15 @@ export class UIManager {
 	private profilePanel: HTMLElement | null = null;
 	private activeMissionsPanel: HTMLElement | null = null;
 	private marketPanel: HTMLElement | null = null;
+	private vehiclePanel: HTMLElement | null = null;
 	private buttonUpdateInterval: number | null = null;
 
 	constructor() {
 		this.createUIElements();
 		this.setupEventListeners();
+
+		// Reflow on window resize
+		window.addEventListener('resize', () => this.layoutOpenPanels());
 
 		// Listen to game state changes
 		gameState.onStateChange((state) => {
@@ -56,11 +62,73 @@ export class UIManager {
 
 	private createUIElements() {
 		this.createNotificationContainer();
+		this.createActionMenu();
 		this.createMissionPanel();
 		this.createMercenaryPanel();
 		this.createProfilePanel();
 		this.createActiveMissionsPanel();
 		this.createMarketPanel();
+		this.createVehiclePanel();
+	}
+
+	private createActionMenu() {
+		const menu = document.createElement('div');
+		menu.id = 'action-menu';
+		menu.style.cssText = `
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 1100;
+      pointer-events: auto;
+    `;
+
+		// Action buttons (vertical) - desired order top->bottom
+		const buttons: { id: string; label: string }[] = [
+			{ id: 'toggle-profile', label: 'Profile (P)' },
+			{ id: 'toggle-mercenaries', label: 'Drifters (D)' },
+			{ id: 'toggle-vehicles', label: 'Vehicles (V)' },
+			{ id: 'toggle-market', label: 'Market (M)' },
+			{ id: 'toggle-missions', label: 'Active Missions (A)' },
+		];
+
+		for (const b of buttons) {
+			const btn = document.createElement('button');
+			btn.id = b.id;
+			btn.textContent = b.label;
+			btn.className = 'button';
+			menu.appendChild(btn);
+		}
+
+		// Wallet controls (should be at the bottom)
+		const connectButton = document.createElement('button');
+		connectButton.id = 'connect-wallet';
+		connectButton.textContent = 'Connect Wallet';
+		connectButton.className = 'button';
+
+		const walletInfo = document.createElement('div');
+		walletInfo.id = 'wallet-info';
+		walletInfo.style.display = 'none';
+		walletInfo.style.cssText = 'display: none;';
+
+		const addressDisplay = document.createElement('div');
+		addressDisplay.id = 'address-display';
+		addressDisplay.style.cssText = 'padding: 6px; background: #222; border: 1px solid #444; color: #fff; font-size: 12px;';
+		walletInfo.appendChild(addressDisplay);
+
+		const disconnectButton = document.createElement('button');
+		disconnectButton.id = 'disconnect-wallet';
+		disconnectButton.textContent = 'Disconnect';
+		disconnectButton.className = 'button';
+		walletInfo.appendChild(disconnectButton);
+
+		// Append wallet controls last (bottom of stack)
+		menu.appendChild(walletInfo);
+		menu.appendChild(connectButton);
+
+		document.body.appendChild(menu);
 	}
 
 	private createNotificationContainer() {
@@ -81,13 +149,10 @@ export class UIManager {
 		this.missionPanel = document.createElement('div');
 		this.missionPanel.id = 'mission-panel';
 		this.missionPanel.className = 'game-panel';
-		this.missionPanel.style.cssText = `
+this.missionPanel.style.cssText = `
       position: fixed;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%);
       width: 800px;
-      height: 600px;
+      max-height: 700px;
       background: rgba(0, 0, 0, 0.95);
       border: 2px solid #444;
       border-radius: 12px;
@@ -97,6 +162,7 @@ export class UIManager {
       display: none;
       z-index: 1050;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+      overflow-y: auto;
     `;
 
 		this.missionPanel.innerHTML = `
@@ -123,8 +189,6 @@ export class UIManager {
 		this.mercenaryPanel.className = 'game-panel';
 		this.mercenaryPanel.style.cssText = `
       position: fixed;
-      right: 20px;
-      bottom: 20px;
       width: 400px;
       max-height: 500px;
       background: rgba(0, 0, 0, 0.9);
@@ -156,9 +220,6 @@ export class UIManager {
 		this.profilePanel.className = 'game-panel';
 		this.profilePanel.style.cssText = `
       position: fixed;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%);
       width: 500px;
       max-height: 600px;
       background: rgba(0, 0, 0, 0.95);
@@ -195,6 +256,11 @@ export class UIManager {
 		document.body.appendChild(this.marketPanel);
 	}
 
+	private createVehiclePanel() {
+		this.vehiclePanel = VehiclePanel.createVehiclePanel();
+		document.body.appendChild(this.vehiclePanel);
+	}
+
 	private setupEventListeners() {
 		// Panel close buttons
 		document.getElementById('close-mission-panel')?.addEventListener('click', () => {
@@ -217,6 +283,29 @@ export class UIManager {
 			gameState.toggleMarketPanel();
 		});
 
+		document.getElementById('toggle-market')?.addEventListener('click', () => {
+			gameState.toggleMarketPanel();
+		});
+
+		document.getElementById('toggle-vehicles')?.addEventListener('click', () => {
+			gameState.toggleVehiclePanel();
+		});
+
+		// Action menu buttons
+		document.getElementById('toggle-mercenaries')?.addEventListener('click', () => {
+			gameState.toggleMercenaryPanel();
+		});
+		document.getElementById('toggle-missions')?.addEventListener('click', () => {
+			gameState.toggleActiveMissionsPanel();
+		});
+		document.getElementById('toggle-profile')?.addEventListener('click', () => {
+			gameState.toggleProfilePanel();
+		});
+
+		document.getElementById('close-vehicle-panel')?.addEventListener('click', () => {
+			gameState.toggleVehiclePanel();
+		});
+
 		// Keyboard shortcuts
 		document.addEventListener('keydown', (e) => {
 			switch (e.key) {
@@ -227,8 +316,20 @@ export class UIManager {
 					if (gameState.getState().showMercenaryPanel) gameState.toggleMercenaryPanel();
 					if (gameState.getState().showProfilePanel) gameState.toggleProfilePanel();
 					break;
+				case 'a':
+				case 'A':
+					gameState.toggleActiveMissionsPanel();
+					break;
 				case 'm':
 				case 'M':
+					gameState.toggleMarketPanel();
+					break;
+				case 'v':
+				case 'V':
+					gameState.toggleVehiclePanel();
+					break;
+				case 'd':
+				case 'D':
 					gameState.toggleMercenaryPanel();
 					break;
 				case 'p':
@@ -243,9 +344,7 @@ export class UIManager {
 		// Update panel visibility
 		if (this.missionPanel) {
 			this.missionPanel.style.display = state.showMissionPanel ? 'block' : 'none';
-			if (state.showMissionPanel) {
-				this.updateMissionPanel(state);
-			}
+			this.updateMissionPanel(state);
 		}
 
 		if (this.mercenaryPanel) {
@@ -284,11 +383,21 @@ export class UIManager {
 			}
 		}
 
+		if (this.vehiclePanel) {
+			this.vehiclePanel.style.display = state.showVehiclePanel ? 'block' : 'none';
+			if (state.showVehiclePanel && state.profile) {
+				VehiclePanel.updateVehiclePanel(state.profile.vehicles);
+			}
+		}
+
 		// Update notifications
 		this.updateNotifications(state.notifications);
 
 		// Update top bar info
 		this.updateTopBar(state);
+
+		// Reflow panels in a tiled layout
+		this.layoutOpenPanels();
 	}
 
 	private updateMissionPanel(state: GameState) {
@@ -329,8 +438,11 @@ export class UIManager {
 			speed: d.speed,
 		}));
 
+		const selectedVehicleInstance = state.profile?.vehicles.find((v) => v.instanceId === state.selectedVehicleInstanceId);
+		const selectedVehicle = selectedVehicleInstance ? getVehicleData(selectedVehicleInstance.vehicleId) : undefined;
+
 		// Calculate live estimates using selected team and mission type
-		const liveEstimates = calculateLiveEstimates(selectedResource, selectedMissionType, teamStats);
+		const liveEstimates = calculateLiveEstimates(selectedResource, selectedMissionType, teamStats, selectedVehicle);
 		const durationText = formatDuration(liveEstimates.duration);
 
 		content.innerHTML = `
@@ -361,7 +473,7 @@ export class UIManager {
 								liveEstimates.teamStats
 									? `
                 <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #666;">
-                  <p style="margin: 2px 0; color: #ccc; font-size: 12px;">⚡ Team Speed: <span style="color: #ffff66;">${liveEstimates.teamStats.speed}</span> (${liveEstimates.teamStats.speed > 100 ? 'Fast' : liveEstimates.teamStats.speed < 100 ? 'Slow' : 'Normal'})</p>
+<p style=\"margin: 2px 0; color: #ccc; font-size: 12px;\">⚡ Team Speed: <span style=\"color: #ffff66;\">${liveEstimates.teamStats.speed}</span> (${liveEstimates.teamStats.speed > BASE_SPEED ? 'Fast' : liveEstimates.teamStats.speed < BASE_SPEED ? 'Slow' : 'Normal'})</p>
                   <p style="margin: 2px 0; color: #ccc; font-size: 12px;">🔍 Scavenging Bonus: <span style="color: #66ff66;">+${(liveEstimates.teamStats.scavengingBonus * 100).toFixed(1)}%</span></p>
                   <p style="margin: 2px 0; color: #ccc; font-size: 12px;">💻 Tech Bonus: <span style="color: #6666ff;">+${(liveEstimates.teamStats.techBonus * 100).toFixed(1)}%</span></p>
                 </div>
@@ -376,6 +488,12 @@ export class UIManager {
           <div style="margin-bottom: 16px;">
             <h4 style="color: #FFD700; margin: 0 0 8px 0;">Mission Type</h4>
             ${this.renderMissionTypes(selectedResource, state)}
+          </div>
+
+          <!-- Vehicle Selection -->
+          <div style="margin-bottom: 16px;">
+            <h4 style="color: #FFD700; margin: 0 0 8px 0;">Vehicle</h4>
+            ${this.renderVehicleSelection(state)}
           </div>
 
           <!-- Start Mission Button -->
@@ -417,6 +535,10 @@ export class UIManager {
 			return '<p style="color: #ff6b6b; font-size: 12px;">No owned Drifters available. You need to own Fringe Drifters NFTs to start missions.</p>';
 		}
 
+		const selectedVehicleInstance = state.profile?.vehicles.find((v) => v.instanceId === state.selectedVehicleInstanceId);
+		const selectedVehicle = selectedVehicleInstance ? getVehicleData(selectedVehicleInstance.vehicleId) : undefined;
+		const maxDrifters = selectedVehicle?.maxDrifters || 0;
+
 		// Filter out drifters that are on active missions
 		const busyDrifterIds = new Set(state.playerMissions.filter((m) => m.status === 'active').flatMap((m) => m.drifterIds));
 
@@ -438,6 +560,7 @@ export class UIManager {
 
 		const displayDrifters = sortedDrifters;
 		const selectedIds = state.selectedDrifterIds || [];
+		const atCapacity = selectedVehicle && selectedIds.length >= maxDrifters;
 
 		return `
       <!-- Sort Controls -->
@@ -457,6 +580,9 @@ export class UIManager {
           <option value="speed" ${state.drifterSortBy === 'speed' ? 'selected' : ''}>Speed</option>
         </select>
         <span style="font-size: 11px; color: #888;">(Showing ${displayDrifters.length}/${drifters.length})</span>
+		<span style="font-size: 11px; color: ${atCapacity ? '#ff6b6b' : '#ccc'}; margin-left: auto;">
+		  ${selectedIds.length} / ${maxDrifters > 0 ? maxDrifters : '-'} Drifters Selected
+		</span>
       </div>
 
       <!-- Drifter List -->
@@ -465,16 +591,17 @@ export class UIManager {
 					.map((drifter) => {
 						const isSelected = selectedIds.includes(drifter.tokenId);
 						const isBusy = busyDrifterIds.has(drifter.tokenId);
+						const isDisabled = (atCapacity && !isSelected) || isBusy;
 
 						return `
             <div class="drifter-option" data-id="${drifter.tokenId}" data-busy="${isBusy}" style="
               border: 2px solid ${isSelected ? '#00ff00' : isBusy ? '#666' : '#444'};
               padding: 8px;
               margin: 4px 0;
-              cursor: ${isBusy ? 'not-allowed' : 'pointer'};
+              cursor: ${isDisabled ? 'not-allowed' : 'pointer'};
               border-radius: 4px;
               background: ${isSelected ? 'rgba(0, 255, 0, 0.1)' : isBusy ? 'rgba(100, 100, 100, 0.3)' : 'rgba(255, 255, 255, 0.05)'};
-              opacity: ${isBusy ? '0.6' : '1'};
+              opacity: ${isDisabled ? '0.6' : '1'};
               position: relative;
             ">
               <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -611,6 +738,24 @@ export class UIManager {
     `;
 	}
 
+	private renderVehicleSelection(state: GameState): string {
+		const selectedVehicleInstanceId = state.selectedVehicleInstanceId;
+		const selectedVehicleInstance = state.profile?.vehicles.find((v) => v.instanceId === selectedVehicleInstanceId);
+		const selectedVehicle = selectedVehicleInstance ? getVehicleData(selectedVehicleInstance.vehicleId) : undefined;
+
+		return `
+		  <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255, 255, 255, 0.05); border-radius: 4px; padding: 12px;">
+			<div>
+			  <p style="margin: 0; font-size: 14px; color: #ccc;">Selected Vehicle:</p>
+			  <p style="margin: 4px 0 0 0; font-size: 16px; font-weight: bold; color: #00ff00;">${selectedVehicle ? selectedVehicle.name : 'None'}</p>
+			</div>
+			<button id="select-vehicle-btn" style="background: #444; border: 1px solid #666; color: #fff; padding: 8px 16px; cursor: pointer; border-radius: 4px;">
+			  ${selectedVehicleInstanceId ? 'Change' : 'Select'} Vehicle
+			</button>
+		  </div>
+		`;
+	}
+
 	private setupMissionPanelHandlers() {
 		const state = gameState.getState();
 
@@ -652,20 +797,26 @@ export class UIManager {
 			});
 		});
 
+		document.getElementById('select-vehicle-btn')?.addEventListener('click', () => {
+			gameState.toggleVehiclePanel();
+		});
+
 		// Start mission button
 		document.getElementById('start-mission-btn')?.addEventListener('click', async () => {
 			const currentState = gameState.getState();
 			const selectedIds = currentState.selectedDrifterIds || [];
 			const missionType = currentState.selectedMissionType;
+			const vehicleInstanceId = currentState.selectedVehicleInstanceId;
 
 			if (selectedIds.length > 0 && missionType && currentState.selectedResourceNode) {
 				// Send all selected drifters to the backend
-				const result = await gameState.startMission(selectedIds, currentState.selectedResourceNode, missionType as any);
+				const result = await gameState.startMission(selectedIds, currentState.selectedResourceNode, missionType as any, vehicleInstanceId);
 
 				if (result.success) {
 					// Clear selections and close panel
 					gameState.clearSelectedDrifters();
 					gameState.setMissionType(null);
+					gameState.selectVehicleInstance(null);
 					gameState.toggleMissionPanel();
 				}
 			}
@@ -679,8 +830,12 @@ export class UIManager {
 		const state = gameState.getState();
 		const selectedIds = state.selectedDrifterIds || [];
 		const missionType = state.selectedMissionType;
+		const vehicleInstanceId = state.selectedVehicleInstanceId;
+		const selectedVehicleInstance = state.profile?.vehicles.find((v) => v.instanceId === vehicleInstanceId);
+		const selectedVehicle = selectedVehicleInstance ? getVehicleData(selectedVehicleInstance.vehicleId) : undefined;
+		const maxDrifters = selectedVehicle ? selectedVehicle.maxDrifters : Number.POSITIVE_INFINITY;
 
-		if (selectedIds.length > 0 && missionType) {
+		if (selectedIds.length > 0 && missionType && selectedIds.length <= maxDrifters) {
 			button.disabled = false;
 			button.style.background = '#2c5530';
 			button.style.cursor = 'pointer';
@@ -690,12 +845,14 @@ export class UIManager {
 			button.disabled = true;
 			button.style.background = '#666';
 			button.style.cursor = 'not-allowed';
-			if (selectedIds.length === 0 && !missionType) {
-				button.textContent = 'Select Drifters & Mission Type';
-			} else if (selectedIds.length === 0) {
+			if (selectedIds.length === 0) {
 				button.textContent = 'Select Drifters';
-			} else {
+			} else if (!missionType) {
 				button.textContent = 'Select Mission Type';
+			} else if (selectedIds.length > maxDrifters) {
+				button.textContent = `Too many drifters for ${selectedVehicle?.name}`;
+			} else {
+				button.textContent = 'Select Drifters & Mission Type';
 			}
 		}
 	}
@@ -771,8 +928,7 @@ export class UIManager {
         <div style="font-size: 14px;">
           <p style="margin: 4px 0;">Owned Drifters: <span style="color: #00ff00;">${state.ownedDrifters.length}</span></p>
           <p style="margin: 4px 0;">Active Missions: <span style="color: #ffff00;">${profile.activeMissions?.length || 0}</span></p>
-          <p style="margin: 4px 0;">Discovered Nodes: <span style="color: #00bfff;">${profile.discoveredNodes?.length || 0}</span></p>
-          <p style="margin: 4px 0;">Upgrades Owned: <span style="color: #ff69b4;">${profile.upgrades?.length || 0}</span></p>
+          <p style="margin: 4px 0;">Vehicles Owned: <span style="color: #00bfff;">${profile.vehicles?.length || 0}</span></p>
         </div>
       </div>
 
@@ -956,6 +1112,47 @@ export class UIManager {
 				return '#ffaa00';
 			default:
 				return '#888888';
+		}
+	}
+
+	private layoutOpenPanels() {
+		const margin = 20;
+		const gap = 12;
+		const maxWidth = window.innerWidth - margin * 2;
+
+		const panels: HTMLElement[] = [];
+		if (this.missionPanel && this.missionPanel.style.display !== 'none') panels.push(this.missionPanel);
+		if (this.mercenaryPanel && this.mercenaryPanel.style.display !== 'none') panels.push(this.mercenaryPanel);
+		if (this.profilePanel && this.profilePanel.style.display !== 'none') panels.push(this.profilePanel);
+		if (this.activeMissionsPanel && this.activeMissionsPanel.style.display !== 'none') panels.push(this.activeMissionsPanel);
+		if (this.marketPanel && this.marketPanel.style.display !== 'none') panels.push(this.marketPanel);
+		if (this.vehiclePanel && this.vehiclePanel.style.display !== 'none') panels.push(this.vehiclePanel);
+
+		let x = margin;
+		let y = margin;
+		let rowHeight = 0;
+
+		for (const panel of panels) {
+			// Reset any conflicting positioning
+			panel.style.right = '';
+			panel.style.bottom = '';
+
+			const rect = panel.getBoundingClientRect();
+			const width = rect.width || parseInt(panel.style.width || '600', 10);
+			const height = rect.height || parseInt(panel.style.height || '400', 10);
+
+			if (x + width > maxWidth) {
+				// Wrap to next row
+				x = margin;
+				y += rowHeight + gap;
+				rowHeight = 0;
+			}
+
+			panel.style.left = `${x}px`;
+			panel.style.top = `${y}px`;
+
+			x += width + gap;
+			rowHeight = Math.max(rowHeight, height);
 		}
 	}
 

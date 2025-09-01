@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { ResourceNode, Mission } from '@shared/models';
 import { gameState, GameState } from '../gameState';
 import { getResourceTextureKey } from '../utils/resourceTextures';
+import { getVehicleData } from '../utils/vehicleUtils';
 
 // Town coordinates - center of the map area
 const TOWN_X = 500;
@@ -121,10 +122,23 @@ export class GameScene extends Phaser.Scene {
 		const targetNode = currentState.resourceNodes?.find((r) => r.id === mission.targetNodeId);
 		const targetName = targetNode ? `${targetNode.type.toUpperCase()} (${targetNode.rarity})` : 'Unknown Target';
 
+		let vehicleName = 'On Foot';
+		if (mission.vehicleInstanceId) {
+			const vehicleInstance = currentState.profile?.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
+			if (vehicleInstance) {
+				const vehicleData = getVehicleData(vehicleInstance.vehicleId);
+				if (vehicleData) {
+					vehicleName = vehicleData.name;
+				}
+			}
+		}
+
 		const content =
 			`Mission: ${mission.type.toUpperCase()}
 ` +
 			`Target: ${targetName}
+` +
+			`Vehicle: ${vehicleName}
 ` +
 			`Time Left: ${timeRemaining}
 ` +

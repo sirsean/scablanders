@@ -8,9 +8,6 @@ export class MarketPanel {
     panel.className = 'game-panel';
     panel.style.cssText = `
       position: fixed;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%);
       width: 800px;
       max-height: 600px;
       background: rgba(0, 0, 0, 0.9);
@@ -73,7 +70,10 @@ export class MarketPanel {
         <h4 style="color: #FFD700; margin-top: 0;">${vehicle.name}</h4>
         <p style="font-size: 12px; color: #ccc;">${vehicle.description}</p>
         <div style="font-size: 12px; margin-top: 8px;">
-          <p style="margin: 4px 0;">Speed: <span style="color: #00ff00;">${vehicle.speed}%</span></p>
+          <p style="margin: 4px 0;">Speed: <span style="color: #00ff00;">${vehicle.speed}</span></p>
+          <p style="margin: 4px 0;">Combat Bonus: <span style="color: #ff6666;">${(vehicle as any).combat ?? 0}</span></p>
+          <p style="margin: 4px 0;">Scavenging Bonus: <span style="color: #66ff66;">${(vehicle as any).scavenging ?? 0}</span></p>
+          <p style="margin: 4px 0;">Tech Bonus: <span style="color: #6666ff;">${(vehicle as any).tech ?? 0}</span></p>
           <p style="margin: 4px 0;">Max Drifters: <span style="color: #00ff00;">${vehicle.maxDrifters}</span></p>
           <p style="margin: 4px 0;">Max Cargo: <span style="color: #00ff00;">${vehicle.maxCargo}</span></p>
         </div>

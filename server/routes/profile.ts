@@ -19,6 +19,7 @@ profile.get('/', async (c) => {
 				address: '0x0000000000000000000000000000000000000000',
 				balance: 0,
 				ownedDrifters: [],
+				vehicles: [],
 				discoveredNodes: [],
 				upgrades: [],
 				lastLogin: new Date(),
@@ -40,7 +41,7 @@ profile.get('/', async (c) => {
 		const gameStub = c.env.GAME_DO.get(gameId);
 
 		// Update owned Drifters from NFT lookup
-		await gameStub.updateOwnedDrifters(playerAddress, ownedTokenIds);
+		await gameStub.updateOwnedDrifters(playerAddress, ownedDrifters);
 
 		// Get updated profile
 		const authenticatedProfile = await gameStub.getProfile(playerAddress);

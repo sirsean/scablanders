@@ -22,9 +22,6 @@ export class ActiveMissionsPanel {
     panel.className = 'game-panel';
     panel.style.cssText = `
       position: fixed;
-      left: 50%;
-      bottom: 20px;
-      transform: translateX(-50%);
       width: 600px;
       max-height: 400px;
       background: rgba(0, 0, 0, 0.9);
