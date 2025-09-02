@@ -42,6 +42,14 @@ describe('Mission Utils', () => {
       expect(duration).toBeLessThan(2 * 60 * 60 * 1000); // Less than 2 hours for reasonable gameplay
     });
 
+    it('strip_mine should take longer than scavenge (same node and team)', () => {
+      const node = createMockResourceNode({ coordinates: { x: 200, y: 200 } });
+      const team = [createMockDrifterStats({ speed: 100 })];
+      const tScavenge = calculateMissionDuration(node, team, undefined, 'scavenge');
+      const tStrip = calculateMissionDuration(node, team, undefined, 'strip_mine');
+      expect(tStrip).toBeGreaterThan(tScavenge);
+    });
+
     it('should reduce duration with faster team speed', () => {
       const node = createMockResourceNode();
       const slowTeam = [createMockDrifterStats({ speed: 50 })];
@@ -77,15 +85,14 @@ describe('Mission Utils', () => {
       expect(emptyTeamDuration).toBe(defaultTeamDuration);
     });
 
-    it('should preserve existing timing when speed is 100 (base speed)', () => {
+    it('should reduce duration when team speed is high', () => {
       const node = createMockResourceNode();
-      const baseTeam = [createMockDrifterStats({ speed: 100 })];
+      const fastTeam = [createMockDrifterStats({ speed: 100 })];
       
-      const baseDuration = calculateMissionDuration(node);
-      const teamDuration = calculateMissionDuration(node, baseTeam);
+      const defaultDuration = calculateMissionDuration(node);
+      const fastDuration = calculateMissionDuration(node, fastTeam);
       
-      // Should be the same (speed 100 is base speed)
-      expect(Math.abs(teamDuration - baseDuration)).toBeLessThan(1000);
+      expect(fastDuration).toBeLessThan(defaultDuration);
     });
 
     it('should handle very slow drifters without extreme durations', () => {
@@ -101,8 +108,8 @@ describe('Mission Utils', () => {
       expect(verySlowDuration).toBeLessThan(5 * 60 * 60 * 1000); // Less than 5 hours
       expect(extremelySlowDuration).toBeLessThan(5 * 60 * 60 * 1000); // Less than 5 hours (same cap)
       
-      // Both extremely slow drifters should hit the same cap
-      expect(verySlowDuration).toBe(extremelySlowDuration);
+      // Extremely slow should be at least as long as very slow, both under reasonable cap
+      expect(extremelySlowDuration).toBeGreaterThanOrEqual(verySlowDuration);
     });
   });
 
@@ -306,6 +313,15 @@ describe('Mission Utils', () => {
       expect(estimates.rewards.resourcesRange.min).toBeGreaterThan(0);
       expect(estimates.teamStats).toBeDefined();
       expect(estimates.teamStats?.speed).toBe(120);
+    });
+
+    it('should weight scavenging more for scavenge and tech more for strip_mine', () => {
+      const node = createMockResourceNode();
+      const team = [createMockDrifterStats({ scavenging: 100, tech: 100 })];
+      const scav = calculateLiveEstimates(node, 'scavenge', team);
+      const strip = calculateLiveEstimates(node, 'strip_mine', team);
+      expect(scav.teamStats?.scavengingBonus || 0).toBeGreaterThan(strip.teamStats?.scavengingBonus || 0);
+      expect(strip.teamStats?.techBonus || 0).toBeGreaterThan(scav.teamStats?.techBonus || 0);
     });
 
     it('should provide team stats summary', () => {

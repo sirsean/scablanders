@@ -11,6 +11,7 @@ import type {
 	MissionType,
 	ResourceType,
 	Rarity,
+	GameEvent,
 } from '@shared/models';
 import { calculateMissionDuration, calculateMissionRewards, type DrifterStats } from '../shared/mission-utils';
 import { getDrifterStats } from './drifters';
@@ -50,6 +51,7 @@ interface GameState {
 	notifications: Map<string, NotificationMessage[]>; // address -> notifications
 	missions: Map<string, Mission>; // missionId -> mission
 	resourceNodes: Map<string, ResourceNode>; // nodeId -> node
+	eventLog: GameEvent[]; // FIFO global event log (max 1000)
 	worldMetrics: {
 		totalActiveMissions: number;
 		totalCompletedMissions: number;
@@ -86,11 +88,12 @@ export class GameDO extends DurableObject {
 		this.playerReplayQueues = new Map();
 
 		// Initialize empty game state
-		this.gameState = {
+this.gameState = {
 			players: new Map(),
 			notifications: new Map(),
 			missions: new Map(),
 			resourceNodes: new Map(),
+			eventLog: [],
 			worldMetrics: {
 				totalActiveMissions: 0,
 				totalCompletedMissions: 0,
@@ -141,10 +144,16 @@ export class GameDO extends DurableObject {
 				this.gameState.players = new Map(Object.entries(playersData));
 			}
 
-			// Load notifications
+// Load notifications
 			const notificationsData = await this.ctx.storage.get<Record<string, NotificationMessage[]>>('notifications');
 			if (notificationsData) {
 				this.gameState.notifications = new Map(Object.entries(notificationsData));
+			}
+
+			// Load global event log
+			const eventLogData = await this.ctx.storage.get<GameEvent[]>('eventLog');
+			if (eventLogData) {
+				this.gameState.eventLog = eventLogData;
 			}
 
 			// Load missions
@@ -207,12 +216,13 @@ export class GameDO extends DurableObject {
 			console.log(`[GameDO] Saving game state - missions count: ${this.gameState.missions.size}`);
 			console.log(`[GameDO] Missions being saved:`, Object.keys(missionsToSave));
 
-			await Promise.all([
+await Promise.all([
 				this.ctx.storage.put('players', Object.fromEntries(this.gameState.players)),
 				this.ctx.storage.put('notifications', Object.fromEntries(this.gameState.notifications)),
 				this.ctx.storage.put('missions', missionsToSave),
 				this.ctx.storage.put('resourceNodes', Object.fromEntries(this.gameState.resourceNodes)),
 				this.ctx.storage.put('worldMetrics', this.gameState.worldMetrics),
+				this.ctx.storage.put('eventLog', this.gameState.eventLog),
 			]);
 
 			console.log('[GameDO] Game state saved successfully');
@@ -386,7 +396,7 @@ export class GameDO extends DurableObject {
 		}
 	}
 
-	/**
+/**
 	 * Broadcast mission update to all authenticated sessions
 	 */
 	private async broadcastMissionUpdate(update: any) {
@@ -405,6 +415,40 @@ export class GameDO extends DurableObject {
 				console.log(`[GameDO] Sent mission update to session ${sessionId}`);
 			}
 		}
+	}
+
+	/**
+	 * Broadcast a single appended event to all authenticated sessions
+	 */
+	private async broadcastEventAppend(event: GameEvent) {
+		const message = {
+			type: 'event_log_append',
+			timestamp: new Date(),
+			data: { event },
+		};
+
+		for (const [sessionId, session] of this.webSocketSessions) {
+			if (session.authenticated && session.websocket.readyState === WebSocket.READY_STATE_OPEN) {
+				session.websocket.send(JSON.stringify(message));
+			}
+		}
+	}
+
+	/**
+	 * Add an event to the global event log (FIFO, max 1000), persist and broadcast
+	 */
+	private async addEvent(partial: Omit<GameEvent, 'id' | 'timestamp'> & { timestamp?: Date }) {
+		const event: GameEvent = {
+			id: crypto.randomUUID(),
+			timestamp: partial.timestamp ?? new Date(),
+			...partial,
+		};
+		this.gameState.eventLog.push(event);
+		if (this.gameState.eventLog.length > 1000) {
+			this.gameState.eventLog = this.gameState.eventLog.slice(-1000);
+		}
+		await this.ctx.storage.put('eventLog', this.gameState.eventLog);
+		await this.broadcastEventAppend(event);
 	}
 
 	// =============================================================================
@@ -653,7 +697,7 @@ async startMission(
 		}
 
 		// Calculate mission duration and rewards using shared utilities with drifter stats
-		const duration = calculateMissionDuration(targetNode, teamStats, vehicle || undefined);
+		const duration = calculateMissionDuration(targetNode, teamStats, vehicle || undefined, missionType);
 		console.log(`[GameDO] duration: ${duration} (with ${teamStats.length} drifter/vehicle entries and vehicle ${vehicle ? vehicle.name : 'On Foot'})`);
 		const rewards = calculateMissionRewards(targetNode, missionType, duration, teamStats);
 		console.log(`[GameDO] rewards: ${rewards}`);
@@ -678,12 +722,25 @@ async startMission(
 			rewards,
 		};
 
-		// Add to game state
+// Add to game state
 		this.gameState.missions.set(missionId, mission);
 		player.activeMissions.push(missionId);
 		if (vehicleInstance) {
 			vehicleInstance.status = 'on_mission';
 		}
+
+// Log event: mission started
+await this.addEvent({
+			type: 'mission_started',
+			playerAddress,
+			missionId,
+			nodeId: targetNodeId,
+			resourceType: targetNode.type,
+			rarity: targetNode.rarity,
+			drifterIds,
+			vehicleName: vehicle ? (vehicle as any).name ?? 'On Foot' : 'On Foot',
+			message: `${playerAddress.slice(0, 6)}… started ${missionType.toUpperCase()} at ${targetNode.type.toUpperCase()} (${targetNode.rarity.toUpperCase()}) node with drifters ${drifterIds.map((id) => `#${id}`).join(', ')} ${vehicle ? `in ${(vehicle as any).name}` : 'on foot'}`,
+		});
 
 		console.log(`[GameDO] Mission ${missionId} created and added to player ${playerAddress}`);
 		console.log(`[GameDO] Player now has ${player.activeMissions.length} active missions: ${player.activeMissions}`);
@@ -747,11 +804,21 @@ async startMission(
 			node.depletion += extractedActual;
 			node.lastHarvested = new Date();
 
-			// Mark as inactive if fully depleted
+// Mark as inactive if fully depleted
 			if (node.currentYield <= 0) {
 				node.currentYield = 0;
 				node.isActive = false;
 				console.log(`[GameDO] Node ${mission.targetNodeId} is now fully depleted and inactive`);
+
+				// Log resource depleted
+await this.addEvent({
+			type: 'resource_depleted',
+			playerAddress: mission.playerAddress,
+			nodeId: mission.targetNodeId,
+			resourceType: resourceType,
+			rarity: node.rarity,
+			message: `${resourceType.toUpperCase()} (${node.rarity.toUpperCase()}) node depleted by ${mission.playerAddress.slice(0, 6)}…`,
+			});
 
 				// Add depletion notification to player
 				await this.addNotification(mission.playerAddress, {
@@ -775,8 +842,21 @@ async startMission(
 			player.activeMissions.splice(missionIndex, 1);
 		}
 
-		// Mark mission as completed
+// Mark mission as completed
 		mission.status = 'completed';
+
+// Log mission completion
+await this.addEvent({
+			type: 'mission_complete',
+			playerAddress: mission.playerAddress,
+			missionId: mission.id,
+			nodeId: mission.targetNodeId,
+			resourceType: (node?.type ?? undefined) as any,
+			rarity: (node?.rarity ?? undefined) as any,
+			drifterIds: mission.drifterIds,
+			vehicleName: mission.vehicleInstanceId ? (player.vehicles.find(v => v.instanceId === mission.vehicleInstanceId) ? getVehicle(player.vehicles.find(v => v.instanceId === mission.vehicleInstanceId)!.vehicleId)?.name : 'On Foot') : 'On Foot',
+			message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} at ${(node?.type ?? '').toString().toUpperCase()} (${(node?.rarity ?? 'unknown').toString().toUpperCase()}) with drifters ${mission.drifterIds.map((id) => `#${id}`).join(', ')} ${mission.vehicleInstanceId ? `in ${(() => { const vi = player.vehicles.find(v => v.instanceId === mission.vehicleInstanceId); return vi ? (getVehicle(vi.vehicleId)?.name || 'On Foot') : 'On Foot'; })()}` : 'on foot'} (+${mission.rewards.credits} cr)`,
+		});
 
 		// Update vehicle status (if any)
 		if (mission.vehicleInstanceId) {
@@ -972,6 +1052,13 @@ async startMission(
 		return Array.from(this.gameState.missions.values()).filter((m) => m.status === 'active');
 	}
 
+	/**
+	 * Return a snapshot of the global event log (newest first)
+	 */
+	async getEventLog(limit: number = 1000): Promise<GameEvent[]> {
+		return this.gameState.eventLog.slice(-limit).reverse();
+	}
+
 	// =============================================================================
 	// Resource Management and Regeneration
 	// =============================================================================
@@ -1065,11 +1152,19 @@ async startMission(
 			}
 		}
 
-		// 3. Remove fully degraded nodes immediately
+// 3. Remove fully degraded nodes immediately
 		if (depleted.length > 0) {
 			console.log(`[GameDO] Removing ${depleted.length} fully degraded nodes`);
 			for (const nodeId of depleted) {
+				const removed = this.gameState.resourceNodes.get(nodeId);
 				this.gameState.resourceNodes.delete(nodeId);
+await this.addEvent({
+			type: 'node_removed',
+			nodeId,
+			resourceType: removed?.type,
+			rarity: removed?.rarity,
+			message: `Fully depleted ${removed?.type?.toUpperCase() || 'resource'} (${removed?.rarity?.toUpperCase() || 'UNKNOWN'}) node removed`,
+			});
 			}
 			changesMade = true;
 		}
@@ -1103,7 +1198,7 @@ async startMission(
 			}
 		}
 
-		// Spawn the needed nodes
+// Spawn the needed nodes
 		for (const { type, count } of nodesToSpawn) {
 			for (let i = 0; i < count; i++) {
 				const newNode = this.createRandomResourceNodeWithAntiOverlap(type);
@@ -1111,6 +1206,13 @@ async startMission(
 				console.log(
 					`[GameDO] Spawned replacement ${type} node at (${newNode.coordinates.x}, ${newNode.coordinates.y}) with ${newNode.currentYield} yield`,
 				);
+await this.addEvent({
+			type: 'node_spawned',
+			nodeId: newNode.id,
+			resourceType: newNode.type,
+			rarity: newNode.rarity,
+			message: `New ${type.toUpperCase()} (${newNode.rarity.toUpperCase()}) node spawned (${newNode.coordinates.x}, ${newNode.coordinates.y})`,
+			});
 				changesMade = true;
 			}
 		}
@@ -1381,6 +1483,8 @@ async startMission(
 				return this.handleStatsRequest(request);
 			case '/vehicles/purchase':
 				return this.handlePurchaseVehicleRequest(request);
+			case '/logs':
+				return this.handleLogsRequest(request);
 			default:
 				return new Response('Not found', { status: 404 });
 		}
@@ -1563,9 +1667,20 @@ async startMission(
 		return new Response('Resources API - implement as needed', { status: 200 });
 	}
 
-	private async handleStatsRequest(request: Request): Promise<Response> {
+private async handleStatsRequest(request: Request): Promise<Response> {
 		const stats = await this.getStats();
 		return new Response(JSON.stringify(stats), {
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	private async handleLogsRequest(request: Request): Promise<Response> {
+		const url = new URL(request.url);
+		const limitParam = url.searchParams.get('limit');
+		let limit = Number(limitParam ?? 0);
+		if (!Number.isFinite(limit) || limit <= 0) limit = 1000;
+		const events = this.gameState.eventLog.slice(-limit).reverse();
+		return new Response(JSON.stringify({ events }), {
 			headers: { 'Content-Type': 'application/json' },
 		});
 	}

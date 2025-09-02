@@ -6,6 +6,7 @@ import { calculateLiveEstimates, formatDuration, getAvailableMissionTypes, type 
 import { ActiveMissionsPanel } from './ActiveMissionsPanel';
 import { MarketPanel } from './MarketPanel';
 import { VehiclePanel } from './VehiclePanel';
+import { LogPanel } from './LogPanel';
 
 export class UIManager {
 	private notificationContainer: HTMLElement | null = null;
@@ -15,6 +16,7 @@ export class UIManager {
 	private activeMissionsPanel: HTMLElement | null = null;
 	private marketPanel: HTMLElement | null = null;
 	private vehiclePanel: HTMLElement | null = null;
+	private logPanel: HTMLElement | null = null;
 	private buttonUpdateInterval: number | null = null;
 
 	constructor() {
@@ -69,6 +71,7 @@ export class UIManager {
 		this.createActiveMissionsPanel();
 		this.createMarketPanel();
 		this.createVehiclePanel();
+		this.createLogPanel();
 	}
 
 	private createActionMenu() {
@@ -92,6 +95,7 @@ export class UIManager {
 			{ id: 'toggle-vehicles', label: 'Vehicles (V)' },
 			{ id: 'toggle-market', label: 'Market (M)' },
 			{ id: 'toggle-missions', label: 'Active Missions (A)' },
+			{ id: 'toggle-log', label: 'Log (L)' },
 		];
 
 		for (const b of buttons) {
@@ -137,9 +141,9 @@ export class UIManager {
 		this.notificationContainer.style.cssText = `
       position: fixed;
       top: 20px;
-      right: 300px;
+      right: 20px;
       width: 350px;
-      z-index: 1000;
+      z-index: 10000;
       pointer-events: none;
     `;
 		document.body.appendChild(this.notificationContainer);
@@ -261,6 +265,11 @@ this.missionPanel.style.cssText = `
 		document.body.appendChild(this.vehiclePanel);
 	}
 
+	private createLogPanel() {
+		this.logPanel = LogPanel.createLogPanel();
+		document.body.appendChild(this.logPanel);
+	}
+
 	private setupEventListeners() {
 		// Panel close buttons
 		document.getElementById('close-mission-panel')?.addEventListener('click', () => {
@@ -282,6 +291,9 @@ this.missionPanel.style.cssText = `
 		document.getElementById('close-market-panel')?.addEventListener('click', () => {
 			gameState.toggleMarketPanel();
 		});
+		document.getElementById('close-log-panel')?.addEventListener('click', () => {
+			gameState.toggleLogPanel();
+		});
 
 		document.getElementById('toggle-market')?.addEventListener('click', () => {
 			gameState.toggleMarketPanel();
@@ -300,6 +312,9 @@ this.missionPanel.style.cssText = `
 		});
 		document.getElementById('toggle-profile')?.addEventListener('click', () => {
 			gameState.toggleProfilePanel();
+		});
+		document.getElementById('toggle-log')?.addEventListener('click', () => {
+			gameState.toggleLogPanel();
 		});
 
 		document.getElementById('close-vehicle-panel')?.addEventListener('click', () => {
@@ -335,6 +350,10 @@ this.missionPanel.style.cssText = `
 				case 'p':
 				case 'P':
 					gameState.toggleProfilePanel();
+					break;
+				case 'l':
+				case 'L':
+					gameState.toggleLogPanel();
 					break;
 			}
 		});
@@ -387,6 +406,18 @@ this.missionPanel.style.cssText = `
 			this.vehiclePanel.style.display = state.showVehiclePanel ? 'block' : 'none';
 			if (state.showVehiclePanel && state.profile) {
 				VehiclePanel.updateVehiclePanel(state.profile.vehicles);
+			}
+		}
+
+		if (this.logPanel) {
+			this.logPanel.style.display = state.showLogPanel ? 'block' : 'none';
+			if (state.showLogPanel) {
+				LogPanel.updateLogPanel(state.eventLog);
+				// Start live timer to refresh relative timestamps while open
+				LogPanel.startLiveTimer(() => gameState.getState().eventLog);
+			} else {
+				// Stop live timer when hidden
+				LogPanel.stopLiveTimer();
 			}
 		}
 
@@ -909,6 +940,10 @@ this.missionPanel.style.cssText = `
 		}
 
 		const profile = state.profile;
+
+		// Recent activity: derive from global event log filtered to this player
+		const recentForPlayer = (state.eventLog || []).filter((e: any) => e.playerAddress && state.playerAddress && e.playerAddress.toLowerCase() === state.playerAddress.toLowerCase()).slice(0, 10);
+
 		content.innerHTML = `
       <div style="margin-bottom: 20px;">
         <h4 style="color: #ffd700; margin: 0 0 8px 0;">Wallet Info</h4>
@@ -934,20 +969,21 @@ this.missionPanel.style.cssText = `
 
       <div style="margin-bottom: 20px;">
         <h4 style="color: #ffd700; margin: 0 0 8px 0;">Recent Activity</h4>
-        <div style="max-height: 120px; overflow-y: auto; font-size: 12px;">
+        <div style="max-height: 160px; overflow-y: auto; font-size: 12px;">
           ${
-						profile.notifications
-							?.slice(0, 5)
-							.map(
-								(notif) => `
+            recentForPlayer.length
+              ? recentForPlayer
+                  .map(
+                    (ev) => `
             <div style="border-left: 2px solid #666; padding-left: 8px; margin: 8px 0;">
-              <div style="color: #ffd700;">${notif.title}</div>
-              <div style="color: #ccc;">${notif.message}</div>
+              <div style="color: #ffd700;">${this.formatTime(ev.timestamp)}</div>
+              <div style="color: #ccc;">${ev.message}</div>
             </div>
           `,
-							)
-							.join('') || '<p style="color: #888;">No recent activity</p>'
-					}
+                  )
+                  .join('')
+              : '<p style="color: #888;">No recent activity</p>'
+          }
         </div>
       </div>
     `;
@@ -1049,11 +1085,11 @@ this.missionPanel.style.cssText = `
 			button.style.color = '#000';
 			button.style.fontWeight = 'bold';
 
-			// Update button text to show count
+			// Update button text to show count (preserve shortcut key)
 			if (completedCount === 1) {
-				button.textContent = 'Active Missions (1 Complete!)';
+				button.textContent = 'Active Missions (A) (1 Complete!)';
 			} else {
-				button.textContent = `Active Missions (${completedCount} Complete!)`;
+				button.textContent = `Active Missions (A) (${completedCount} Complete!)`;
 			}
 		} else {
 			// Reset to normal styling
@@ -1063,7 +1099,7 @@ this.missionPanel.style.cssText = `
 			button.style.animation = 'none';
 			button.style.color = '#fff';
 			button.style.fontWeight = 'normal';
-			button.textContent = 'Active Missions';
+			button.textContent = 'Active Missions (A)';
 		}
 	}
 
@@ -1127,6 +1163,7 @@ this.missionPanel.style.cssText = `
 		if (this.activeMissionsPanel && this.activeMissionsPanel.style.display !== 'none') panels.push(this.activeMissionsPanel);
 		if (this.marketPanel && this.marketPanel.style.display !== 'none') panels.push(this.marketPanel);
 		if (this.vehiclePanel && this.vehiclePanel.style.display !== 'none') panels.push(this.vehiclePanel);
+		if (this.logPanel && this.logPanel.style.display !== 'none') panels.push(this.logPanel);
 
 		let x = margin;
 		let y = margin;

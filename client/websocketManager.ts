@@ -251,6 +251,20 @@ export class WebSocketManager extends EventTarget {
           }));
           break;
           
+        case 'event_log_append':
+          console.log('[WS Client] Event log append:', message.data);
+          this.dispatchEvent(new CustomEvent('eventLogAppend', {
+            detail: message.data
+          }));
+          break;
+
+        case 'event_log_snapshot':
+          console.log('[WS Client] Event log snapshot:', message.data);
+          this.dispatchEvent(new CustomEvent('eventLogSnapshot', {
+            detail: message.data
+          }));
+          break;
+          
         case 'notification':
           console.log('[WS Client] Received notification:', message.data);
           // Dispatch custom event for GameStateManager

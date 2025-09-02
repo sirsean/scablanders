@@ -1,4 +1,4 @@
-import type { PlayerProfile, Mission, DrifterProfile, ResourceNode, Vehicle } from '@shared/models';
+import type { PlayerProfile, Mission, DrifterProfile, ResourceNode, Vehicle, GameEvent } from '@shared/models';
 import { auth } from './auth';
 import { webSocketManager } from './websocketManager';
 import type { PlayerStateUpdate, WorldStateUpdate, MissionUpdate, ConnectionStatusUpdate } from '@shared/models';
@@ -45,7 +45,10 @@ export interface GameState {
 	showActiveMissionsPanel: boolean;
 	showMarketPanel: boolean;
 	showVehiclePanel: boolean;
+	showLogPanel: boolean;
 	notifications: GameNotification[];
+	// Logs
+	eventLog: GameEvent[];
 
 	// Loading states
 	isLoadingProfile: boolean;
@@ -90,7 +93,9 @@ class GameStateManager extends EventTarget {
 		showActiveMissionsPanel: false,
 		showMarketPanel: false,
 		showVehiclePanel: false,
+		showLogPanel: false,
 		notifications: [],
+		eventLog: [],
 		isLoadingProfile: false,
 		isLoadingWorld: false,
 		isLoadingPlayerMissions: false,
@@ -181,6 +186,8 @@ class GameStateManager extends EventTarget {
 				if (authenticated) {
 					console.log('[GameState] WebSocket authenticated, subscribing to events');
 					webSocketManager.subscribe(['player_state', 'world_state', 'mission_update']);
+					// Initial sync of event log
+					this.syncEventLog();
 				}
 
 				this.addNotification({
@@ -272,6 +279,14 @@ class GameStateManager extends EventTarget {
 					message: update.notification.message,
 				});
 			}
+		});
+
+		// Listen for event log append messages
+		webSocketManager.addEventListener('eventLogAppend', (event: any) => {
+			const data = event.detail as { event: GameEvent };
+			const ev = { ...data.event, timestamp: new Date(data.event.timestamp) } as GameEvent;
+			const updated = [ev, ...this.state.eventLog].slice(0, 1000);
+			this.setState({ eventLog: updated });
 		});
 
 		// Listen for direct notifications from server
@@ -574,6 +589,10 @@ async startMission(
 		this.setState({ showVehiclePanel: !this.state.showVehiclePanel });
 	}
 
+	toggleLogPanel() {
+		this.setState({ showLogPanel: !this.state.showLogPanel });
+	}
+
 	// Multi-drifter selection management
 	toggleDrifterSelection(drifterId: number) {
 		const currentSelection = [...this.state.selectedDrifterIds];
@@ -684,6 +703,18 @@ async startMission(
 				},
 			});
 			console.log('[GameState] Sent ACK for notifications:', notificationIds);
+		}
+	}
+
+	// Logs sync
+	async syncEventLog(limit: number = 1000) {
+		try {
+			const response = await this.apiCall(`/logs?limit=${limit}`);
+			const json = await response.json();
+			const events = (json.events || []).map((e: any) => ({ ...e, timestamp: new Date(e.timestamp) } as GameEvent));
+			this.setState({ eventLog: events });
+		} catch (err) {
+			console.error('Failed to sync event log', err);
 		}
 	}
 

@@ -17,10 +17,40 @@ export const MAX_SPEED_FACTOR = 5.0; // Max 5x slower than base speed
 export const SCAVENGING_MULTIPLIER = 0.005; // 0.5% per point
 export const TECH_MULTIPLIER = 0.003; // 0.3% per point
 
+// Mission-type specific duration tuning
+export const MISSION_DURATION_MULTIPLIER: Record<MissionType, number> = {
+	scavenge: 1.0,
+	strip_mine: 1.5, // Strip-mining takes longer due to setup/extraction
+	combat: 1.0,
+	sabotage: 1.0,
+};
+
+export const MISSION_SETUP_OVERHEAD_MINUTES: Record<MissionType, number> = {
+	scavenge: 0,
+	strip_mine: 12, // Additional setup time for heavy equipment
+	combat: 0,
+	sabotage: 0,
+};
+
+// Mission-type stat weighting for reward calculations
+export const STAT_WEIGHTS: Record<MissionType, { scavenging: number; tech: number }> = {
+	// Scavenge: scavenging matters more, tech a bit less
+	scavenge: { scavenging: 1.5, tech: 0.75 },
+	// Strip-mine: tech matters more (industrial efficiency), scavenging less
+	strip_mine: { scavenging: 0.75, tech: 1.5 },
+	combat: { scavenging: 1.0, tech: 1.0 },
+	sabotage: { scavenging: 1.0, tech: 1.0 },
+};
+
 /**
- * Calculate mission duration based on distance from town to target node
+ * Calculate mission duration based on distance from town to target node and mission type
  */
-export function calculateMissionDuration(targetNode: ResourceNode, drifters: DrifterStats[] = [], vehicle?: Vehicle): number {
+export function calculateMissionDuration(
+	targetNode: ResourceNode,
+	drifters: DrifterStats[] = [],
+	vehicle?: Vehicle,
+	missionType: MissionType = 'scavenge',
+): number {
 	// Calculate distance from town to target node
 	const dx = targetNode.coordinates.x - TOWN_COORDINATES.x;
 	const dy = targetNode.coordinates.y - TOWN_COORDINATES.y;
@@ -53,6 +83,10 @@ export function calculateMissionDuration(targetNode: ResourceNode, drifters: Dri
 	// Cap maximum speed factor to prevent extremely long missions
 	const speedFactor = Math.min(BASE_SPEED / teamSpeed, MAX_SPEED_FACTOR);
 	totalMinutes *= speedFactor;
+
+	// Mission-type overhead and extraction time multiplier
+	totalMinutes += MISSION_SETUP_OVERHEAD_MINUTES[missionType];
+	totalMinutes *= MISSION_DURATION_MULTIPLIER[missionType];
 
 	const durationMs = Math.round(totalMinutes * 60 * 1000); // Convert to milliseconds
 
@@ -109,9 +143,10 @@ export function calculateMissionRewards(
 		const totalScavenging = drifters.reduce((sum, d) => sum + d.scavenging, 0);
 		const totalTech = drifters.reduce((sum, d) => sum + d.tech, 0);
 
-		// Apply bonuses based on team stats
-		teamScavengingBonus = 1.0 + totalScavenging * SCAVENGING_MULTIPLIER;
-		teamTechBonus = 1.0 + totalTech * TECH_MULTIPLIER;
+		// Apply bonuses based on team stats with mission-type weighting
+		const weights = STAT_WEIGHTS[missionType];
+		teamScavengingBonus = 1.0 + totalScavenging * SCAVENGING_MULTIPLIER * weights.scavenging;
+		teamTechBonus = 1.0 + totalTech * TECH_MULTIPLIER * weights.tech;
 	}
 
 	// Calculate base values with all multipliers
@@ -204,9 +239,10 @@ export function estimateMissionRewards(
 		const totalScavenging = drifters.reduce((sum, d) => sum + d.scavenging, 0);
 		const totalTech = drifters.reduce((sum, d) => sum + d.tech, 0);
 
-		// Apply bonuses based on team stats
-		teamScavengingBonus = 1.0 + totalScavenging * SCAVENGING_MULTIPLIER;
-		teamTechBonus = 1.0 + totalTech * TECH_MULTIPLIER;
+		// Apply bonuses based on team stats with mission-type weighting
+		const weights = STAT_WEIGHTS[missionType];
+		teamScavengingBonus = 1.0 + totalScavenging * SCAVENGING_MULTIPLIER * weights.scavenging;
+		teamTechBonus = 1.0 + totalTech * TECH_MULTIPLIER * weights.tech;
 	}
 
 	// Calculate base values with all multipliers
@@ -373,8 +409,8 @@ export function calculateLiveEstimates(
 		techBonus: number;
 	};
 } {
-	// Calculate mission duration with drifter speed bonus
-	const duration = calculateMissionDuration(targetNode, drifters, vehicle);
+	// Calculate mission duration with drifter speed bonus and mission-type overhead/multiplier
+	const duration = calculateMissionDuration(targetNode, drifters, vehicle, missionType);
 
 	// If a vehicle is provided, include its scavenging/tech/combat as an additional entry for reward estimates
 	const driftersWithVehicle = vehicle
@@ -402,10 +438,11 @@ export function calculateLiveEstimates(
 		const totalScavenging = combinedForDisplay.reduce((sum, d) => sum + d.scavenging, 0);
 		const totalTech = combinedForDisplay.reduce((sum, d) => sum + d.tech, 0);
 
+		const weights = STAT_WEIGHTS[missionType];
 		teamStats = {
 			speed,
-			scavengingBonus: totalScavenging * SCAVENGING_MULTIPLIER,
-			techBonus: totalTech * TECH_MULTIPLIER,
+			scavengingBonus: totalScavenging * SCAVENGING_MULTIPLIER * weights.scavenging,
+			techBonus: totalTech * TECH_MULTIPLIER * weights.tech,
 		};
 	}
 

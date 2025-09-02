@@ -148,11 +148,27 @@ export interface UpgradeEffect {
 	capacityIncrease?: number;
 }
 
+export type GameEventType =
+	| 'mission_started'
+	| 'mission_complete'
+	| 'mission_intercepted'
+	| 'mission_failed'
+	| 'node_spawned'
+	| 'resource_depleted'
+	| 'node_removed'
+	| 'town_upgrade';
+
 export interface GameEvent {
 	id: string;
-	type: 'mission_complete' | 'mission_intercepted' | 'resource_depleted' | 'town_upgrade';
+	type: GameEventType;
 	timestamp: Date;
 	playerAddress?: string;
+	missionId?: string;
+	nodeId?: string;
+	resourceType?: ResourceType;
+	drifterIds?: number[];
+	vehicleName?: string;
+	rarity?: Rarity;
 	message: string;
 	data?: any;
 }
@@ -293,6 +309,20 @@ export interface WorldStateUpdate extends WebSocketMessage {
 	};
 }
 
+export interface EventLogAppend extends WebSocketMessage {
+	type: 'event_log_append';
+	data: {
+		event: GameEvent;
+	};
+}
+
+export interface EventLogSnapshot extends WebSocketMessage {
+	type: 'event_log_snapshot';
+	data: {
+		events: GameEvent[];
+	};
+}
+
 export interface MissionUpdate extends WebSocketMessage {
 	type: 'mission_update';
 	data: {
@@ -317,7 +347,14 @@ export interface NotificationAck extends WebSocketMessage {
 	};
 }
 
-export type GameWebSocketMessage = PlayerStateUpdate | WorldStateUpdate | MissionUpdate | ConnectionStatusUpdate | NotificationAck;
+export type GameWebSocketMessage =
+	| PlayerStateUpdate
+	| WorldStateUpdate
+	| MissionUpdate
+	| ConnectionStatusUpdate
+	| NotificationAck
+	| EventLogAppend
+	| EventLogSnapshot;
 
 // Utility types
 export type Coordinates = {

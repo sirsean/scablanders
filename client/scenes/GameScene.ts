@@ -26,6 +26,9 @@ export class GameScene extends Phaser.Scene {
 	private townMarker: Phaser.GameObjects.Container | null = null;
 	private missionRenderVersion = 0;
 	private missionTooltip: Phaser.GameObjects.Container | null = null;
+	// Mission planning overlay
+	private planningRoute: Phaser.GameObjects.Graphics | null = null;
+	private planningCircle: Phaser.GameObjects.Graphics | null = null;
 
 	constructor() {
 		super({ key: 'GameScene' });
@@ -199,7 +202,7 @@ export class GameScene extends Phaser.Scene {
 		}
 	}
 
-	private updateWorldDisplay(state: GameState) {
+private updateWorldDisplay(state: GameState) {
 		if (state.resourceNodes && state.resourceNodes.length > 0) {
 			this.updateResourceNodes(state.resourceNodes);
 			// Use playerMissions for indicators too, not global activeMissions
@@ -210,6 +213,9 @@ export class GameScene extends Phaser.Scene {
 		if (state.playerMissions) {
 			this.updateMissionRoutes(state.playerMissions);
 		}
+
+		// Update mission planning overlay (dotted line and highlight) when planning
+		this.updatePlanningOverlay(state);
 	}
 
 	/**
@@ -538,6 +544,9 @@ export class GameScene extends Phaser.Scene {
 			this.selectedNode = null;
 			gameState.selectResourceNode(null);
 		}
+
+		// Also clear planning overlay when nothing is selected
+		this.clearPlanningOverlay();
 	}
 
 	private createTownMarker() {
@@ -981,5 +990,78 @@ export class GameScene extends Phaser.Scene {
 				container.destroy();
 			}
 		});
+	}
+
+	// Render an orange dotted line from town to the selected node and an orange circle around it while planning
+	private updatePlanningOverlay(state: GameState) {
+		try {
+			const selectedId = state.selectedResourceNode;
+			const isPlanning = !!selectedId && state.showMissionPanel;
+			if (!isPlanning) {
+				this.clearPlanningOverlay();
+				return;
+			}
+
+			const targetNode = state.resourceNodes?.find((r) => r.id === selectedId);
+			if (!targetNode) {
+				this.clearPlanningOverlay();
+				return;
+			}
+
+			const { x: nodeX, y: nodeY } = targetNode.coordinates;
+
+			// Create graphics objects if needed
+			if (!this.planningRoute) {
+				this.planningRoute = this.add.graphics();
+				this.planningRoute.setDepth(950);
+			}
+			if (!this.planningCircle) {
+				this.planningCircle = this.add.graphics();
+				this.planningCircle.setDepth(951);
+			}
+
+			// Clear previous drawings
+			this.planningRoute.clear();
+			this.planningCircle.clear();
+
+			// Draw dotted orange route from town to node
+			const color = 0xffa500; // orange
+			const alpha = 1.0;
+			const dash = 10;
+			const gap = 6;
+			const dx = nodeX - TOWN_X;
+			const dy = nodeY - TOWN_Y;
+			const dist = Math.sqrt(dx * dx + dy * dy);
+			const steps = Math.max(1, Math.floor(dist / (dash + gap)));
+			const ux = dx / dist;
+			const uy = dy / dist;
+			this.planningRoute.lineStyle(2, color, alpha);
+			let sx = TOWN_X;
+			let sy = TOWN_Y;
+			for (let i = 0; i < steps; i++) {
+				const ex = sx + ux * dash;
+				const ey = sy + uy * dash;
+				this.planningRoute.lineBetween(sx, sy, ex, ey);
+				sx = ex + ux * gap;
+				sy = ey + uy * gap;
+			}
+
+			// Orange highlight circle around the target node
+			this.planningCircle.lineStyle(3, color, 1);
+			this.planningCircle.strokeCircle(nodeX, nodeY, 28);
+		} catch (e) {
+			console.error('Failed updating planning overlay', e);
+		}
+	}
+
+	private clearPlanningOverlay() {
+		if (this.planningRoute) {
+			this.planningRoute.destroy();
+			this.planningRoute = null;
+		}
+		if (this.planningCircle) {
+			this.planningCircle.destroy();
+			this.planningCircle = null;
+		}
 	}
 }

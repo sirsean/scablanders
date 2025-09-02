@@ -1,5 +1,6 @@
 import type { Mission, DrifterProfile, ResourceNode } from '@shared/models';
 import { gameState } from '../gameState';
+import { getVehicleData } from '../utils/vehicleUtils';
 
 export class ActiveMissionsPanel {
   private static updateInterval: number | null = null;
@@ -117,7 +118,10 @@ export class ActiveMissionsPanel {
       return;
     }
 
-    const activeMissions = this.lastMissions.filter(m => m.status === 'active');
+    // Filter and sort by soonest completion
+    const activeMissions = this.lastMissions
+      .filter(m => m.status === 'active')
+      .sort((a, b) => new Date(a.completionTime).getTime() - new Date(b.completionTime).getTime());
     
     if (activeMissions.length === 0) {
       content.innerHTML = `
@@ -142,6 +146,17 @@ export class ActiveMissionsPanel {
   private static renderMissionCard(mission: Mission, ownedDrifters: DrifterProfile[], resources: ResourceNode[]): string {
     const targetResource = resources.find(r => r.id === mission.targetNodeId);
     const missionDrifters = ownedDrifters.filter(d => mission.drifterIds.includes(d.tokenId));
+
+    // Determine vehicle name from player's profile if present
+    const profile = gameState.getState().profile;
+    let vehicleName = 'On Foot';
+    if (mission.vehicleInstanceId && profile) {
+      const vi = profile.vehicles.find(v => v.instanceId === mission.vehicleInstanceId);
+      if (vi) {
+        const v = getVehicleData(vi.vehicleId);
+        if (v) vehicleName = v.name;
+      }
+    }
     
     const now = new Date();
     const progress = this.calculateMissionProgress(mission.startTime, mission.completionTime, now);
@@ -170,7 +185,9 @@ export class ActiveMissionsPanel {
         <div style="margin-bottom: 8px;">
           <span style="color: #ccc;">Target: </span>
           <span style="color: #00ff00;">
-            ${targetResource ? `${targetResource.type.toUpperCase()} (${targetResource.coordinates.x}, ${targetResource.coordinates.y})` : 'Unknown location'}
+            ${targetResource 
+              ? `${targetResource.type.toUpperCase()} (${targetResource.rarity.toUpperCase()}) (${targetResource.coordinates.x}, ${targetResource.coordinates.y})`
+              : 'Unknown location'}
           </span>
         </div>
         
@@ -181,6 +198,11 @@ export class ActiveMissionsPanel {
               ${d.name} #${d.tokenId}
             </span>
           `).join('')}
+        </div>
+
+        <div style="margin-bottom: 8px;">
+          <span style="color: #ccc;">Vehicle: </span>
+          <span style="color: #ffa500; font-size: 12px;">${vehicleName}</span>
         </div>
         
         <div style="margin-bottom: 8px;">
