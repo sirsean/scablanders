@@ -7,6 +7,7 @@ import { ActiveMissionsPanel } from './ActiveMissionsPanel';
 import { MarketPanel } from './MarketPanel';
 import { VehiclePanel } from './VehiclePanel';
 import { LogPanel } from './LogPanel';
+import { DrifterInfoPanel } from './DrifterInfoPanel';
 
 export class UIManager {
 	private notificationContainer: HTMLElement | null = null;
@@ -17,6 +18,7 @@ export class UIManager {
 	private marketPanel: HTMLElement | null = null;
 	private vehiclePanel: HTMLElement | null = null;
 	private logPanel: HTMLElement | null = null;
+	private drifterInfoPanel: HTMLElement | null = null;
 	private buttonUpdateInterval: number | null = null;
 
 	constructor() {
@@ -72,6 +74,7 @@ export class UIManager {
 		this.createMarketPanel();
 		this.createVehiclePanel();
 		this.createLogPanel();
+		this.createDrifterInfoPanel();
 	}
 
 	private createActionMenu() {
@@ -270,6 +273,12 @@ this.missionPanel.style.cssText = `
 		document.body.appendChild(this.logPanel);
 	}
 
+	private createDrifterInfoPanel() {
+		this.drifterInfoPanel = DrifterInfoPanel.createDrifterInfoPanel();
+		document.body.appendChild(this.drifterInfoPanel);
+		(window as any).openDrifterInfo = (tokenId: number) => DrifterInfoPanel.open(tokenId);
+	}
+
 	private setupEventListeners() {
 		// Panel close buttons
 		document.getElementById('close-mission-panel')?.addEventListener('click', () => {
@@ -460,14 +469,17 @@ this.missionPanel.style.cssText = `
 		const selectedDrifterIds = state.selectedDrifterIds || [];
 		const selectedMissionType = state.selectedMissionType || 'scavenge';
 
-		// Get drifter stats for the selected team
+		// Get drifter stats for the selected team (effective)
 		const selectedDrifters = state.ownedDrifters.filter((d) => selectedDrifterIds.includes(d.tokenId));
-		const teamStats: DrifterStats[] = selectedDrifters.map((d) => ({
-			combat: d.combat,
-			scavenging: d.scavenging,
-			tech: d.tech,
-			speed: d.speed,
-		}));
+		const teamStats: DrifterStats[] = selectedDrifters.map((d) => {
+			const dp = state.profile?.drifterProgress?.[String(d.tokenId)];
+			return {
+				combat: d.combat + (dp?.bonuses.combat || 0),
+				scavenging: d.scavenging + (dp?.bonuses.scavenging || 0),
+				tech: d.tech + (dp?.bonuses.tech || 0),
+				speed: d.speed + (dp?.bonuses.speed || 0),
+			};
+		});
 
 		const selectedVehicleInstance = state.profile?.vehicles.find((v) => v.instanceId === state.selectedVehicleInstanceId);
 		const selectedVehicle = selectedVehicleInstance ? getVehicleData(selectedVehicleInstance.vehicleId) : undefined;
@@ -662,10 +674,7 @@ this.missionPanel.style.cssText = `
                 </div>
               </div>
               <div style="font-size: 11px; color: #ccc; margin-top: 4px;">
-                Combat: <span style="color: #ff6666;">${drifter.combat}</span> |
-                Scavenging: <span style="color: #66ff66;">${drifter.scavenging}</span> |
-                Tech: <span style="color: #6666ff;">${drifter.tech}</span> |
-                Speed: <span style="color: #ffff66;">${drifter.speed}</span>
+                ${(() => { const dp = gameState.getState().profile?.drifterProgress?.[String(drifter.tokenId)]; const b = dp?.bonuses || { combat:0, scavenging:0, tech:0, speed:0 }; return `Combat: <span style=\\\"color: #ff6666;\\\">${drifter.combat + (b.combat||0)}</span> ${b.combat?`(<span style=\\\"color:#ff9999;\\\">+${b.combat}</span>)`:''} | Scavenging: <span style=\\\"color: #66ff66;\\\">${drifter.scavenging + (b.scavenging||0)}</span> ${b.scavenging?`(<span style=\\\"color:#aaffaa;\\\">+${b.scavenging}</span>)`:''} | Tech: <span style=\\\"color: #6666ff;\\\">${drifter.tech + (b.tech||0)}</span> ${b.tech?`(<span style=\\\"color:#99aaff;\\\">+${b.tech}</span>)`:''} | Speed: <span style=\\\"color: #ffff66;\\\">${drifter.speed + (b.speed||0)}</span> ${b.speed?`(<span style=\\\"color:#ffff99;\\\">+${b.speed}</span>)`:''}`})()}
               </div>
             </div>
           `;
@@ -909,20 +918,30 @@ this.missionPanel.style.cssText = `
         <h4 style="color: #00ff00; margin: 0 0 8px 0;">Owned Drifters (${owned.length})</h4>
         <div style="max-height: 400px; overflow-y: auto;">
           ${
-						owned
-							.map(
-								(merc) => `
-            <div style="border: 1px solid #00ff00; padding: 6px; margin: 4px 0; border-radius: 4px; font-size: 12px;">
+            owned
+              .map((merc) => {
+                const dp = state.profile?.drifterProgress?.[String(merc.tokenId)];
+                const b = dp?.bonuses || { combat:0, scavenging:0, tech:0, speed:0 };
+                return `
+            <div class=\"owned-drifter-row\" data-id=\"${merc.tokenId}\" style=\"border: 1px solid #00ff00; padding: 6px; margin: 4px 0; border-radius: 4px; font-size: 12px; cursor: pointer;\">
               <strong>${merc.name} #${merc.tokenId}</strong>
-              <div style="color: #ccc;">Combat: ${merc.combat} | Scavenging: ${merc.scavenging} | Tech: ${merc.tech} | Speed: ${merc.speed}</div>
+              <div style=\"color: #ccc;\">Combat: ${merc.combat + (b.combat||0)} ${b.combat?`(+${b.combat})`:''} | Scavenging: ${merc.scavenging + (b.scavenging||0)} ${b.scavenging?`(+${b.scavenging})`:''} | Tech: ${merc.tech + (b.tech||0)} ${b.tech?`(+${b.tech})`:''} | Speed: ${merc.speed + (b.speed||0)} ${b.speed?`(+${b.speed})`:''}</div>
             </div>
-          `,
-							)
-							.join('') || '<p style="color: #888; font-size: 12px;">No owned Drifters</p>'
-					}
+          `;
+              })
+              .join('') || '<p style=\"color: #888; font-size: 12px;\">No owned Drifters</p>'
+          }
         </div>
       </div>
     `;
+
+		// Click to open DrifterInfo
+		document.querySelectorAll('.owned-drifter-row').forEach((row) => {
+			row.addEventListener('click', () => {
+				const id = Number((row as HTMLElement).getAttribute('data-id'));
+				(window as any).openDrifterInfo?.(id);
+			});
+		});
 	}
 
 	private updateProfilePanel(state: GameState) {
@@ -1156,14 +1175,21 @@ this.missionPanel.style.cssText = `
 		const gap = 12;
 		const maxWidth = window.innerWidth - margin * 2;
 
-		const panels: HTMLElement[] = [];
-		if (this.missionPanel && this.missionPanel.style.display !== 'none') panels.push(this.missionPanel);
-		if (this.mercenaryPanel && this.mercenaryPanel.style.display !== 'none') panels.push(this.mercenaryPanel);
-		if (this.profilePanel && this.profilePanel.style.display !== 'none') panels.push(this.profilePanel);
-		if (this.activeMissionsPanel && this.activeMissionsPanel.style.display !== 'none') panels.push(this.activeMissionsPanel);
-		if (this.marketPanel && this.marketPanel.style.display !== 'none') panels.push(this.marketPanel);
-		if (this.vehiclePanel && this.vehiclePanel.style.display !== 'none') panels.push(this.vehiclePanel);
-		if (this.logPanel && this.logPanel.style.display !== 'none') panels.push(this.logPanel);
+		// Build explicit ordering so DrifterInfo appears right after Drifters panel
+		const order: (HTMLElement | null)[] = [
+			this.missionPanel,
+			this.mercenaryPanel,
+			this.drifterInfoPanel, // place DrifterInfo immediately after Drifters
+			this.profilePanel,
+			this.activeMissionsPanel,
+			this.marketPanel,
+			this.vehiclePanel,
+			this.logPanel,
+		];
+
+		const panels: HTMLElement[] = order.filter(
+			(p): p is HTMLElement => !!p && p.style.display !== 'none',
+		);
 
 		let x = margin;
 		let y = margin;

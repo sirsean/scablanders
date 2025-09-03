@@ -518,6 +518,40 @@ async startMission(
 		}
 	}
 
+	// Allocation API
+	async allocateDrifterPoint(tokenId: number, attribute: 'combat'|'scavenging'|'tech'|'speed') {
+		try {
+			const response = await this.apiCall('/drifters/allocate-point', {
+				method: 'POST',
+				body: JSON.stringify({ tokenId, attribute }),
+			});
+			const result = await response.json();
+			if (result.success) {
+				this.addNotification({
+					type: 'success',
+					title: 'Point Allocated',
+					message: `+1 ${attribute} to Drifter #${tokenId}`,
+				});
+				await this.loadPlayerProfile();
+				return result.progress;
+			} else {
+				this.addNotification({
+					type: 'error',
+					title: 'Allocation Failed',
+					message: result.error || 'Failed to allocate point.',
+				});
+				return null;
+			}
+		} catch (error) {
+			this.addNotification({
+				type: 'error',
+				title: 'Network Error',
+				message: 'Failed to allocate point',
+			});
+			return null;
+		}
+	}
+
 	// Maintenance utilities
 	async reconcileVehicles() {
 		try {

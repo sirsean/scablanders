@@ -50,6 +50,21 @@ export type UpgradeType =
 // }
 
 // Core game interfaces
+export interface DrifterBonuses {
+	combat: number;
+	scavenging: number;
+	tech: number;
+	speed: number;
+}
+
+export interface DrifterProgress {
+	tokenId: number;
+	xp: number;
+	level: number;
+	bonuses: DrifterBonuses;
+	unspentPoints: number;
+}
+
 export interface PlayerProfile {
 	address: string;
 	balance: number;
@@ -59,6 +74,7 @@ export interface PlayerProfile {
 	upgrades: UpgradeType[];
 	activeMissions: string[];
 	lastLogin: Date;
+	drifterProgress?: Record<string, DrifterProgress>;
 }
 
 export interface PlayerVehicle {
@@ -241,7 +257,12 @@ export const INTERCEPT_BASE_COST = 25;
 // Notification system
 export interface NotificationMessage {
 	id: string;
-	type: 'mission_complete' | 'mission_intercepted' | 'resource_depleted' | 'upgrade_purchased';
+	type:
+		| 'mission_complete'
+		| 'mission_intercepted'
+		| 'resource_depleted'
+		| 'upgrade_purchased'
+		| 'drifter_level_up';
 	title: string;
 	message: string;
 	timestamp: Date;

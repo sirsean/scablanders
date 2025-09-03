@@ -9,6 +9,7 @@ import world from './routes/world';
 import missions from './routes/missions';
 import market from './routes/market';
 import logs from './routes/logs';
+import drifters from './routes/drifters';
 
 import { getPlayerOwnedDrifters } from './nft';
 import { handleWebSocket } from './websocket';
@@ -158,6 +159,7 @@ app.route('/api/world', world);
 app.route('/api/missions', missions);
 app.route('/api/market', market);
 app.route('/api/logs', logs);
+app.route('/api/drifters', drifters);
 
 // 404 handler for unmatched API routes
 app.notFound((c) => {

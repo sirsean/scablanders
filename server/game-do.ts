@@ -12,6 +12,7 @@ import type {
 	ResourceType,
 	Rarity,
 	GameEvent,
+	DrifterProgress,
 } from '@shared/models';
 import { calculateMissionDuration, calculateMissionRewards, type DrifterStats } from '../shared/mission-utils';
 import { getDrifterStats } from './drifters';
@@ -52,6 +53,7 @@ interface GameState {
 	missions: Map<string, Mission>; // missionId -> mission
 	resourceNodes: Map<string, ResourceNode>; // nodeId -> node
 	eventLog: GameEvent[]; // FIFO global event log (max 1000)
+	drifterProgress: Map<string, DrifterProgress>; // tokenId -> progress
 	worldMetrics: {
 		totalActiveMissions: number;
 		totalCompletedMissions: number;
@@ -94,6 +96,7 @@ this.gameState = {
 			missions: new Map(),
 			resourceNodes: new Map(),
 			eventLog: [],
+			drifterProgress: new Map(),
 			worldMetrics: {
 				totalActiveMissions: 0,
 				totalCompletedMissions: 0,
@@ -172,10 +175,16 @@ this.gameState = {
 				this.gameState.resourceNodes = new Map(Object.entries(nodesData));
 			}
 
-			// Load world metrics
+// Load world metrics
 			const worldMetrics = await this.ctx.storage.get<typeof this.gameState.worldMetrics>('worldMetrics');
 			if (worldMetrics) {
 				this.gameState.worldMetrics = worldMetrics;
+			}
+
+			// Load drifter progress
+			const drifterProgressData = await this.ctx.storage.get<Record<string, DrifterProgress>>('drifterProgress');
+			if (drifterProgressData) {
+				this.gameState.drifterProgress = new Map(Object.entries(drifterProgressData));
 			}
 
 			console.log('[GameDO] Loaded game state:', {
@@ -223,6 +232,7 @@ await Promise.all([
 				this.ctx.storage.put('resourceNodes', Object.fromEntries(this.gameState.resourceNodes)),
 				this.ctx.storage.put('worldMetrics', this.gameState.worldMetrics),
 				this.ctx.storage.put('eventLog', this.gameState.eventLog),
+				this.ctx.storage.put('drifterProgress', Object.fromEntries(this.gameState.drifterProgress)),
 			]);
 
 			console.log('[GameDO] Game state saved successfully');
@@ -292,6 +302,17 @@ await Promise.all([
 	/**
 	 * Send player state update to specific session
 	 */
+	private buildProfileWithProgress(player: PlayerProfile): PlayerProfile {
+		// Attach drifterProgress for owned drifters only
+		const progress: Record<string, DrifterProgress> = {};
+		for (const d of player.ownedDrifters || []) {
+			const key = String(d.tokenId);
+			const dp = this.gameState.drifterProgress.get(key);
+			if (dp) progress[key] = dp;
+		}
+		return { ...player, drifterProgress: progress };
+	}
+
 	private async sendPlayerStateUpdate(sessionId: string, playerAddress: string) {
 		console.log(`[GameDO] send playerStateUpdate ${sessionId}`);
 		const player = this.gameState.players.get(playerAddress);
@@ -299,11 +320,12 @@ await Promise.all([
 
 		if (!player) return;
 
+		const profileWithProgress = this.buildProfileWithProgress(player);
 		const message: PlayerStateUpdate = {
 			type: 'player_state',
 			timestamp: new Date(),
 			data: {
-				profile: player,
+				profile: profileWithProgress,
 				balance: player.balance,
 				activeMissions: player.activeMissions,
 				discoveredNodes: player.discoveredNodes,
@@ -344,11 +366,12 @@ await Promise.all([
 
 		if (!player) return;
 
+		const profileWithProgress = this.buildProfileWithProgress(player);
 		const message: PlayerStateUpdate = {
 			type: 'player_state',
 			timestamp: new Date(),
 			data: {
-				profile: player,
+				profile: profileWithProgress,
 				balance: player.balance,
 				activeMissions: player.activeMissions,
 				discoveredNodes: player.discoveredNodes,
@@ -483,7 +506,7 @@ await Promise.all([
 			await this.saveGameState();
 		}
 
-		return player;
+		return this.buildProfileWithProgress(player);
 	}
 
 	/**
@@ -677,12 +700,13 @@ async startMission(
 		for (const drifterId of drifterIds) {
 			const drifterProfile = getDrifterStats(drifterId);
 			if (drifterProfile) {
-				teamStats.push({
+				const effective = this.getEffectiveDrifterStats(drifterId, {
 					combat: drifterProfile.combat,
 					scavenging: drifterProfile.scavenging,
 					tech: drifterProfile.tech,
 					speed: drifterProfile.speed,
 				});
+				teamStats.push(effective);
 			}
 		}
 
@@ -857,6 +881,42 @@ await this.addEvent({
 			vehicleName: mission.vehicleInstanceId ? (player.vehicles.find(v => v.instanceId === mission.vehicleInstanceId) ? getVehicle(player.vehicles.find(v => v.instanceId === mission.vehicleInstanceId)!.vehicleId)?.name : 'On Foot') : 'On Foot',
 			message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} at ${(node?.type ?? '').toString().toUpperCase()} (${(node?.rarity ?? 'unknown').toString().toUpperCase()}) with drifters ${mission.drifterIds.map((id) => `#${id}`).join(', ')} ${mission.vehicleInstanceId ? `in ${(() => { const vi = player.vehicles.find(v => v.instanceId === mission.vehicleInstanceId); return vi ? (getVehicle(vi.vehicleId)?.name || 'On Foot') : 'On Foot'; })()}` : 'on foot'} (+${mission.rewards.credits} cr)`,
 		});
+
+		// Award XP to participating drifters based on credits earned
+		const xpGain = Math.ceil(mission.rewards.credits / 10);
+		if (xpGain > 0) {
+			for (const drifterId of mission.drifterIds) {
+				const { leveled, levelsGained, newLevel } = this.applyXp(drifterId, xpGain);
+				if (leveled) {
+					// Add event log for level-up
+					await this.addEvent({
+						type: 'mission_complete', // reuse type category for now; message clarifies
+						playerAddress: mission.playerAddress,
+						missionId: mission.id,
+						message: `Drifter #${drifterId} leveled up ${levelsGained} level(s) to ${newLevel}`,
+					});
+
+					// Notify player's active sessions
+					const notif: PendingNotification = {
+						id: crypto.randomUUID(),
+						type: 'drifter_level_up',
+						title: 'Drifter Level Up',
+						message: `Drifter #${drifterId} reached level ${newLevel}! +1 bonus point available.`,
+						timestamp: new Date(),
+						data: { tokenId: drifterId, level: newLevel },
+					};
+					for (const [sessionId, session] of this.webSocketSessions) {
+						if (
+							session.playerAddress === mission.playerAddress &&
+							session.authenticated &&
+							session.websocket.readyState === WebSocket.READY_STATE_OPEN
+						) {
+							this.sendNotificationToSession(sessionId, notif);
+						}
+					}
+				}
+			}
+		}
 
 		// Update vehicle status (if any)
 		if (mission.vehicleInstanceId) {
@@ -1385,6 +1445,101 @@ await this.addEvent({
 	}
 
 	// =============================================================================
+	// Drifter Progression Helpers
+	// =============================================================================
+
+	private XP_BASE = 100;
+	private XP_GROWTH = 1.5;
+
+	private xpToNext(level: number): number {
+		const l = Math.max(1, level);
+		return Math.ceil(this.XP_BASE * Math.pow(this.XP_GROWTH, l - 1));
+	}
+
+	private keyFor(tokenId: number): string {
+		return String(tokenId);
+	}
+
+	private getOrInitDrifterProgress(tokenId: number): DrifterProgress {
+		const key = this.keyFor(tokenId);
+		let dp = this.gameState.drifterProgress.get(key);
+		if (!dp) {
+			dp = {
+				tokenId,
+				xp: 0,
+				level: 1,
+				bonuses: { combat: 0, scavenging: 0, tech: 0, speed: 0 },
+				unspentPoints: 0,
+			};
+			this.gameState.drifterProgress.set(key, dp);
+		}
+		return dp;
+	}
+
+	private applyXp(tokenId: number, xpGain: number): { leveled: boolean; levelsGained: number; newLevel: number } {
+		const dp = this.getOrInitDrifterProgress(tokenId);
+		let leveled = false;
+		let gained = 0;
+		dp.xp += Math.max(0, Math.floor(xpGain));
+		while (dp.xp >= this.xpToNext(dp.level)) {
+			const need = this.xpToNext(dp.level);
+			dp.xp -= need;
+			dp.level += 1;
+			dp.unspentPoints += 1;
+			gained += 1;
+			leveled = true;
+		}
+		this.gameState.drifterProgress.set(this.keyFor(tokenId), dp);
+		return { leveled, levelsGained: gained, newLevel: dp.level };
+	}
+
+	private getEffectiveDrifterStats(
+		tokenId: number,
+		base: { combat: number; scavenging: number; tech: number; speed: number },
+	): { combat: number; scavenging: number; tech: number; speed: number } {
+		const dp = this.gameState.drifterProgress.get(this.keyFor(tokenId));
+		if (!dp) return base;
+		return {
+			combat: base.combat + (dp.bonuses.combat || 0),
+			scavenging: base.scavenging + (dp.bonuses.scavenging || 0),
+			tech: base.tech + (dp.bonuses.tech || 0),
+			speed: base.speed + (dp.bonuses.speed || 0),
+		};
+	}
+
+	async getDrifterProgress(tokenIds?: number[]): Promise<Record<string, DrifterProgress>> {
+		const out: Record<string, DrifterProgress> = {};
+		if (tokenIds && tokenIds.length > 0) {
+			for (const id of tokenIds) {
+				const dp = this.gameState.drifterProgress.get(this.keyFor(id));
+				if (dp) out[this.keyFor(id)] = dp;
+			}
+		} else {
+			for (const [k, v] of this.gameState.drifterProgress.entries()) out[k] = v;
+		}
+		return out;
+	}
+
+	async allocateBonusPoint(
+		requestor: string,
+		tokenId: number,
+		attribute: 'combat' | 'scavenging' | 'tech' | 'speed',
+	): Promise<{ success: boolean; progress?: DrifterProgress; error?: string }> {
+		const player = this.gameState.players.get(requestor);
+		if (!player) return { success: false, error: 'Player not found' };
+		const owns = (player.ownedDrifters || []).some((d) => d.tokenId === tokenId);
+		if (!owns) return { success: false, error: "You don't own this drifter" };
+		const dp = this.getOrInitDrifterProgress(tokenId);
+		if (dp.unspentPoints <= 0) return { success: false, error: 'No unspent points' };
+		dp.unspentPoints -= 1;
+		dp.bonuses[attribute] = (dp.bonuses[attribute] || 0) + 1;
+		this.gameState.drifterProgress.set(this.keyFor(tokenId), dp);
+		await this.saveGameState();
+		await this.broadcastPlayerStateUpdate(requestor);
+		return { success: true, progress: dp };
+	}
+
+	// =============================================================================
 	// Development/Testing
 	// =============================================================================
 
@@ -1396,6 +1551,7 @@ await this.addEvent({
 		this.gameState.notifications.clear();
 		this.gameState.missions.clear();
 		this.gameState.resourceNodes.clear();
+		this.gameState.drifterProgress.clear();
 		this.gameState.worldMetrics = {
 			totalActiveMissions: 0,
 			totalCompletedMissions: 0,
