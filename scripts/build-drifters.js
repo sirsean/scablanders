@@ -47,6 +47,8 @@ program
   .option('--force-resize', 'Re-create resized images even if they exist')
   .option('--recovery-mode', 'Only download missing images (recovery mode)')
   .option('--backfill-resize', 'Create missing thumbnails/tiny images (backfill mode)')
+  .option('--recompute-stats', 'Recompute stats from existing attributes in drifters.json (no API calls)')
+  .option('--dry-run', 'When used with --recompute-stats, do not write changes, only print summary')
   .parse();
 
 const options = program.opts();
@@ -93,194 +95,160 @@ async function fetchMetadata(tokenId) {
 
 /**
  * Compute drifter stats based on attributes
- * This maps the NFT attributes to game stats
+ * New approach: deterministic, attribute-driven, higher variation, 1–8 scale
  */
-function computeStats(attributes) {
-    // Initialize base stats
-    let combat = 5;
-    let scavenging = 5;
-    let tech = 5;
-    let speed = 5;
-    let rarity = 'common';
-    let hireCost = 50;
+import crypto from 'node:crypto';
 
-    // Convert attributes array to map for easier lookup
+function computeStats(attributes) {
+    // Helper: build a lowercase map from trait_type to value for quick lookups
     const attrMap = {};
-    attributes.forEach(attr => {
-        attrMap[attr.trait_type] = attr.value;
+    (attributes || []).forEach((attr) => {
+        if (!attr || !attr.trait_type) return;
+        attrMap[attr.trait_type] = String(attr.value || '').trim();
     });
 
-    // Class-based stat modifiers
-    const classType = attrMap['Class'] || 'Drifter';
-    switch (classType.toLowerCase()) {
-        case 'drifter':
-            // Balanced stats
-            break;
-        case 'scavenger':
-            scavenging += 2;
-            tech += 1;
-            combat -= 1;
-            break;
+    const lc = (s) => (s ? String(s).toLowerCase() : '');
+
+    // Base stats target around mid with room to move down/up to 1–8
+    let combat = 4;
+    let scavenging = 4;
+    let tech = 4;
+    let speed = 4;
+
+    // 1) Class-based strong identity
+    const classType = lc(attrMap['Class'] || 'drifter');
+    switch (classType) {
         case 'warrior':
-            combat += 3;
-            speed += 1;
-            tech -= 1;
-            scavenging -= 1;
-            break;
+            combat += 3; speed += 1; tech -= 1; scavenging -= 1; break;
+        case 'scavenger':
+            scavenging += 3; tech += 1; combat -= 1; break;
         case 'tech':
-            tech += 3;
-            scavenging += 1;
-            combat -= 2;
-            break;
+            tech += 3; scavenging += 1; combat -= 2; break;
         case 'scout':
-            speed += 3;
-            scavenging += 1;
-            combat -= 1;
-            tech -= 1;
+            speed += 3; scavenging += 1; combat -= 1; tech -= 1; break;
+        case 'drifter':
+        default:
+            // leave balanced
             break;
     }
 
-    // Location-based modifiers
-    const location = attrMap['Location'];
+    // 2) Location flavor
+    const location = attrMap['Location'] || '';
     switch (location) {
         case 'Scablands':
-            scavenging += 1;
-            combat += 1;
-            break;
+            scavenging += 1; combat += 1; break;
         case 'Tech Ruins':
-            tech += 2;
-            break;
+            tech += 2; break;
         case 'Wasteland':
-            combat += 1;
-            speed += 1;
-            break;
+            combat += 1; speed += 1; break;
         case 'Underground':
-            scavenging += 2;
+            scavenging += 2; break;
+        default:
             break;
     }
 
-    // Suit-based modifiers
-    const suit = attrMap['Suit'];
-    if (suit) {
-        if (suit.includes('Combat') || suit.includes('Armor')) {
-            combat += 1;
-        }
-        if (suit.includes('Tech') || suit.includes('Circuit')) {
-            tech += 1;
-        }
-        if (suit.includes('Scout') || suit.includes('Light')) {
-            speed += 1;
-        }
-        if (suit.includes('Scrap') || suit.includes('Salvage')) {
-            scavenging += 1;
-        }
+    // 3) Equipment and outfit keywords (apply per-trait once per category)
+    const containsAny = (text, words) => {
+        const t = lc(text);
+        return words.some((w) => t.includes(w));
+    };
+
+    const bumpFromKeywords = (text) => {
+        if (!text) return;
+        const t = lc(text);
+        const incOnce = (cond, fn) => { if (cond) fn(); };
+
+        // Combat indicators
+        incOnce(containsAny(t, [
+            'weapon', 'blade', 'hammer', 'mace', 'axe', 'sword', 'spear', 'gauntlet', 'armor', 'armour', 'war', 'guard', 'striker', 'shriek', 'cannon', 'rifle'
+        ]), () => { combat += 1; });
+
+        // Tech indicators
+        incOnce(containsAny(t, [
+            'tech', 'circuit', 'regulator', 'scanner', 'computer', 'sensor', 'data', 'grid', 'device', 'processor'
+        ]), () => { tech += 1; });
+
+        // Speed indicators
+        incOnce(containsAny(t, [
+            'speed', 'boost', 'jet', 'skimmer', 'light', 'scout', 'runner', 'flag'
+        ]), () => { speed += 1; });
+
+        // Scavenging indicators
+        incOnce(containsAny(t, [
+            'scrap', 'salvage', 'pack', 'caddy', 'squirrel', 'miner', 'mining', 'trunk', 'bag'
+        ]), () => { scavenging += 1; });
+    };
+
+    // Apply to multiple gear-like traits
+    bumpFromKeywords(attrMap['Suit']);
+    bumpFromKeywords(attrMap['Headgear']);
+    bumpFromKeywords(attrMap['Backpack']);
+    bumpFromKeywords(attrMap['Accessory']);
+    bumpFromKeywords(attrMap['Suit Accessory']);
+
+    // 4) Graphic/Guild flavor
+    const graphic = attrMap['Graphic'] || '';
+    if (graphic) {
+        const g = lc(graphic);
+        if (g.includes('guild')) { combat += 1; tech += 1; }
+        if (g.includes('miner')) { scavenging += 2; }
+        if (g.includes('grid')) { tech += 1; }
+        if (g.includes('roving') || g.includes('terror')) { combat += 2; }
+        if (g.includes('free')) { speed += 1; }
+        if (g.includes('topography')) { scavenging += 1; tech += 1; }
     }
 
-    // Backpack-based modifiers
-    const backpack = attrMap['Backpack'];
-    if (backpack) {
-        if (backpack.includes('Combat') || backpack.includes('Weapon')) {
-            combat += 1;
-        }
-        if (backpack.includes('Tech') || backpack.includes('Data')) {
-            tech += 1;
-        }
-        if (backpack.includes('Speed') || backpack.includes('Boost')) {
-            speed += 1;
-        }
-        if (backpack.includes('Scrap') || backpack.includes('Salvage')) {
-            scavenging += 1;
-        }
-    }
+    // 5) Suit Pattern / Color very small tweaks
+    const suitPattern = lc(attrMap['Suit Pattern'] || '');
+    if (suitPattern.includes('flag')) speed += 1;
 
-    // Accessory-based modifiers
-    const accessory = attrMap['Accessory'];
-    if (accessory) {
-        if (accessory.includes('Weapon') || accessory.includes('Blade')) {
-            combat += 1;
-        }
-        if (accessory.includes('Scanner') || accessory.includes('Computer')) {
-            tech += 1;
-        }
-        if (accessory.includes('Boost') || accessory.includes('Engine')) {
-            speed += 1;
-        }
-        if (accessory.includes('Tool') || accessory.includes('Kit')) {
-            scavenging += 1;
-        }
-    }
+    const suitColor = lc(attrMap['Suit Color'] || '');
+    if (suitColor.includes('white') || suitColor.includes('yellow') || suitColor.includes('orange')) speed += 1;
+    if (suitColor.includes('black') || suitColor.includes('brown')) combat += 1;
+    if (suitColor.includes('green')) scavenging += 1;
+    if (suitColor.includes('blue') || suitColor.includes('purple')) tech += 1;
 
-    // Phase-based rarity and stat bonuses
+    // 6) Phase -> rarity and base hire cost scaffolding
+    let rarity = 'common';
+    let baseHire = 60;
     const phase = attrMap['Phase'];
     switch (phase) {
-        case 'Phase 1':
-            rarity = 'common';
-            hireCost = 50;
-            break;
-        case 'Phase 2':
-            rarity = 'uncommon';
-            hireCost = 100;
-            // Small stat boost
-            combat += 1;
-            scavenging += 1;
-            tech += 1;
-            speed += 1;
-            break;
-        case 'Phase 3':
-            rarity = 'rare';
-            hireCost = 150;
-            // Moderate stat boost
-            combat += 2;
-            scavenging += 2;
-            tech += 2;
-            speed += 2;
-            break;
+        case 'Phase 2': rarity = 'uncommon'; baseHire = 90; combat += 1; scavenging += 1; tech += 1; speed += 1; break;
+        case 'Phase 3': rarity = 'rare'; baseHire = 130; combat += 1; scavenging += 1; tech += 1; speed += 1; break;
         case 'Genesis':
-        case 'Legendary':
-            rarity = 'legendary';
-            hireCost = 300;
-            // Large stat boost
-            combat += 3;
-            scavenging += 3;
-            tech += 3;
-            speed += 3;
-            break;
+        case 'Legendary': rarity = 'legendary'; baseHire = 200; combat += 1; scavenging += 1; tech += 1; speed += 1; break;
+        default: rarity = 'common'; baseHire = 60; break;
     }
 
-    // Special graphic-based bonuses
-    const graphic = attrMap['Graphic'];
-    if (graphic) {
-        if (graphic.includes('Guild') || graphic.includes('Elite')) {
-            // Guild members get small bonuses
-            combat += 1;
-            tech += 1;
-            hireCost += 20;
-        }
-        if (graphic.includes('Legendary') || graphic.includes('Apex')) {
-            rarity = 'legendary';
-            hireCost = Math.max(hireCost, 250);
-        }
-    }
+    // 7) Deterministic "jitter" based on attributes to break ties among similar gear
+    const canonical = (attributes || [])
+        .map((a) => `${lc(a.trait_type)}:${lc(a.value)}`)
+        .sort()
+        .join('|');
 
-    // Ensure stats are within reasonable bounds (3-10)
-    combat = Math.max(3, Math.min(10, combat));
-    scavenging = Math.max(3, Math.min(10, scavenging));
-    tech = Math.max(3, Math.min(10, tech));
-    speed = Math.max(3, Math.min(10, speed));
+    const digest = crypto.createHash('sha256').update('scablanders:stats:v2|' + canonical).digest();
+    const j0 = (digest[0] % 3) - 1; // -1..+1
+    const j1 = (digest[1] % 3) - 1;
+    const j2 = (digest[2] % 3) - 1;
+    const j3 = (digest[3] % 3) - 1;
 
-    // Adjust hire cost based on total stats
-    const totalStats = combat + scavenging + tech + speed;
-    const statMultiplier = Math.floor(totalStats / 4); // Average stat as multiplier
-    hireCost = Math.max(30, hireCost + (statMultiplier * 10));
+    combat += j0;
+    scavenging += j1;
+    tech += j2;
+    speed += j3;
 
-    return {
-        combat,
-        scavenging,
-        tech,
-        speed,
-        rarity,
-        hireCost
-    };
+    // Final clamp to 1–8 and ensure integers
+    const clamp18 = (n) => Math.max(1, Math.min(8, Math.round(n)));
+    combat = clamp18(combat);
+    scavenging = clamp18(scavenging);
+    tech = clamp18(tech);
+    speed = clamp18(speed);
+
+    // Hire cost: base by rarity + scale by overall power
+    const total = combat + scavenging + tech + speed; // 4..32
+    const hireCost = Math.max(30, Math.round(baseHire + (total - 16) * 8));
+
+    return { combat, scavenging, tech, speed, rarity, hireCost };
 }
 
 /**
@@ -988,24 +956,74 @@ async function main() {
     const isBackfillResize = options.backfillResize;
     
     // If no primary flags are set, show help
-    if (!shouldRefreshMetadata && !shouldDownloadImages && !shouldResizeImages && !isRecoveryMode && !isBackfillResize) {
+    if (!shouldRefreshMetadata && !shouldDownloadImages && !shouldResizeImages && !isRecoveryMode && !isBackfillResize && !options.recomputeStats) {
         console.log('🤖 Scablanders Drifter Build Tool\n');
         console.log('No operations specified. Available options:');
-        console.log('  --refresh-metadata   Fetch and rebuild drifters.json');
-        console.log('  --download-images    Download original images');
-        console.log('  --resize-images      Create thumbnails and tiny versions');
-        console.log('  --force-images       Re-download existing images');
-        console.log('  --force-resize       Re-create existing resized images');
-        console.log('  --recovery-mode      Only download missing images (recovery mode)');
-        console.log('  --backfill-resize    Create missing thumbnails/tiny images (backfill mode)');
+        console.log('  --refresh-metadata    Fetch and rebuild drifters.json');
+        console.log('  --download-images     Download original images');
+        console.log('  --resize-images       Create thumbnails and tiny versions');
+        console.log('  --force-images        Re-download existing images');
+        console.log('  --force-resize        Re-create existing resized images');
+        console.log('  --recovery-mode       Only download missing images (recovery mode)');
+        console.log('  --backfill-resize     Create missing thumbnails/tiny images (backfill mode)');
+        console.log('  --recompute-stats     Recompute stats from existing drifters.json (no API calls)');
+        console.log('      [--dry-run]       Preview changes when used with --recompute-stats');
         console.log('\nExamples:');
         console.log('  node scripts/build-drifters.js --refresh-metadata --download-images --limit 10');
         console.log('  node scripts/build-drifters.js --recovery-mode  # Download only missing images');
         console.log('  node scripts/build-drifters.js --backfill-resize  # Create missing resized images');
+        console.log('  node scripts/build-drifters.js --recompute-stats  # Recompute stats from attributes only');
         process.exit(0);
     }
     
     let drifters = {};
+
+    // Exclusive mode: recompute stats only, no API calls
+    if (options.recomputeStats) {
+        if (shouldRefreshMetadata || shouldDownloadImages || shouldResizeImages || isRecoveryMode || isBackfillResize) {
+            console.error('❌ --recompute-stats cannot be combined with other operations. Run it alone.');
+            process.exit(1);
+        }
+        console.log('📖 Loading existing metadata for stat recomputation...');
+        drifters = await loadExistingDrifters();
+        if (!drifters) {
+            console.error('❌ No existing drifters.json found. Use --refresh-metadata first.');
+            process.exit(1);
+        }
+        const tokenIds = Object.keys(drifters);
+        console.log(`🔄 Recomputing stats for ${tokenIds.length} drifters...`);
+        let changed = 0;
+        let skipped = 0;
+        for (const tokenId of tokenIds) {
+            const d = drifters[tokenId];
+            const attrs = d.attributes || [];
+            if (!Array.isArray(attrs) || attrs.length === 0) {
+                skipped++;
+                continue;
+            }
+            const prev = { combat: d.combat, scavenging: d.scavenging, tech: d.tech, speed: d.speed, rarity: d.rarity, hireCost: d.hireCost };
+            const next = computeStats(attrs);
+            d.combat = next.combat;
+            d.scavenging = next.scavenging;
+            d.tech = next.tech;
+            d.speed = next.speed;
+            d.hireCost = next.hireCost;
+            d.rarity = next.rarity;
+            if (prev.combat !== d.combat || prev.scavenging !== d.scavenging || prev.tech !== d.tech || prev.speed !== d.speed || prev.hireCost !== d.hireCost || prev.rarity !== d.rarity) {
+                changed++;
+            }
+        }
+        if (options.dryRun) {
+            console.log(`✅ Dry run complete. Would update ${changed} drifters. Skipped: ${skipped}.`);
+            process.exit(0);
+        }
+        console.log(`💾 Writing updates to ${OUTPUT_PATH}...`);
+        await fs.writeFile(OUTPUT_PATH, JSON.stringify(drifters, null, 2), 'utf8');
+        console.log(`✅ Recompute complete. Updated ${changed} drifters. Skipped: ${skipped}.`);
+        // Print brief distribution summary
+        printDrifterStats(drifters);
+        process.exit(0);
+    }
     
     // Step 1: Handle metadata
     if (shouldRefreshMetadata) {

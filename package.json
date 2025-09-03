@@ -2,7 +2,7 @@
 	"name": "scablanders",
 	"version": "0.0.0",
 	"type": "module",
-	"scripts": {
+  "scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
 		"deploy": "wrangler deploy",
@@ -11,7 +11,8 @@
 		"test:watch": "vitest --config vitest.config.ts",
 		"lint": "eslint . --ext .ts,.js",
 		"format": "prettier --write .",
-		"cf-typegen": "wrangler types"
+		"cf-typegen": "wrangler types",
+		"drifters:recompute-stats": "node scripts/build-drifters.js --recompute-stats"
 	},
 	"dependencies": {
 		"@cloudflare/vite-plugin": "^1.11.5",
