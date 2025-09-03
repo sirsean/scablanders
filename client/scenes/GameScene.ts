@@ -13,6 +13,14 @@ const RESOURCE_NODE_BASE_SCALE = 0.15; // Base scale for resource nodes (adjust 
 const RESOURCE_NODE_RARITY_SCALE_MULTIPLIER = 1.2; // How much bigger rare/epic/legendary nodes are
 const RESOURCE_NODE_LABEL_OFFSET = 30; // Distance above the node to place the label
 
+// Mission color palette (Material-inspired)
+const COLOR_OTHER_ACTIVE = 0xe53935; // red 600
+const COLOR_SELF_ACTIVE = 0xffc107;  // amber 500
+const COLOR_COMPLETED   = 0x43a047;  // green 600
+
+// How long to show completed missions after completion (ms)
+const RECENT_COMPLETED_MS = 15_000;
+
 export class GameScene extends Phaser.Scene {
 	private resourceNodes = new Map<string, Phaser.GameObjects.Image>();
 	private worldData: any = null;
@@ -29,6 +37,9 @@ export class GameScene extends Phaser.Scene {
 	// Mission planning overlay
 	private planningRoute: Phaser.GameObjects.Graphics | null = null;
 	private planningCircle: Phaser.GameObjects.Graphics | null = null;
+	// Track visibility window for recently completed missions
+	private recentCompletedMissions = new Map<string, number>(); // missionId -> expiresAt (epoch ms)
+	private recentCompletedCleanupTimer?: Phaser.Time.TimerEvent;
 
 	constructor() {
 		super({ key: 'GameScene' });
@@ -83,6 +94,13 @@ export class GameScene extends Phaser.Scene {
 		// Resource nodes will be loaded from server via gameState
 
 		console.log('Game Scene initialized');
+
+		// Periodically clean up expired completed mission visuals
+		this.recentCompletedCleanupTimer = this.time.addEvent({
+			delay: 1000,
+			loop: true,
+			callback: () => this.cleanupExpiredCompletedArtifacts(),
+		});
 	}
 
 	private createMissionTooltip() {
@@ -202,16 +220,32 @@ export class GameScene extends Phaser.Scene {
 		}
 	}
 
+	// Mission color helper
+	private getMissionColor(mission: Mission, playerAddress?: string | null): number {
+		if (mission.status === 'completed') return COLOR_COMPLETED;
+		const isSelf = !!playerAddress && mission.playerAddress?.toLowerCase() === playerAddress.toLowerCase();
+		return isSelf ? COLOR_SELF_ACTIVE : COLOR_OTHER_ACTIVE;
+	}
+
+
+	private isSelfMission(mission: Mission, playerAddress?: string | null): boolean {
+		return !!playerAddress && mission.playerAddress?.toLowerCase() === playerAddress.toLowerCase();
+	}
+
+	private isSelfActiveMission(mission: Mission, playerAddress?: string | null): boolean {
+		return mission.status === 'active' && this.isSelfMission(mission, playerAddress);
+	}
+
 private updateWorldDisplay(state: GameState) {
 		if (state.resourceNodes && state.resourceNodes.length > 0) {
 			this.updateResourceNodes(state.resourceNodes);
-			// Use playerMissions for indicators too, not global activeMissions
-			this.updateMissionIndicators(state.playerMissions || []);
+			// Use world missions for indicators
+			this.updateMissionIndicators(state.activeMissions || []);
 		}
 
 		// Update mission routes and drifter positions
-		if (state.playerMissions) {
-			this.updateMissionRoutes(state.playerMissions);
+		if (state.activeMissions) {
+			this.updateMissionRoutes(state.activeMissions);
 		}
 
 		// Update mission planning overlay (dotted line and highlight) when planning
@@ -446,46 +480,47 @@ private updateWorldDisplay(state: GameState) {
 	private updateMissionIndicators(missions: any[]) {
 		console.log(`[GameScene] 🎯 Updating mission indicators for ${missions.length} missions`);
 
-		// Clear existing indicators completely
+		// Clear existing indicators completely for a clean redraw
 		this.missionIndicators.forEach((indicator, missionId) => {
-			console.log(`[GameScene] 🗑️ Destroying indicator for mission: ${missionId}`);
 			indicator.destroy();
 		});
 		this.missionIndicators.clear();
 
-		// Filter to only active missions with valid target nodes
-		const activeMissions = missions.filter((mission) => mission.status === 'active' && mission.targetNodeId);
+		const stateNow = gameState.getState();
+		const playerAddress = stateNow.playerAddress;
 
-		console.log(`[GameScene] 🎯 Creating indicators for ${activeMissions.length} active missions`);
+		const playerAddressNow = gameState.getState().playerAddress;
+		// Determine which missions should be drawn and with what color
+		const toRender = missions
+			.filter((m: Mission) => !!m.targetNodeId)
+			.map((m: Mission) => ({ mission: m, color: this.getMissionRenderColor(m, playerAddressNow) }))
+			.filter((e) => e.color !== null) as { mission: Mission; color: number }[];
+		console.log(`[GameScene] 🎯 Creating indicators for ${toRender.length} missions (colored by owner/status)`);
 
-		// Add indicators for active missions
-		activeMissions.forEach((mission) => {
+		toRender.forEach(({ mission, color }) => {
 			const node = this.resourceNodes.get(mission.targetNodeId);
-			if (node) {
-				console.log(`[GameScene] ➥ Creating contested indicator for node: ${mission.targetNodeId} at (${node.x}, ${node.y})`);
-				const indicator = this.add.graphics();
-				indicator.lineStyle(3, 0x00ff00);
-				indicator.strokeCircle(node.x, node.y, 40);
-				console.log(
-					`[GameScene] 🟢 Drew large mission indicator circle at (${node.x}, ${node.y}) with radius 40 for mission ${mission.id.slice(-6)}`,
-				);
-
-				// Animate the indicator
-				this.tweens.add({
-					targets: indicator,
-					alpha: { from: 1, to: 0.3 },
-					duration: 1000,
-					yoyo: true,
-					repeat: -1,
-				});
-
-				this.missionIndicators.set(mission.id, indicator);
-			} else {
+			if (!node) {
 				console.warn(`[GameScene] ⚠️ Cannot create indicator - node ${mission.targetNodeId} not found`);
+				return;
 			}
+
+			const indicator = this.add.graphics();
+			indicator.lineStyle(3, color as number, 1);
+			indicator.strokeCircle(node.x, node.y, 40);
+
+			// Animate the indicator pulse
+			this.tweens.add({
+				targets: indicator,
+				alpha: { from: 1, to: 0.3 },
+				duration: 1000,
+				yoyo: true,
+				repeat: -1,
+			});
+
+			this.missionIndicators.set(mission.id, indicator);
 		});
 
-		console.log(`[GameScene] 🎯 Mission indicators update complete. Active: ${this.missionIndicators.size}`);
+		console.log(`[GameScene] 🎯 Mission indicators update complete. Rendered: ${this.missionIndicators.size}`);
 	}
 
 	private selectResourceNode(nodeId: string, nodeData: any) {
@@ -614,11 +649,11 @@ private updateWorldDisplay(state: GameState) {
 		return loadPromise;
 	}
 
-	private updateMissionRoutes(playerMissions: Mission[]) {
-		console.log(`[GameScene] 🎬 updateMissionRoutes called with ${playerMissions.length} missions`);
+	private updateMissionRoutes(missions: Mission[]) {
+		console.log(`[GameScene] 🎬 updateMissionRoutes called with ${missions.length} missions`);
 		console.log(
 			`[GameScene]   ALL mission statuses:`,
-			playerMissions.map((m) => `${m.id.slice(-6)}:${m.status}`),
+			missions.map((m) => `${m.id.slice(-6)}:${m.status}`),
 		);
 
 		// Bump render version to invalidate any in-flight async icon loads
@@ -631,13 +666,9 @@ private updateWorldDisplay(state: GameState) {
 
 		// Clear existing routes and drifters
 		this.missionRoutes.forEach((route, missionId) => {
-			console.log(`[GameScene] 🗑️ Destroying route for mission ${missionId.slice(-6)}`);
 			route.destroy();
 		});
 		this.missionDrifters.forEach((container, missionId) => {
-			console.log(
-				`[GameScene] 🗑️ Destroying drifter container for mission ${missionId.slice(-6)} at position (${container.x}, ${container.y})`,
-			);
 			// Ensure children are destroyed to prevent ghost images
 			try {
 				(container as any).removeAll?.(true);
@@ -647,13 +678,25 @@ private updateWorldDisplay(state: GameState) {
 		this.missionRoutes.clear();
 		this.missionDrifters.clear();
 
-		// Create routes and drifters for active player missions
-		const activeMissions = playerMissions.filter((m) => m.status === 'active');
-		console.log(`[GameScene] 🚀 Creating new routes/drifters for ${activeMissions.length} active missions`);
+		const playerAddressNow = gameState.getState().playerAddress;
+		// Create color-coded routes for all missions that should be visible
+		const routeMissions = missions
+			.filter((m) => !!m.targetNodeId)
+			.map((m) => ({ mission: m, color: this.getMissionRenderColor(m, playerAddressNow) }))
+			.filter((e) => e.color !== null) as { mission: Mission; color: number }[];
+		console.log(`[GameScene] 🚀 Creating routes for ${routeMissions.length} missions (visible states)`);
 
-		activeMissions.forEach((mission) => {
-			console.log(`[GameScene] 🎯 Processing active mission ${mission.id.slice(-6)} targeting node ${mission.targetNodeId}`);
-			this.createMissionRoute(mission);
+		routeMissions.forEach(({ mission, color }) => {
+			this.createMissionRoute(mission, color);
+		});
+
+		// Create drifters only for the current user's ACTIVE missions
+		const stateNow = gameState.getState();
+		const selfActive = missions.filter(
+			(m) => m.status === 'active' && !!stateNow.playerAddress && m.playerAddress?.toLowerCase() === stateNow.playerAddress.toLowerCase(),
+		);
+		console.log(`[GameScene] 👤 Creating drifters for ${selfActive.length} self active missions`);
+		selfActive.forEach((mission) => {
 			this.createMissionDrifter(mission, renderVersion);
 		});
 
@@ -662,7 +705,7 @@ private updateWorldDisplay(state: GameState) {
 		);
 	}
 
-	private createMissionRoute(mission: Mission) {
+	private createMissionRoute(mission: Mission, color: number) {
 		const currentState = gameState.getState();
 		const targetNode = currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId);
 		if (!targetNode) {
@@ -674,15 +717,10 @@ private updateWorldDisplay(state: GameState) {
 		const { x: nodeX, y: nodeY } = targetNode.coordinates;
 		const routeGraphics = this.add.graphics();
 
-		// Draw route line from town to resource node
-		routeGraphics.lineStyle(2, 0x888888, 0.6);
-		routeGraphics.lineBetween(TOWN_X, TOWN_Y, nodeX, nodeY);
-
-		// Add dashed effect
-		routeGraphics.lineStyle(2, 0xaaaaaaa, 0.8);
+		// Draw dashed route from town to resource node in the provided mission color
+		routeGraphics.lineStyle(2, color, 0.9);
 		const distance = Phaser.Math.Distance.Between(TOWN_X, TOWN_Y, nodeX, nodeY);
-		const steps = Math.floor(distance / 20);
-
+		const steps = Math.max(1, Math.floor(distance / 20));
 		for (let i = 0; i < steps; i += 2) {
 			const t1 = i / steps;
 			const t2 = Math.min((i + 1) / steps, 1);
@@ -690,7 +728,6 @@ private updateWorldDisplay(state: GameState) {
 			const y1 = TOWN_Y + (nodeY - TOWN_Y) * t1;
 			const x2 = TOWN_X + (nodeX - TOWN_X) * t2;
 			const y2 = TOWN_Y + (nodeY - TOWN_Y) * t2;
-
 			routeGraphics.lineBetween(x1, y1, x2, y2);
 		}
 
@@ -735,9 +772,9 @@ private updateWorldDisplay(state: GameState) {
 			return;
 		}
 
-		// Mission indicator ring
+		// Mission indicator ring (amber for self active missions)
 		const missionIndicator = this.add.graphics();
-		missionIndicator.lineStyle(2, 0x00ff00);
+		missionIndicator.lineStyle(2, COLOR_SELF_ACTIVE);
 		missionIndicator.strokeCircle(0, 0, 14);
 		console.log(
 			`[GameScene] 🟢 Created mission indicator ring for mission ${mission.id.slice(-6)} at container position (0, 0) - will be positioned later`,
@@ -1062,6 +1099,69 @@ private updateWorldDisplay(state: GameState) {
 		if (this.planningCircle) {
 			this.planningCircle.destroy();
 			this.planningCircle = null;
+		}
+	}
+
+	private getMissionRenderColor(mission: Mission, playerAddress?: string | null): number | null {
+		// Hide missions that are fully completed/claimed on the server
+		if (mission.status === 'completed') return null;
+		const isSelf = this.isSelfMission(mission, playerAddress);
+		if (mission.status === 'active') {
+			// If this is the player's mission and it's reached its end time, show as green (ready to claim)
+			const endTs = mission.completionTime instanceof Date ? mission.completionTime.getTime() : new Date(mission.completionTime).getTime();
+			if (isSelf && !isNaN(endTs) && Date.now() >= endTs) {
+				return COLOR_COMPLETED; // ready to claim, awaiting collection
+			}
+			// Otherwise, show active colors (amber for self, red for others)
+			return isSelf ? COLOR_SELF_ACTIVE : COLOR_OTHER_ACTIVE;
+		}
+		return null;
+	}
+
+	private cleanupExpiredCompletedArtifacts() {
+		const now = Date.now();
+		// Remove expired entries from cache
+		for (const [id, expiresAt] of this.recentCompletedMissions) {
+			if (expiresAt <= now) {
+				this.recentCompletedMissions.delete(id);
+			}
+		}
+		// Remove any indicator/route still present for fully expired completed missions
+		const stateNow = gameState.getState();
+		const missions = stateNow.activeMissions || [];
+		for (const [id, indicator] of this.missionIndicators) {
+			const m = missions.find((mm) => mm.id === id);
+			if (!m) {
+				indicator.destroy();
+				this.missionIndicators.delete(id);
+				continue;
+			}
+			if (m.status === 'completed') {
+				const expiresAt = this.recentCompletedMissions.get(id) ?? 0;
+				const completionTs = (m.completionTime instanceof Date ? m.completionTime.getTime() : new Date(m.completionTime).getTime());
+				const shouldExpire = now > (expiresAt || completionTs + RECENT_COMPLETED_MS);
+				if (shouldExpire) {
+					indicator.destroy();
+					this.missionIndicators.delete(id);
+				}
+			}
+		}
+		for (const [id, route] of this.missionRoutes) {
+			const m = missions.find((mm) => mm.id === id);
+			if (!m) {
+				route.destroy();
+				this.missionRoutes.delete(id);
+				continue;
+			}
+			if (m.status === 'completed') {
+				const expiresAt = this.recentCompletedMissions.get(id) ?? 0;
+				const completionTs = (m.completionTime instanceof Date ? m.completionTime.getTime() : new Date(m.completionTime).getTime());
+				const shouldExpire = now > (expiresAt || completionTs + RECENT_COMPLETED_MS);
+				if (shouldExpire) {
+					route.destroy();
+					this.missionRoutes.delete(id);
+				}
+			}
 		}
 	}
 }
