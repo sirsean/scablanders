@@ -44,9 +44,11 @@ export class DriftersPanel {
 			return;
 		}
 
-    // Preserve scroll position of the list before re-render
+    // Preserve scroll position of the outer panel and inner list before re-render
+    const panelEl = document.getElementById('drifters-panel') as HTMLElement | null;
+    const prevPanelScrollTop = panelEl?.scrollTop ?? 0;
     const listElBefore = document.getElementById('drifters-panel-drifter-list-container') as HTMLElement | null;
-    const prevScrollTop = listElBefore?.scrollTop ?? 0;
+    const prevListScrollTop = listElBefore?.scrollTop ?? 0;
 
 		if (state.isLoadingProfile) {
 			content.innerHTML = '<p>Loading drifters...</p>';
@@ -80,14 +82,16 @@ export class DriftersPanel {
       state,
     });
 
-    // Restore scroll position after re-render
-    if (prevScrollTop > 0) {
-      requestAnimationFrame(() => {
-        const listElAfter = document.getElementById('drifters-panel-drifter-list-container') as HTMLElement | null;
-        if (listElAfter) {
-          listElAfter.scrollTop = prevScrollTop;
-        }
-      });
-    }
+    // Restore scroll positions after re-render
+    requestAnimationFrame(() => {
+      const listElAfter = document.getElementById('drifters-panel-drifter-list-container') as HTMLElement | null;
+      if (listElAfter) {
+        listElAfter.scrollTop = prevListScrollTop;
+      }
+      const panelElAfter = document.getElementById('drifters-panel') as HTMLElement | null;
+      if (panelElAfter) {
+        panelElAfter.scrollTop = prevPanelScrollTop;
+      }
+    });
 	}
 }
