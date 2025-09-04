@@ -88,7 +88,7 @@ class GameStateManager extends EventTarget {
 		selectedVehicleInstanceId: null,
 		drifterSortBy: 'combat',
 		showMissionPanel: false,
-		showMercenaryPanel: false,
+		showDriftersPanel: false,
 		showProfilePanel: false,
 		showActiveMissionsPanel: false,
 		showMarketPanel: false,
@@ -609,8 +609,8 @@ class GameStateManager extends EventTarget {
 		this.setState({ showMissionPanel: false });
 	}
 
-	toggleMercenaryPanel() {
-		this.setState({ showMercenaryPanel: !this.state.showMercenaryPanel });
+	toggleDriftersPanel() {
+		this.setState({ showDriftersPanel: !this.state.showDriftersPanel });
 	}
 
 	toggleProfilePanel() {

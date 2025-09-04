@@ -12,7 +12,7 @@ import { ProfilePanel } from './ProfilePanel';
 export class UIManager {
 	private notificationContainer: HTMLElement | null = null;
 	private missionPanel: HTMLElement | null = null;
-	private mercenaryPanel: HTMLElement | null = null;
+	private driftersPanel: HTMLElement | null = null;
 	private profilePanel: HTMLElement | null = null;
 	private activeMissionsPanel: HTMLElement | null = null;
 	private marketPanel: HTMLElement | null = null;
@@ -70,7 +70,7 @@ export class UIManager {
 		this.createNotificationContainer();
 		this.createActionMenu();
 		this.createMissionPanel();
-		this.createMercenaryPanel();
+		this.createDriftersPanel();
 		this.createProfilePanel();
 		this.createActiveMissionsPanel();
 		this.createMarketPanel();
@@ -96,7 +96,7 @@ export class UIManager {
 		// Action buttons (vertical) - desired order top->bottom
 		const buttons: { id: string; label: string }[] = [
 			{ id: 'toggle-profile', label: 'Profile (P)' },
-			{ id: 'toggle-mercenaries', label: 'Drifters (D)' },
+			{ id: 'toggle-drifters', label: 'Drifters (D)' },
 			{ id: 'toggle-vehicles', label: 'Vehicles (V)' },
 			{ id: 'toggle-market', label: 'Market (M)' },
 			{ id: 'toggle-missions', label: 'Active Missions (A)' },
@@ -159,9 +159,9 @@ export class UIManager {
 		document.body.appendChild(this.missionPanel);
 	}
 
-	private createMercenaryPanel() {
-		this.mercenaryPanel = DriftersPanel.createDriftersPanel();
-		document.body.appendChild(this.mercenaryPanel);
+	private createDriftersPanel() {
+		this.driftersPanel = DriftersPanel.createDriftersPanel();
+		document.body.appendChild(this.driftersPanel);
 	}
 
 	private createProfilePanel() {
@@ -201,8 +201,8 @@ export class UIManager {
 			gameState.toggleMissionPanel();
 		});
 
-		document.getElementById('close-mercenary-panel')?.addEventListener('click', () => {
-			gameState.toggleMercenaryPanel();
+		document.getElementById('close-drifters-panel')?.addEventListener('click', () => {
+			gameState.toggleDriftersPanel();
 		});
 
 		document.getElementById('close-profile-panel')?.addEventListener('click', () => {
@@ -229,8 +229,8 @@ export class UIManager {
 		});
 
 		// Action menu buttons
-		document.getElementById('toggle-mercenaries')?.addEventListener('click', () => {
-			gameState.toggleMercenaryPanel();
+		document.getElementById('toggle-drifters')?.addEventListener('click', () => {
+			gameState.toggleDriftersPanel();
 		});
 		document.getElementById('toggle-missions')?.addEventListener('click', () => {
 			gameState.toggleActiveMissionsPanel();
@@ -255,9 +255,9 @@ export class UIManager {
 					if (gameState.getState().showMissionPanel) {
 						gameState.toggleMissionPanel();
 					}
-					if (gameState.getState().showMercenaryPanel) {
-						gameState.toggleMercenaryPanel();
-					}
+				if (gameState.getState().showDriftersPanel) {
+					gameState.toggleDriftersPanel();
+				}
 					if (gameState.getState().showProfilePanel) {
 						gameState.toggleProfilePanel();
 					}
@@ -276,7 +276,7 @@ export class UIManager {
 					break;
 				case 'd':
 				case 'D':
-					gameState.toggleMercenaryPanel();
+					gameState.toggleDriftersPanel();
 					break;
 				case 'p':
 				case 'P':
@@ -297,9 +297,9 @@ export class UIManager {
 			MissionPanel.updateMissionPanel(state);
 		}
 
-		if (this.mercenaryPanel) {
-			this.mercenaryPanel.style.display = state.showMercenaryPanel ? 'block' : 'none';
-			if (state.showMercenaryPanel) {
+		if (this.driftersPanel) {
+			this.driftersPanel.style.display = state.showDriftersPanel ? 'block' : 'none';
+			if (state.showDriftersPanel) {
 				DriftersPanel.updateDriftersPanel(state);
 			}
 		}
@@ -550,11 +550,11 @@ export class UIManager {
 			this.profilePanel,
 			this.logPanel,
 			this.activeMissionsPanel,
-			this.mercenaryPanel,
-			this.drifterInfoPanel,
-			this.missionPanel,
 			this.vehiclePanel,
+			this.driftersPanel,
+			this.drifterInfoPanel,
 			this.marketPanel,
+			this.missionPanel,
 		];
 
 		const panels: HTMLElement[] = order.filter((p): p is HTMLElement => !!p && p.style.display !== 'none');

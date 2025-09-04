@@ -1,9 +1,9 @@
 import type { GameState } from '../gameState';
 
 export class DriftersPanel {
-	static createDriftersPanel(): HTMLElement {
-		const panel = document.createElement('div');
-		panel.id = 'mercenary-panel';
+  static createDriftersPanel(): HTMLElement {
+    const panel = document.createElement('div');
+    panel.id = 'drifters-panel';
 		panel.className = 'game-panel';
 		panel.style.cssText = `
       position: fixed;
@@ -26,9 +26,9 @@ export class DriftersPanel {
 		panel.innerHTML = `
       <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 16px;">
         <h3 style="margin: 0; color: #FFD700;">Owned Drifters</h3>
-        <button id="close-mercenary-panel" style="background: none; border: 1px solid #666; color: #fff; padding: 4px 8px; cursor: pointer; margin-left: auto;">✕</button>
+        <button id=\"close-drifters-panel\" style=\"background: none; border: 1px solid #666; color: #fff; padding: 4px 8px; cursor: pointer; margin-left: auto;\">✕</button>
       </div>
-      <div id="mercenary-content">
+      <div id=\"drifters-content\">
         <p>Loading drifters...</p>
       </div>
     `;
@@ -36,8 +36,8 @@ export class DriftersPanel {
 		return panel;
 	}
 
-	static updateDriftersPanel(state: GameState) {
-		const content = document.getElementById('mercenary-content');
+  static updateDriftersPanel(state: GameState) {
+    const content = document.getElementById('drifters-content');
 		if (!content) {
 			return;
 		}
