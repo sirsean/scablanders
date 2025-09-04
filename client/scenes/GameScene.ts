@@ -120,7 +120,9 @@ export class GameScene extends Phaser.Scene {
 	}
 
 	private showMissionTooltip(pointer: Phaser.Input.Pointer, mission: Mission) {
-		if (!this.missionTooltip) {return;}
+		if (!this.missionTooltip) {
+			return;
+		}
 
 		const textObject = this.missionTooltip.getAt(1) as Phaser.GameObjects.Text;
 		const bgObject = this.missionTooltip.getAt(0) as Phaser.GameObjects.Graphics;
@@ -204,7 +206,9 @@ export class GameScene extends Phaser.Scene {
 		const endDate = completionTime instanceof Date ? completionTime : new Date(completionTime);
 		const remainingMs = endDate.getTime() - new Date().getTime();
 
-		if (remainingMs <= 0) {return 'Mission Complete';}
+		if (remainingMs <= 0) {
+			return 'Mission Complete';
+		}
 
 		const totalSeconds = Math.floor(remainingMs / 1000);
 		const hours = Math.floor(totalSeconds / 3600);
@@ -222,7 +226,9 @@ export class GameScene extends Phaser.Scene {
 
 	// Mission color helper
 	private getMissionColor(mission: Mission, playerAddress?: string | null): number {
-		if (mission.status === 'completed') {return COLOR_COMPLETED;}
+		if (mission.status === 'completed') {
+			return COLOR_COMPLETED;
+		}
 		const isSelf = !!playerAddress && mission.playerAddress?.toLowerCase() === playerAddress.toLowerCase();
 		return isSelf ? COLOR_SELF_ACTIVE : COLOR_OTHER_ACTIVE;
 	}
@@ -325,7 +331,9 @@ export class GameScene extends Phaser.Scene {
 		const nodeSprite = this.resourceNodes.get(resource.id);
 		const nodeLabel = this.nodeLabels.get(resource.id);
 
-		if (!nodeSprite || !nodeLabel) {return;}
+		if (!nodeSprite || !nodeLabel) {
+			return;
+		}
 
 		// Update label text with new yield amount
 		const rarityText = resource.rarity !== 'common' ? ` (${resource.rarity.toUpperCase()})` : '';
@@ -480,7 +488,7 @@ export class GameScene extends Phaser.Scene {
 		console.log(`[GameScene] 🎯 Updating mission indicators for ${missions.length} missions`);
 
 		// Clear existing indicators completely for a clean redraw
-this.missionIndicators.forEach((indicator, _missionId) => {
+		this.missionIndicators.forEach((indicator, _missionId) => {
 			indicator.destroy();
 		});
 		this.missionIndicators.clear();
@@ -619,8 +627,12 @@ this.missionIndicators.forEach((indicator, _missionId) => {
 
 	private async ensureDrifterTinyTexture(tokenId: number | string): Promise<string> {
 		const key = `drifter-${tokenId}-tiny`;
-		if (this.textures.exists(key)) {return key;}
-		if (this.pendingTinyLoads.has(key)) {return this.pendingTinyLoads.get(key)!;}
+		if (this.textures.exists(key)) {
+			return key;
+		}
+		if (this.pendingTinyLoads.has(key)) {
+			return this.pendingTinyLoads.get(key)!;
+		}
 
 		const loadPromise = new Promise<string>((resolve) => {
 			const onComplete = (loadedKey: string) => {
@@ -662,10 +674,10 @@ this.missionIndicators.forEach((indicator, _missionId) => {
 		);
 
 		// Clear existing routes and drifters
-this.missionRoutes.forEach((route, _missionId) => {
+		this.missionRoutes.forEach((route, _missionId) => {
 			route.destroy();
 		});
-this.missionDrifters.forEach((container, _missionId) => {
+		this.missionDrifters.forEach((container, _missionId) => {
 			// Ensure children are destroyed to prevent ghost images
 			try {
 				(container as any).removeAll?.(true);
@@ -816,9 +828,11 @@ this.missionDrifters.forEach((container, _missionId) => {
 		this.missionDrifters.set(mission.id, drifterContainer);
 	}
 
-private layoutDrifterIcons(container: Phaser.GameObjects.Container, icons: Phaser.GameObjects.Image[], _iconSize: number) {
+	private layoutDrifterIcons(container: Phaser.GameObjects.Container, icons: Phaser.GameObjects.Image[], _iconSize: number) {
 		const n = icons.length;
-		if (n === 0) {return;}
+		if (n === 0) {
+			return;
+		}
 
 		if (n === 1) {
 			icons[0].setPosition(0, 0);
@@ -969,7 +983,9 @@ private layoutDrifterIcons(container: Phaser.GameObjects.Container, icons: Phase
 
 	update() {
 		const cursors = this.input.keyboard?.createCursorKeys();
-		if (!cursors) {return;}
+		if (!cursors) {
+			return;
+		}
 
 		// ESC to close mission panel and deselect
 		if (Phaser.Input.Keyboard.JustDown(cursors.space)) {
@@ -1101,7 +1117,9 @@ private layoutDrifterIcons(container: Phaser.GameObjects.Container, icons: Phase
 
 	private getMissionRenderColor(mission: Mission, playerAddress?: string | null): number | null {
 		// Hide missions that are fully completed/claimed on the server
-		if (mission.status === 'completed') {return null;}
+		if (mission.status === 'completed') {
+			return null;
+		}
 		const isSelf = this.isSelfMission(mission, playerAddress);
 		if (mission.status === 'active') {
 			// If this is the player's mission and it's reached its end time, show as green (ready to claim)

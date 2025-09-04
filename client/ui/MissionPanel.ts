@@ -54,7 +54,9 @@ export class MissionPanel {
 
 	static updateMissionPanel(state: GameState) {
 		const content = document.getElementById('mission-content');
-		if (!content) {return;}
+		if (!content) {
+			return;
+		}
 
 		// Preserve scroll position of drifter list before re-render
 		const drifterList = document.getElementById('drifter-list-container') as HTMLElement;
@@ -413,7 +415,6 @@ export class MissionPanel {
 	}
 
 	private static setupMissionPanelHandlers() {
-
 		// Drifter selection - handle multi-selection
 		document.querySelectorAll('.drifter-option').forEach((option) => {
 			option.addEventListener('click', (event) => {
@@ -422,7 +423,9 @@ export class MissionPanel {
 				const isBusy = option.getAttribute('data-busy') === 'true';
 
 				// Don't allow selection of busy drifters
-if (isBusy) { return; }
+				if (isBusy) {
+					return;
+				}
 
 				// Toggle selection in game state
 				gameState.toggleDrifterSelection(drifterId);
@@ -480,7 +483,9 @@ if (isBusy) { return; }
 
 	static updateStartButton() {
 		const button = document.getElementById('start-mission-btn') as HTMLButtonElement;
-		if (!button) {return;}
+		if (!button) {
+			return;
+		}
 
 		const state = gameState.getState();
 		const selectedIds = state.selectedDrifterIds || [];

@@ -14,7 +14,6 @@ const activeSessions = new Map<string, WebSocketSession>();
 // TODO: Set up proper cross-isolate communication when available
 // BroadcastChannel is not available in current environment
 
-
 /**
  * Handle WebSocket upgrade request and manage connections
  */
@@ -135,7 +134,9 @@ export function handleWebSocket(request: Request, _env: Env): Response {
  */
 async function handleWebSocketMessage(sessionId: string, message: any, env: Env) {
 	const session = activeSessions.get(sessionId);
-	if (!session) {return;}
+	if (!session) {
+		return;
+	}
 
 	switch (message.type) {
 		case 'authenticate':
@@ -176,7 +177,9 @@ async function handleWebSocketMessage(sessionId: string, message: any, env: Env)
  */
 async function handleAuthentication(sessionId: string, token: string, _env: Env) {
 	const session = activeSessions.get(sessionId);
-	if (!session) {return;}
+	if (!session) {
+		return;
+	}
 
 	try {
 		// Verify JWT token (simplified - you might want to use the same auth logic from your routes)
@@ -218,7 +221,9 @@ async function handleAuthentication(sessionId: string, token: string, _env: Env)
  */
 async function handleSubscription(sessionId: string, events: string[], _env: Env) {
 	const session = activeSessions.get(sessionId);
-	if (!session || !session.authenticated || !session.playerAddress) {return;}
+	if (!session || !session.authenticated || !session.playerAddress) {
+		return;
+	}
 
 	// All subscriptions are handled by GameDO - no additional work needed here
 	// The GameDO already registered this session and will send appropriate events
@@ -245,7 +250,7 @@ export function sendToSession(sessionId: string, message: GameWebSocketMessage) 
  * Broadcast message to all authenticated sessions
  */
 export function broadcastToAll(message: GameWebSocketMessage) {
-for (const [_sessionId, session] of activeSessions) {
+	for (const [_sessionId, session] of activeSessions) {
 		if (session.authenticated && session.websocket.readyState === WebSocket.READY_STATE_OPEN) {
 			session.websocket.send(JSON.stringify(message));
 		}
@@ -256,7 +261,7 @@ for (const [_sessionId, session] of activeSessions) {
  * Broadcast message to specific player
  */
 export function sendToPlayer(playerAddress: string, message: GameWebSocketMessage) {
-for (const [_sessionId, session] of activeSessions) {
+	for (const [_sessionId, session] of activeSessions) {
 		if (session.playerAddress === playerAddress && session.websocket.readyState === WebSocket.READY_STATE_OPEN) {
 			session.websocket.send(JSON.stringify(message));
 		}

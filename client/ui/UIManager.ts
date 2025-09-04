@@ -6,7 +6,7 @@ import { VehiclePanel } from './VehiclePanel';
 import { LogPanel } from './LogPanel';
 import { DrifterInfoPanel } from './DrifterInfoPanel';
 import { MissionPanel } from './MissionPanel';
-import { MercenaryPanel } from './MercenaryPanel';
+import { DriftersPanel } from './DriftersPanel';
 import { ProfilePanel } from './ProfilePanel';
 
 export class UIManager {
@@ -160,7 +160,7 @@ export class UIManager {
 	}
 
 	private createMercenaryPanel() {
-		this.mercenaryPanel = MercenaryPanel.createMercenaryPanel();
+		this.mercenaryPanel = DriftersPanel.createDriftersPanel();
 		document.body.appendChild(this.mercenaryPanel);
 	}
 
@@ -252,9 +252,15 @@ export class UIManager {
 				case 'Escape':
 					// Close all panels
 					gameState.selectResourceNode(null);
-					if (gameState.getState().showMissionPanel) {gameState.toggleMissionPanel();}
-					if (gameState.getState().showMercenaryPanel) {gameState.toggleMercenaryPanel();}
-					if (gameState.getState().showProfilePanel) {gameState.toggleProfilePanel();}
+					if (gameState.getState().showMissionPanel) {
+						gameState.toggleMissionPanel();
+					}
+					if (gameState.getState().showMercenaryPanel) {
+						gameState.toggleMercenaryPanel();
+					}
+					if (gameState.getState().showProfilePanel) {
+						gameState.toggleProfilePanel();
+					}
 					break;
 				case 'a':
 				case 'A':
@@ -294,7 +300,7 @@ export class UIManager {
 		if (this.mercenaryPanel) {
 			this.mercenaryPanel.style.display = state.showMercenaryPanel ? 'block' : 'none';
 			if (state.showMercenaryPanel) {
-				MercenaryPanel.updateMercenaryPanel(state);
+				DriftersPanel.updateDriftersPanel(state);
 			}
 		}
 
@@ -357,7 +363,9 @@ export class UIManager {
 	}
 
 	private updateNotifications(notifications: GameNotification[]) {
-		if (!this.notificationContainer) {return;}
+		if (!this.notificationContainer) {
+			return;
+		}
 
 		this.notificationContainer.innerHTML = notifications
 			.map(
@@ -404,11 +412,19 @@ export class UIManager {
 		const walletInfo = document.getElementById('wallet-info');
 
 		if (state.isAuthenticated && state.playerAddress) {
-			if (connectButton) {connectButton.style.display = 'none';}
-			if (walletInfo) {walletInfo.style.display = 'block';}
+			if (connectButton) {
+				connectButton.style.display = 'none';
+			}
+			if (walletInfo) {
+				walletInfo.style.display = 'block';
+			}
 		} else {
-			if (connectButton) {connectButton.style.display = 'block';}
-			if (walletInfo) {walletInfo.style.display = 'none';}
+			if (connectButton) {
+				connectButton.style.display = 'block';
+			}
+			if (walletInfo) {
+				walletInfo.style.display = 'none';
+			}
 		}
 
 		// Update Active Missions button highlighting
@@ -425,7 +441,9 @@ export class UIManager {
 
 		const now = new Date();
 		return state.playerMissions.some((mission) => {
-			if (mission.status !== 'active') {return false;}
+			if (mission.status !== 'active') {
+				return false;
+			}
 
 			const completionTime = mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime);
 
@@ -438,7 +456,9 @@ export class UIManager {
 	 */
 	private updateActiveMissionsButton(state: GameState) {
 		const button = document.getElementById('toggle-missions');
-		if (!button) {return;}
+		if (!button) {
+			return;
+		}
 
 		const hasCompleted = this.hasCompletedMissions(state);
 		const completedCount = this.getCompletedMissionsCount(state);
@@ -480,7 +500,9 @@ export class UIManager {
 
 		const now = new Date();
 		return state.playerMissions.filter((mission) => {
-			if (mission.status !== 'active') {return false;}
+			if (mission.status !== 'active') {
+				return false;
+			}
 
 			const completionTime = mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime);
 
@@ -581,9 +603,13 @@ export class UIManager {
 		const diff = now.getTime() - timestamp.getTime();
 		const seconds = Math.floor(diff / 1000);
 
-		if (seconds < 60) {return `${seconds}s ago`;}
+		if (seconds < 60) {
+			return `${seconds}s ago`;
+		}
 		const minutes = Math.floor(seconds / 60);
-		if (minutes < 60) {return `${minutes}m ago`;}
+		if (minutes < 60) {
+			return `${minutes}m ago`;
+		}
 		const hours = Math.floor(minutes / 60);
 		return `${hours}h ago`;
 	}

@@ -1,7 +1,7 @@
 import type { GameState } from '../gameState';
 
-export class MercenaryPanel {
-	static createMercenaryPanel(): HTMLElement {
+export class DriftersPanel {
+	static createDriftersPanel(): HTMLElement {
 		const panel = document.createElement('div');
 		panel.id = 'mercenary-panel';
 		panel.className = 'game-panel';
@@ -36,7 +36,7 @@ export class MercenaryPanel {
 		return panel;
 	}
 
-	static updateMercenaryPanel(state: GameState) {
+	static updateDriftersPanel(state: GameState) {
 		const content = document.getElementById('mercenary-content');
 		if (!content) {
 			return;

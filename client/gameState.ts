@@ -362,7 +362,9 @@ class GameStateManager extends EventTarget {
 	}
 
 	async loadPlayerProfile() {
-		if (this.state.isLoadingProfile) {return;}
+		if (this.state.isLoadingProfile) {
+			return;
+		}
 
 		this.setState({ isLoadingProfile: true });
 
@@ -381,7 +383,9 @@ class GameStateManager extends EventTarget {
 	}
 
 	async loadWorldState() {
-		if (this.state.isLoadingWorld) {return;}
+		if (this.state.isLoadingWorld) {
+			return;
+		}
 
 		this.setState({ isLoadingWorld: true });
 
@@ -401,7 +405,9 @@ class GameStateManager extends EventTarget {
 	}
 
 	async loadMarketVehicles() {
-		if (this.state.isLoadingMarket) {return;}
+		if (this.state.isLoadingMarket) {
+			return;
+		}
 
 		this.setState({ isLoadingMarket: true });
 
@@ -665,7 +671,9 @@ class GameStateManager extends EventTarget {
 	}
 
 	async loadPlayerMissions() {
-		if (!this.state.playerAddress || this.state.isLoadingPlayerMissions) {return;}
+		if (!this.state.playerAddress || this.state.isLoadingPlayerMissions) {
+			return;
+		}
 
 		this.setState({ isLoadingPlayerMissions: true });
 

@@ -103,7 +103,9 @@ function computeStats(attributes) {
 	// Helper: build a lowercase map from trait_type to value for quick lookups
 	const attrMap = {};
 	(attributes || []).forEach((attr) => {
-		if (!attr || !attr.trait_type) {return;}
+		if (!attr || !attr.trait_type) {
+			return;
+		}
 		attrMap[attr.trait_type] = String(attr.value || '').trim();
 	});
 
@@ -174,10 +176,14 @@ function computeStats(attributes) {
 	};
 
 	const bumpFromKeywords = (text) => {
-		if (!text) {return;}
+		if (!text) {
+			return;
+		}
 		const t = lc(text);
 		const incOnce = (cond, fn) => {
-			if (cond) {fn();}
+			if (cond) {
+				fn();
+			}
 		};
 
 		// Combat indicators
@@ -259,13 +265,23 @@ function computeStats(attributes) {
 
 	// 5) Suit Pattern / Color very small tweaks
 	const suitPattern = lc(attrMap['Suit Pattern'] || '');
-	if (suitPattern.includes('flag')) {speed += 1;}
+	if (suitPattern.includes('flag')) {
+		speed += 1;
+	}
 
 	const suitColor = lc(attrMap['Suit Color'] || '');
-	if (suitColor.includes('white') || suitColor.includes('yellow') || suitColor.includes('orange')) {speed += 1;}
-	if (suitColor.includes('black') || suitColor.includes('brown')) {combat += 1;}
-	if (suitColor.includes('green')) {scavenging += 1;}
-	if (suitColor.includes('blue') || suitColor.includes('purple')) {tech += 1;}
+	if (suitColor.includes('white') || suitColor.includes('yellow') || suitColor.includes('orange')) {
+		speed += 1;
+	}
+	if (suitColor.includes('black') || suitColor.includes('brown')) {
+		combat += 1;
+	}
+	if (suitColor.includes('green')) {
+		scavenging += 1;
+	}
+	if (suitColor.includes('blue') || suitColor.includes('purple')) {
+		tech += 1;
+	}
 
 	// 6) Phase -> rarity and base hire cost scaffolding
 	let rarity = 'common';
@@ -574,8 +590,12 @@ async function backfillResize(drifters) {
 								await fs.writeFile(originalPath, buffer);
 								console.log(`✅ Re-downloaded corrupted image for token ${tokenId}`);
 
-								if (needsThumb) {thumbRedownload++;}
-								if (needsTiny) {tinyRedownload++;}
+								if (needsThumb) {
+									thumbRedownload++;
+								}
+								if (needsTiny) {
+									tinyRedownload++;
+								}
 
 								// Retry the resize operation
 								return await attemptResize(1);
@@ -598,8 +618,12 @@ async function backfillResize(drifters) {
 				await attemptResize();
 			} catch (error) {
 				console.error(`Failed to resize images for token ${tokenId}:`, error.message);
-				if (needsThumb) {thumbFail++;}
-				if (needsTiny) {tinyFail++;}
+				if (needsThumb) {
+					thumbFail++;
+				}
+				if (needsTiny) {
+					tinyFail++;
+				}
 				failedResizes.push({ tokenId, reason: error.message });
 			}
 		});

@@ -52,8 +52,12 @@ export async function getAvailableMercenaries(playerAddress: string, env: any): 
 	// Sort by owned first, then by rarity/hire cost
 	return mercenaries.sort((a, b) => {
 		// Owned drifters first
-		if (a.owned && !b.owned) {return -1;}
-		if (!a.owned && b.owned) {return 1;}
+		if (a.owned && !b.owned) {
+			return -1;
+		}
+		if (!a.owned && b.owned) {
+			return 1;
+		}
 
 		// Then by hire cost (lower first for non-owned)
 		return a.hireCost - b.hireCost;

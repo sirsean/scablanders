@@ -64,7 +64,9 @@ export class LogPanel {
 
 	static updateLogPanel(allEvents: { timestamp: Date; message: string; playerAddress?: string }[]) {
 		const content = document.getElementById('log-content');
-if (!content) { return; }
+		if (!content) {
+			return;
+		}
 		content.innerHTML = LogPanel.renderLogItems(allEvents);
 	}
 
@@ -76,7 +78,7 @@ if (!content) { return; }
 			try {
 				const events = getEvents();
 				LogPanel.updateLogPanel(events);
-} catch {
+			} catch {
 				// no-op
 			}
 		}, 1000) as any; // update every second
@@ -94,11 +96,17 @@ if (!content) { return; }
 		const t = timestamp instanceof Date ? timestamp.getTime() : new Date(timestamp).getTime();
 		const diff = Math.max(0, now - t);
 		const seconds = Math.floor(diff / 1000);
-		if (seconds < 60) {return `${seconds}s ago`;}
+		if (seconds < 60) {
+			return `${seconds}s ago`;
+		}
 		const minutes = Math.floor(seconds / 60);
-		if (minutes < 60) {return `${minutes}m ago`;}
+		if (minutes < 60) {
+			return `${minutes}m ago`;
+		}
 		const hours = Math.floor(minutes / 60);
-		if (hours < 24) {return `${hours}h ago`;}
+		if (hours < 24) {
+			return `${hours}h ago`;
+		}
 		const days = Math.floor(hours / 24);
 		return `${days}d ago`;
 	}
