@@ -1,0 +1,4 @@
+# Ignore build artifacts and vendor directories
+node_modules/
+public/
+
