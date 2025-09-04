@@ -82,16 +82,20 @@ export class DriftersPanel {
       state,
     });
 
-    // Restore scroll positions after re-render
-    requestAnimationFrame(() => {
+    // Restore scroll positions after re-render (multi-frame to avoid race with layout/image loads)
+    const restoreScroll = (tries: number) => {
       const listElAfter = document.getElementById('drifters-panel-drifter-list-container') as HTMLElement | null;
-      if (listElAfter) {
+      if (listElAfter != null) {
         listElAfter.scrollTop = prevListScrollTop;
       }
       const panelElAfter = document.getElementById('drifters-panel') as HTMLElement | null;
-      if (panelElAfter) {
+      if (panelElAfter != null) {
         panelElAfter.scrollTop = prevPanelScrollTop;
       }
-    });
+      if (tries > 1) {
+        requestAnimationFrame(() => restoreScroll(tries - 1));
+      }
+    };
+    requestAnimationFrame(() => restoreScroll(3));
 	}
 }
