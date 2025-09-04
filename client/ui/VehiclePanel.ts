@@ -22,6 +22,10 @@ export class VehiclePanel {
       z-index: 1060;
     `;
 
+		// Base width and unified z-index
+		(panel as any).dataset.baseWidth = '800';
+		panel.style.zIndex = '1050';
+
 		panel.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 8px;">
         <h3 style="margin: 0; color: #FFD700;">Your Vehicles</h3>

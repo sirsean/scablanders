@@ -36,6 +36,10 @@ export class ActiveMissionsPanel {
       z-index: 1000;
     `;
 
+    // Base width and unified z-index
+    (panel as any).dataset.baseWidth = '600';
+    panel.style.zIndex = '1050';
+
     panel.innerHTML = `
       <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 16px;">
         <h3 style="margin: 0; color: #FFD700;">Active Missions</h3>

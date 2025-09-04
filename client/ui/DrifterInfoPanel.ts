@@ -25,6 +25,10 @@ export class DrifterInfoPanel {
       z-index: 1060;
     `;
 
+    // Base width and unified z-index
+    (panel as any).dataset.baseWidth = '500';
+    panel.style.zIndex = '1050';
+
     panel.innerHTML = `
       <div style="display:flex; align-items:center; gap:8px; margin-bottom: 12px;">
         <h3 id="drifter-info-title" style="margin:0; color:#FFD700;">Drifter</h3>
@@ -50,12 +54,20 @@ export class DrifterInfoPanel {
     if (!DrifterInfoPanel.panelEl) return;
     DrifterInfoPanel.render();
     DrifterInfoPanel.panelEl.style.display = 'block';
+    // Reflow after render so layout can place this panel correctly next to Mercenaries
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new Event('ui:reflow-panels'));
+    });
   }
 
   static close() {
     if (!DrifterInfoPanel.panelEl) return;
     DrifterInfoPanel.panelEl.style.display = 'none';
     DrifterInfoPanel.currentTokenId = null;
+    // Reflow so layout can reclaim space
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new Event('ui:reflow-panels'));
+    });
   }
 
   private static xpToNext(level: number): number {

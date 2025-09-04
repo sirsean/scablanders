@@ -28,6 +28,8 @@ export class UIManager {
 		// Reflow on window resize
 		window.addEventListener('resize', () => this.layoutOpenPanels());
 
+		// Reflow when panels change visibility outside of gameState (e.g., DrifterInfoPanel)
+		window.addEventListener('ui:reflow-panels' as any, () => this.layoutOpenPanels());
 		// Listen to game state changes
 		gameState.onStateChange((state) => {
 			this.updateUI(state);
@@ -171,6 +173,9 @@ this.missionPanel.style.cssText = `
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
       overflow-y: auto;
     `;
+		// Base width and unified z-index
+		(this.missionPanel as any).dataset.baseWidth = '800';
+		this.missionPanel.style.zIndex = '1050';
 
 		this.missionPanel.innerHTML = `
       <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 16px;">
@@ -207,6 +212,9 @@ this.missionPanel.style.cssText = `
       display: none;
       overflow-y: auto;
     `;
+		// Base width and unified z-index
+		(this.mercenaryPanel as any).dataset.baseWidth = '400';
+		this.mercenaryPanel.style.zIndex = '1050';
 
 		this.mercenaryPanel.innerHTML = `
       <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 16px;">
@@ -239,6 +247,9 @@ this.missionPanel.style.cssText = `
       overflow-y: auto;
       z-index: 1001;
     `;
+		// Base width and unified z-index
+		(this.profilePanel as any).dataset.baseWidth = '500';
+		this.profilePanel.style.zIndex = '1050';
 
 		this.profilePanel.innerHTML = `
       <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 16px;">
@@ -1173,49 +1184,60 @@ this.missionPanel.style.cssText = `
 	private layoutOpenPanels() {
 		const margin = 20;
 		const gap = 12;
-		const maxWidth = window.innerWidth - margin * 2;
+		const maxRowWidth = window.innerWidth - margin * 2;
 
-		// Build explicit ordering so DrifterInfo appears right after Drifters panel
+		// Explicit ordering (left-to-right) per spec
 		const order: (HTMLElement | null)[] = [
-			this.missionPanel,
-			this.mercenaryPanel,
-			this.drifterInfoPanel, // place DrifterInfo immediately after Drifters
 			this.profilePanel,
-			this.activeMissionsPanel,
-			this.marketPanel,
-			this.vehiclePanel,
 			this.logPanel,
+			this.activeMissionsPanel,
+			this.mercenaryPanel,
+			this.drifterInfoPanel,
+			this.missionPanel,
+			this.vehiclePanel,
+			this.marketPanel,
 		];
 
 		const panels: HTMLElement[] = order.filter(
 			(p): p is HTMLElement => !!p && p.style.display !== 'none',
 		);
 
-		let x = margin;
-		let y = margin;
+		// Track position within the content area (excluding margins)
+		let x = 0;
+		let y = 0;
 		let rowHeight = 0;
 
 		for (const panel of panels) {
+			// Unified z-index
+			panel.style.zIndex = '1050';
 			// Reset any conflicting positioning
 			panel.style.right = '';
 			panel.style.bottom = '';
 
-			const rect = panel.getBoundingClientRect();
-			const width = rect.width || parseInt(panel.style.width || '600', 10);
-			const height = rect.height || parseInt(panel.style.height || '400', 10);
+			// Use dataset/style width as target width, then measure real box width for spacing (includes padding/border)
+			const base = parseInt(((panel as any).dataset?.baseWidth as string) || panel.style.width || '600', 10);
+			const targetWidth = Math.min(isNaN(base) ? 600 : base, maxRowWidth);
+			panel.style.width = `${targetWidth}px`;
 
-			if (x + width > maxWidth) {
-				// Wrap to next row
-				x = margin;
+			// Measure actual rendered size (forces layout once after width set)
+			let rect = panel.getBoundingClientRect();
+			let usedWidth = rect.width || targetWidth;
+			let usedHeight = rect.height || parseInt(panel.style.height || '0', 10) || 0;
+
+			// Wrap to next row if this panel would exceed the row width
+			if (x + usedWidth > maxRowWidth) {
+				x = 0;
 				y += rowHeight + gap;
 				rowHeight = 0;
 			}
 
-			panel.style.left = `${x}px`;
-			panel.style.top = `${y}px`;
+			// Position with outer margin
+			panel.style.left = `${margin + x}px`;
+			panel.style.top = `${margin + y}px`;
 
-			x += width + gap;
-			rowHeight = Math.max(rowHeight, height);
+			// Advance cursor
+			x += usedWidth + gap;
+			rowHeight = Math.max(rowHeight, usedHeight);
 		}
 	}
 

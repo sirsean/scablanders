@@ -20,6 +20,10 @@ export class LogPanel {
       z-index: 1002;
     `;
 
+    // Base width and unified z-index
+    (panel as any).dataset.baseWidth = '700';
+    panel.style.zIndex = '1050';
+
     panel.innerHTML = `
       <div style="display: flex; align-items: center; margin-bottom: 12px;">
         <h3 style="margin: 0; color: #FFD700;">Global Log</h3>
