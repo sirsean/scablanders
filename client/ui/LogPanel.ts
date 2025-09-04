@@ -1,3 +1,6 @@
+import type { GameEvent } from '@shared/models';
+import { buildEventBorderStyle } from './utils/eventStyles';
+
 export class LogPanel {
 	private static liveTimer: number | null = null;
 
@@ -40,29 +43,30 @@ export class LogPanel {
 		return panel;
 	}
 
-	static renderLogItems(events: { timestamp: Date; message: string; playerAddress?: string }[]): string {
+	static renderLogItems(events: GameEvent[]): string {
 		if (!events || events.length === 0) {
 			return '<p style="color:#888;">No events yet.</p>';
 		}
 		return `
       <div style="display:flex; flex-direction:column; gap:8px;">
         ${events
-					.map((ev) => {
-						const time = LogPanel.formatTime(ev.timestamp);
-						const who = ev.playerAddress ? `<span style=\"color:#aaa\">${ev.playerAddress.slice(0, 6)}…</span> ` : '';
-						return `
-              <div style=\"border-left:2px solid #555; padding-left:8px;\">
-                <div style=\"font-size:11px;color:#bbb;\">${time}</div>
-                <div style=\"font-size:13px;\">${who}${ev.message}</div>
+          .map((ev) => {
+            const time = LogPanel.formatTime(ev.timestamp as any as Date);
+            const who = ev.playerAddress ? `<span style=\"color:#aaa\">${ev.playerAddress.slice(0, 6)}…</span> ` : '';
+            const style = buildEventBorderStyle((ev as any).type);
+            return `
+              <div style=\"${style}\">
+                <div style="font-size:11px;color:#bbb;">${time}</div>
+                <div style="font-size:13px;">${who}${ev.message}</div>
               </div>
             `;
-					})
-					.join('')}
+          })
+          .join('')}
       </div>
     `;
 	}
 
-	static updateLogPanel(allEvents: { timestamp: Date; message: string; playerAddress?: string }[]) {
+	static updateLogPanel(allEvents: GameEvent[]) {
 		const content = document.getElementById('log-content');
 		if (!content) {
 			return;
@@ -70,7 +74,7 @@ export class LogPanel {
 		content.innerHTML = LogPanel.renderLogItems(allEvents);
 	}
 
-	static startLiveTimer(getEvents: () => { timestamp: Date; message: string; playerAddress?: string }[]) {
+	static startLiveTimer(getEvents: () => GameEvent[]) {
 		if (LogPanel.liveTimer) {
 			clearInterval(LogPanel.liveTimer as any);
 		}

@@ -1,4 +1,5 @@
 import type { GameState } from '../gameState';
+import { buildEventBorderStyle } from './utils/eventStyles';
 
 export class ProfilePanel {
 	static createProfilePanel(): HTMLElement {
@@ -90,7 +91,7 @@ export class ProfilePanel {
 							? recentForPlayer
 									.map(
 										(ev) => `
-            <div style=\"border-left: 2px solid #666; padding-left: 8px; margin: 8px 0;\">
+            <div style=\"${buildEventBorderStyle((ev as any).type, 'margin: 8px 0;')}\">
               <div style=\"color: #ffd700;\">${ProfilePanel.formatTime(ev.timestamp)}</div>
               <div style=\"color: #ccc;\">${ev.message}</div>
             </div>
