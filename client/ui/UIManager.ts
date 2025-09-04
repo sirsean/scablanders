@@ -8,6 +8,7 @@ import { DrifterInfoPanel } from './DrifterInfoPanel';
 import { MissionPanel } from './MissionPanel';
 import { DriftersPanel } from './DriftersPanel';
 import { ProfilePanel } from './ProfilePanel';
+import { buildNotificationStyle } from './utils/notificationStyles';
 
 export class UIManager {
 	private notificationContainer: HTMLElement | null = null;
@@ -414,17 +415,10 @@ private createDrifterInfoPanel() {
 		this.notificationContainer.innerHTML = notifications
 			.map(
 				(notif) => `
-      <div class="notification notification-${notif.type}" style="
-        background: ${this.getNotificationColor(notif.type)};
-        border: 1px solid ${this.getNotificationBorderColor(notif.type)};
-        border-radius: 6px;
-        padding: 12px;
-        margin-bottom: 8px;
-        pointer-events: auto;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-      " onclick="gameState.removeNotification('${notif.id}')">
+      <div class="notification notification-${notif.type}" style="${buildNotificationStyle(
+        notif.type,
+        'border-radius: 6px; padding: 12px; margin-bottom: 8px; pointer-events: auto; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.3);'
+      )}" onclick="gameState.removeNotification('${notif.id}')">
         <div style="font-weight: bold; margin-bottom: 4px; color: #fff;">${notif.title}</div>
         <div style="font-size: 12px; color: #ddd;">${notif.message}</div>
         <div style="font-size: 10px; color: #bbb; margin-top: 4px;">${this.formatTime(notif.timestamp)}</div>
@@ -554,35 +548,6 @@ private createDrifterInfoPanel() {
 		}).length;
 	}
 
-	private getNotificationColor(type: string): string {
-		switch (type) {
-			case 'success':
-				return 'rgba(0, 150, 0, 0.9)';
-			case 'error':
-				return 'rgba(150, 0, 0, 0.9)';
-			case 'mission':
-				return 'rgba(0, 100, 150, 0.9)';
-			case 'combat':
-				return 'rgba(150, 100, 0, 0.9)';
-			default:
-				return 'rgba(100, 100, 100, 0.9)';
-		}
-	}
-
-	private getNotificationBorderColor(type: string): string {
-		switch (type) {
-			case 'success':
-				return '#00ff00';
-			case 'error':
-				return '#ff0000';
-			case 'mission':
-				return '#0088ff';
-			case 'combat':
-				return '#ffaa00';
-			default:
-				return '#888888';
-		}
-	}
 
 	private layoutOpenPanels() {
 		const margin = 20;
