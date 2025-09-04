@@ -44,6 +44,10 @@ export class DriftersPanel {
 			return;
 		}
 
+    // Preserve scroll position of the list before re-render
+    const listElBefore = document.getElementById('drifters-panel-drifter-list-container') as HTMLElement | null;
+    const prevScrollTop = listElBefore?.scrollTop ?? 0;
+
 		if (state.isLoadingProfile) {
 			content.innerHTML = '<p>Loading drifters...</p>';
 			return;
@@ -75,5 +79,15 @@ export class DriftersPanel {
       drifters: state.ownedDrifters,
       state,
     });
+
+    // Restore scroll position after re-render
+    if (prevScrollTop > 0) {
+      requestAnimationFrame(() => {
+        const listElAfter = document.getElementById('drifters-panel-drifter-list-container') as HTMLElement | null;
+        if (listElAfter) {
+          listElAfter.scrollTop = prevScrollTop;
+        }
+      });
+    }
 	}
 }
