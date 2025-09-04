@@ -1,7 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import type {
 	PlayerProfile,
-	UpgradeType,
 	NotificationMessage,
 	GameWebSocketMessage,
 	PlayerStateUpdate,
@@ -308,7 +307,7 @@ export class GameDO extends DurableObject {
 		for (const d of player.ownedDrifters || []) {
 			const key = String(d.tokenId);
 			const dp = this.gameState.drifterProgress.get(key);
-			if (dp) progress[key] = dp;
+			if (dp) {progress[key] = dp;}
 		}
 		return { ...player, drifterProgress: progress };
 	}
@@ -318,7 +317,7 @@ export class GameDO extends DurableObject {
 		const player = this.gameState.players.get(playerAddress);
 		const notifications = this.gameState.notifications.get(playerAddress) || [];
 
-		if (!player) return;
+		if (!player) {return;}
 
 		const profileWithProgress = this.buildProfileWithProgress(player);
 		const message: PlayerStateUpdate = {
@@ -364,7 +363,7 @@ export class GameDO extends DurableObject {
 		const player = this.gameState.players.get(playerAddress);
 		const notifications = this.gameState.notifications.get(playerAddress) || [];
 
-		if (!player) return;
+		if (!player) {return;}
 
 		const profileWithProgress = this.buildProfileWithProgress(player);
 		const message: PlayerStateUpdate = {
@@ -411,7 +410,7 @@ export class GameDO extends DurableObject {
 		console.log(`[GameDO] Broadcasting world state update to all clients (${activeNodes.length} active nodes)`);
 
 		// Send to all authenticated sessions
-		for (const [sessionId, session] of this.webSocketSessions) {
+for (const [_sessionId, session] of this.webSocketSessions) {
 			if (session.authenticated && session.websocket.readyState === WebSocket.READY_STATE_OPEN) {
 				session.websocket.send(JSON.stringify(message));
 				console.log(`[GameDO] Sent world state update to session ${sessionId}`);
@@ -432,7 +431,7 @@ export class GameDO extends DurableObject {
 		console.log('[GameDO] Broadcasting mission update to all clients');
 
 		// Send to all authenticated sessions
-		for (const [sessionId, session] of this.webSocketSessions) {
+for (const [_sessionId, session] of this.webSocketSessions) {
 			if (session.authenticated && session.websocket.readyState === WebSocket.READY_STATE_OPEN) {
 				session.websocket.send(JSON.stringify(message));
 				console.log(`[GameDO] Sent mission update to session ${sessionId}`);
@@ -450,7 +449,7 @@ export class GameDO extends DurableObject {
 			data: { event },
 		};
 
-		for (const [sessionId, session] of this.webSocketSessions) {
+for (const [_sessionId, session] of this.webSocketSessions) {
 			if (session.authenticated && session.websocket.readyState === WebSocket.READY_STATE_OPEN) {
 				session.websocket.send(JSON.stringify(message));
 			}
@@ -1513,7 +1512,7 @@ export class GameDO extends DurableObject {
 		base: { combat: number; scavenging: number; tech: number; speed: number },
 	): { combat: number; scavenging: number; tech: number; speed: number } {
 		const dp = this.gameState.drifterProgress.get(this.keyFor(tokenId));
-		if (!dp) return base;
+		if (!dp) {return base;}
 		return {
 			combat: base.combat + (dp.bonuses.combat || 0),
 			scavenging: base.scavenging + (dp.bonuses.scavenging || 0),
@@ -1527,10 +1526,10 @@ export class GameDO extends DurableObject {
 		if (tokenIds && tokenIds.length > 0) {
 			for (const id of tokenIds) {
 				const dp = this.gameState.drifterProgress.get(this.keyFor(id));
-				if (dp) out[this.keyFor(id)] = dp;
+				if (dp) {out[this.keyFor(id)] = dp;}
 			}
 		} else {
-			for (const [k, v] of this.gameState.drifterProgress.entries()) out[k] = v;
+			for (const [k, v] of this.gameState.drifterProgress.entries()) {out[k] = v;}
 		}
 		return out;
 	}
@@ -1541,11 +1540,11 @@ export class GameDO extends DurableObject {
 		attribute: 'combat' | 'scavenging' | 'tech' | 'speed',
 	): Promise<{ success: boolean; progress?: DrifterProgress; error?: string }> {
 		const player = this.gameState.players.get(requestor);
-		if (!player) return { success: false, error: 'Player not found' };
+		if (!player) {return { success: false, error: 'Player not found' };}
 		const owns = (player.ownedDrifters || []).some((d) => d.tokenId === tokenId);
-		if (!owns) return { success: false, error: "You don't own this drifter" };
+		if (!owns) {return { success: false, error: "You don't own this drifter" };}
 		const dp = this.getOrInitDrifterProgress(tokenId);
-		if (dp.unspentPoints <= 0) return { success: false, error: 'No unspent points' };
+		if (dp.unspentPoints <= 0) {return { success: false, error: 'No unspent points' };}
 		dp.unspentPoints -= 1;
 		dp.bonuses[attribute] = (dp.bonuses[attribute] || 0) + 1;
 		this.gameState.drifterProgress.set(this.keyFor(tokenId), dp);
@@ -1664,7 +1663,7 @@ export class GameDO extends DurableObject {
 	/**
 	 * Handle WebSocket upgrade request
 	 */
-	private handleWebSocketUpgrade(request: Request): Response {
+private handleWebSocketUpgrade(_request: Request): Response {
 		const [client, server] = Object.values(new WebSocketPair());
 		const sessionId = crypto.randomUUID();
 
@@ -1718,7 +1717,7 @@ export class GameDO extends DurableObject {
 	 */
 	private async handleWebSocketMessage(sessionId: string, event: MessageEvent) {
 		const session = this.webSocketSessions.get(sessionId);
-		if (!session) return;
+		if (!session) {return;}
 
 		try {
 			const message = JSON.parse(event.data as string);
@@ -1778,7 +1777,7 @@ export class GameDO extends DurableObject {
 	 */
 	private async handleWebSocketAuth(sessionId: string, playerAddress: string) {
 		const session = this.webSocketSessions.get(sessionId);
-		if (!session) return;
+		if (!session) {return;}
 
 		if (playerAddress && typeof playerAddress === 'string') {
 			session.playerAddress = playerAddress;
@@ -1817,28 +1816,28 @@ export class GameDO extends DurableObject {
 	/**
 	 * Handle API requests that were previously handled separately
 	 */
-	private async handleProfileRequest(request: Request): Promise<Response> {
+private async handleProfileRequest(_request: Request): Promise<Response> {
 		// Implementation for profile requests
 		// This would handle the same logic as the existing API routes
 		return new Response('Profile API - implement as needed', { status: 200 });
 	}
 
-	private async handleMissionsRequest(request: Request): Promise<Response> {
+private async handleMissionsRequest(_request: Request): Promise<Response> {
 		// Implementation for mission requests
 		return new Response('Missions API - implement as needed', { status: 200 });
 	}
 
-	private async handleNotificationsRequest(request: Request): Promise<Response> {
+private async handleNotificationsRequest(_request: Request): Promise<Response> {
 		// Implementation for notifications requests
 		return new Response('Notifications API - implement as needed', { status: 200 });
 	}
 
-	private async handleResourcesRequest(request: Request): Promise<Response> {
+private async handleResourcesRequest(_request: Request): Promise<Response> {
 		// Implementation for resources requests
 		return new Response('Resources API - implement as needed', { status: 200 });
 	}
 
-	private async handleStatsRequest(request: Request): Promise<Response> {
+private async handleStatsRequest(_request: Request): Promise<Response> {
 		const stats = await this.getStats();
 		return new Response(JSON.stringify(stats), {
 			headers: { 'Content-Type': 'application/json' },
@@ -1849,7 +1848,7 @@ export class GameDO extends DurableObject {
 		const url = new URL(request.url);
 		const limitParam = url.searchParams.get('limit');
 		let limit = Number(limitParam ?? 0);
-		if (!Number.isFinite(limit) || limit <= 0) limit = 1000;
+		if (!Number.isFinite(limit) || limit <= 0) {limit = 1000;}
 		const events = this.gameState.eventLog.slice(-limit).reverse();
 		return new Response(JSON.stringify({ events }), {
 			headers: { 'Content-Type': 'application/json' },
@@ -1971,7 +1970,7 @@ export class GameDO extends DurableObject {
 	 */
 	private cleanupSession(sessionId: string) {
 		const session = this.webSocketSessions.get(sessionId);
-		if (!session) return;
+		if (!session) {return;}
 
 		// Log pending notifications but DON'T move them back to replay queue
 		// Browser refreshes and normal disconnects should not replay notifications

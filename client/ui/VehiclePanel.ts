@@ -1,4 +1,4 @@
-import type { PlayerVehicle, Vehicle } from '@shared/models';
+import type { PlayerVehicle } from '@shared/models';
 import { gameState } from '../gameState';
 import { getVehicleData } from '../utils/vehicleUtils';
 
@@ -66,7 +66,7 @@ export class VehiclePanel {
 
 	static updateVehiclePanel(vehicles: PlayerVehicle[]) {
 		const content = document.getElementById('vehicle-content');
-		if (!content) return;
+		if (!content) {return;}
 
 		if (!vehicles || vehicles.length === 0) {
 			content.innerHTML = '<p>No vehicles owned. Visit the market to purchase one.</p>';
@@ -96,7 +96,7 @@ export class VehiclePanel {
 			button.addEventListener('click', async (e) => {
 				e.preventDefault();
 				const vehicleInstanceId = (e.target as HTMLElement).dataset.id;
-				if (!vehicleInstanceId) return;
+				if (!vehicleInstanceId) {return;}
 				const currentSelected = gameState.getState().selectedVehicleInstanceId;
 				if (currentSelected === vehicleInstanceId) {
 					// Deselect if clicking the already selected vehicle
@@ -114,7 +114,7 @@ export class VehiclePanel {
 
 	private static renderVehicleCard(vehicleId: string, instances: PlayerVehicle[]): string {
 		const vehicleData = getVehicleData(vehicleId);
-		if (!vehicleData) return '';
+		if (!vehicleData) {return '';}
 
 		return `
       <div style="border: 1px solid #555; border-radius: 6px; padding: 12px; background: rgba(255, 255, 255, 0.02);">

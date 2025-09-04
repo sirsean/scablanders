@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { authMiddleware, requireAuth, getPlayerAddress, AuthVariables } from '../middleware/auth';
-import { getPlayerOwnedDrifters, getOwnedDrifters } from '../nft';
+import { authMiddleware, AuthVariables } from '../middleware/auth';
+import { getOwnedDrifters } from '../nft';
 import { getDrifterRegistry } from '../drifters';
 
 const profile = new Hono<{ Bindings: Env; Variables: AuthVariables }>();

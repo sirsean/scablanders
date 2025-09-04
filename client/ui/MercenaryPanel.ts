@@ -1,5 +1,4 @@
 import type { GameState } from '../gameState';
-import { gameState } from '../gameState';
 
 export class MercenaryPanel {
 	static createMercenaryPanel(): HTMLElement {
@@ -39,7 +38,7 @@ export class MercenaryPanel {
 
 	static updateMercenaryPanel(state: GameState) {
 		const content = document.getElementById('mercenary-content');
-		if (!content) return;
+if (!content) { return; }
 
 		if (state.isLoadingProfile) {
 			content.innerHTML = '<p>Loading drifters...</p>';

@@ -27,10 +27,10 @@ const config: Phaser.Types.Core.GameConfig = {
 };
 
 // Initialize the game
-const game = new Phaser.Game(config);
+const _game = new Phaser.Game(config);
 
 // Initialize UI Manager (handles all panels and notifications)
-const uiManager = new UIManager();
+const _uiManager = new UIManager();
 
 // Import authentication system
 import { auth } from './auth';

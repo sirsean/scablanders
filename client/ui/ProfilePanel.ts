@@ -1,5 +1,4 @@
 import type { GameState } from '../gameState';
-import { gameState } from '../gameState';
 
 export class ProfilePanel {
 	static createProfilePanel(): HTMLElement {
@@ -39,7 +38,7 @@ export class ProfilePanel {
 
 	static updateProfilePanel(state: GameState) {
 		const content = document.getElementById('profile-content');
-		if (!content) return;
+if (!content) { return; }
 
 		if (!state.isAuthenticated) {
 			content.innerHTML = '<p style="color: #ff6b6b;">Please connect your wallet to view profile.</p>';
@@ -108,9 +107,9 @@ export class ProfilePanel {
 		const diff = now.getTime() - timestamp.getTime();
 		const seconds = Math.floor(diff / 1000);
 
-		if (seconds < 60) return `${seconds}s ago`;
+		if (seconds < 60) {return `${seconds}s ago`;}
 		const minutes = Math.floor(seconds / 60);
-		if (minutes < 60) return `${minutes}m ago`;
+		if (minutes < 60) {return `${minutes}m ago`;}
 		const hours = Math.floor(minutes / 60);
 		return `${hours}h ago`;
 	}

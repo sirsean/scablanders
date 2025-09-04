@@ -47,21 +47,9 @@ missions.post('/start', requireAuth, async (c) => {
 // POST /api/missions/intercept - Intercept another player's mission
 missions.post('/intercept', requireAuth, async (c) => {
 	try {
-		const playerAddress = c.get('playerAddress')!;
-		const body = (await c.req.json()) as {
-			missionId: string;
-			drifterId: number;
-		};
-
-		// Get GameDO
-		const gameId = c.env.GAME_DO.idFromName('game');
-		const gameStub = c.env.GAME_DO.get(gameId);
-
 		// For now, intercepting is not implemented in the single GameDO
 		// This would need to be added as a method to GameDO
 		return c.json({ error: 'Mission interception not yet implemented' }, 501);
-
-		return c.json({ success: true, result });
 	} catch (error) {
 		console.error('Intercept mission error:', error);
 		return c.json({ error: 'Failed to intercept mission' }, 500);

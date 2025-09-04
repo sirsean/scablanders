@@ -141,7 +141,7 @@ export function parseSessionToken(token: string): { address: string } | null {
 /**
  * Create auth middleware for protected routes
  */
-export function createAuthMiddleware(sessionStore: SessionStore) {
+export function createAuthMiddleware(_sessionStore: SessionStore) {
 	return async (request: Request): Promise<{ address?: string; error?: string }> => {
 		// Check for session token in cookie or Authorization header
 		const cookieHeader = request.headers.get('Cookie');

@@ -12,7 +12,6 @@ import logs from './routes/logs';
 import drifters from './routes/drifters';
 
 import { getPlayerOwnedDrifters } from './nft';
-import { handleWebSocket } from './websocket';
 
 /**
  * Scablanders Game Worker

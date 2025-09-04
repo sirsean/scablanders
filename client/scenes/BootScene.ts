@@ -12,7 +12,7 @@ export class BootScene extends Phaser.Scene {
 		const centerY = this.cameras.main.centerY;
 
 		// Loading text
-		const loadingText = this.add
+const _loadingText = this.add
 			.text(centerX, centerY - 50, 'Loading Scablanders...', {
 				fontSize: '24px',
 				color: '#FFD700',
@@ -21,7 +21,7 @@ export class BootScene extends Phaser.Scene {
 			.setOrigin(0.5);
 
 		// Progress bar background
-		const progressBg = this.add.rectangle(centerX, centerY, 300, 20, 0x333333);
+const _progressBg = this.add.rectangle(centerX, centerY, 300, 20, 0x333333);
 		const progressBar = this.add.rectangle(centerX - 150, centerY, 0, 16, 0xffd700);
 		progressBar.setOrigin(0, 0.5);
 

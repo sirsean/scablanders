@@ -1,7 +1,7 @@
 import type { PlayerProfile, Mission, DrifterProfile, ResourceNode, Vehicle, GameEvent } from '@shared/models';
 import { auth } from './auth';
 import { webSocketManager } from './websocketManager';
-import type { PlayerStateUpdate, WorldStateUpdate, MissionUpdate, ConnectionStatusUpdate } from '@shared/models';
+import type { PlayerStateUpdate, WorldStateUpdate } from '@shared/models';
 
 export interface GameState {
 	// Authentication
@@ -362,7 +362,7 @@ class GameStateManager extends EventTarget {
 	}
 
 	async loadPlayerProfile() {
-		if (this.state.isLoadingProfile) return;
+		if (this.state.isLoadingProfile) {return;}
 
 		this.setState({ isLoadingProfile: true });
 
@@ -375,13 +375,13 @@ class GameStateManager extends EventTarget {
 				ownedDrifters: profile.ownedDrifters || [],
 				isLoadingProfile: false,
 			});
-		} catch (error) {
+		} catch {
 			this.setState({ isLoadingProfile: false });
 		}
 	}
 
 	async loadWorldState() {
-		if (this.state.isLoadingWorld) return;
+		if (this.state.isLoadingWorld) {return;}
 
 		this.setState({ isLoadingWorld: true });
 
@@ -395,13 +395,13 @@ class GameStateManager extends EventTarget {
 				worldMetrics: data.worldMetrics || null,
 				isLoadingWorld: false,
 			});
-		} catch (error) {
+		} catch {
 			this.setState({ isLoadingWorld: false });
 		}
 	}
 
 	async loadMarketVehicles() {
-		if (this.state.isLoadingMarket) return;
+		if (this.state.isLoadingMarket) {return;}
 
 		this.setState({ isLoadingMarket: true });
 
@@ -413,7 +413,7 @@ class GameStateManager extends EventTarget {
 				availableVehicles: data.vehicles || [],
 				isLoadingMarket: false,
 			});
-		} catch (error) {
+		} catch {
 			this.setState({ isLoadingMarket: false });
 		}
 	}
@@ -542,7 +542,7 @@ class GameStateManager extends EventTarget {
 				});
 				return null;
 			}
-		} catch (error) {
+		} catch {
 			this.addNotification({
 				type: 'error',
 				title: 'Network Error',
@@ -665,7 +665,7 @@ class GameStateManager extends EventTarget {
 	}
 
 	async loadPlayerMissions() {
-		if (!this.state.playerAddress || this.state.isLoadingPlayerMissions) return;
+		if (!this.state.playerAddress || this.state.isLoadingPlayerMissions) {return;}
 
 		this.setState({ isLoadingPlayerMissions: true });
 
@@ -677,7 +677,7 @@ class GameStateManager extends EventTarget {
 				playerMissions: data.missions || [],
 				isLoadingPlayerMissions: false,
 			});
-		} catch (error) {
+		} catch {
 			this.setState({ isLoadingPlayerMissions: false });
 		}
 	}

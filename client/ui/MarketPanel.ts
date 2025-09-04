@@ -41,7 +41,7 @@ export class MarketPanel {
 
 	static updateMarketPanel(vehicles: Vehicle[], isLoading: boolean) {
 		const content = document.getElementById('market-content');
-		if (!content) return;
+		if (!content) {return;}
 
 		// Update balance display
 		const state = gameState.getState();

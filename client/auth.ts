@@ -3,10 +3,9 @@
  */
 
 import { SiweMessage } from 'siwe';
-import { createConfig, http, getAccount, signMessage, connect, disconnect } from '@wagmi/core';
+import { createConfig, http, getAccount, signMessage, connect } from '@wagmi/core';
 import { injected } from '@wagmi/connectors';
 import { mainnet } from 'viem/chains';
-import { getAddress } from 'viem';
 
 export interface AuthState {
 	isAuthenticated: boolean;
@@ -79,7 +78,7 @@ export class ScablandersAuth {
 					});
 				}
 			}
-		} catch (error) {
+		} catch {
 			console.log('No existing session found');
 		}
 	}

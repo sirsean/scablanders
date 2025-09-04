@@ -51,7 +51,7 @@ export class DrifterInfoPanel {
 
 	static open(tokenId: number) {
 		DrifterInfoPanel.currentTokenId = tokenId;
-		if (!DrifterInfoPanel.panelEl) return;
+		if (!DrifterInfoPanel.panelEl) {return;}
 		DrifterInfoPanel.render();
 		DrifterInfoPanel.panelEl.style.display = 'block';
 		// Reflow after render so layout can place this panel correctly next to Mercenaries
@@ -61,7 +61,7 @@ export class DrifterInfoPanel {
 	}
 
 	static close() {
-		if (!DrifterInfoPanel.panelEl) return;
+		if (!DrifterInfoPanel.panelEl) {return;}
 		DrifterInfoPanel.panelEl.style.display = 'none';
 		DrifterInfoPanel.currentTokenId = null;
 		// Reflow so layout can reclaim space
@@ -76,10 +76,10 @@ export class DrifterInfoPanel {
 	}
 
 	static render() {
-		if (!DrifterInfoPanel.panelEl) return;
+		if (!DrifterInfoPanel.panelEl) {return;}
 		const content = DrifterInfoPanel.panelEl.querySelector('#drifter-info-content') as HTMLElement;
 		const tokenId = DrifterInfoPanel.currentTokenId;
-		if (!content || tokenId == null) return;
+		if (!content || tokenId == null) {return;}
 
 		const state = gameState.getState();
 		const drifter = state.ownedDrifters.find((d) => d.tokenId === tokenId);
@@ -154,7 +154,7 @@ export class DrifterInfoPanel {
 			btn.addEventListener('click', async () => {
 				const attr = (btn as HTMLElement).getAttribute('data-attr') as 'combat' | 'scavenging' | 'tech' | 'speed';
 				const id = DrifterInfoPanel.currentTokenId;
-				if (!id || !attr) return;
+				if (!id || !attr) {return;}
 				(btn as HTMLButtonElement).disabled = true;
 				await gameState.allocateDrifterPoint(id, attr);
 				DrifterInfoPanel.render();

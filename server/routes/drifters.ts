@@ -30,7 +30,7 @@ drifters.get('/progress', requireAuth, async (c) => {
 		const ownedIds = new Set((await gameStub.getProfile(playerAddress)).ownedDrifters.map((d: any) => d.tokenId));
 		const filtered: Record<string, any> = {};
 		for (const [k, v] of Object.entries(progress)) {
-			if (ownedIds.has(Number(k))) filtered[k] = v;
+			if (ownedIds.has(Number(k))) {filtered[k] = v;}
 		}
 
 		return c.json({ progress: filtered });

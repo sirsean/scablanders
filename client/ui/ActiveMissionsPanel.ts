@@ -104,7 +104,7 @@ export class ActiveMissionsPanel {
 	 */
 	private static renderContent(isLoading: boolean) {
 		const content = document.getElementById('active-missions-content');
-		if (!content) return;
+		if (!content) {return;}
 
 		if (isLoading) {
 			content.innerHTML = '<p>Loading active missions...</p>';
@@ -158,7 +158,7 @@ export class ActiveMissionsPanel {
 			const vi = profile.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
 			if (vi) {
 				const v = getVehicleData(vi.vehicleId);
-				if (v) vehicleName = v.name;
+				if (v) {vehicleName = v.name;}
 			}
 		}
 
@@ -267,7 +267,7 @@ export class ActiveMissionsPanel {
 		const endDate = completionTime instanceof Date ? completionTime : new Date(completionTime);
 		const remainingMs = endDate.getTime() - currentTime.getTime();
 
-		if (remainingMs <= 0) return 'Complete!';
+		if (remainingMs <= 0) {return 'Complete!';}
 
 		const totalSeconds = Math.floor(remainingMs / 1000);
 		const hours = Math.floor(totalSeconds / 3600);
@@ -311,7 +311,7 @@ export class ActiveMissionsPanel {
 				message: result.error || 'Failed to collect mission rewards',
 			});
 		}
-	} catch (error) {
+} catch {
 		gameState.addNotification({
 			type: 'error',
 			title: 'Network Error',
