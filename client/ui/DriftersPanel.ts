@@ -1,4 +1,5 @@
 import type { GameState } from '../gameState';
+import { DriftersList } from './components/DriftersList';
 
 export class DriftersPanel {
   static createDriftersPanel(): HTMLElement {
@@ -52,36 +53,19 @@ export class DriftersPanel {
 			return;
 		}
 
-		const owned = state.ownedDrifters;
+		content.innerHTML = DriftersList.render({
+      idPrefix: 'drifters-panel',
+      mode: 'browse',
+      drifters: state.ownedDrifters,
+      state,
+    });
 
-		content.innerHTML = `
-      <div style="margin-bottom: 16px;">
-        <h4 style="color: #00ff00; margin: 0 0 8px 0;">Owned Drifters (${owned.length})</h4>
-        <div style="max-height: 400px; overflow-y: auto;">
-          ${
-						owned
-							.map((merc) => {
-								const dp = state.profile?.drifterProgress?.[String(merc.tokenId)];
-								const b = dp?.bonuses || { combat: 0, scavenging: 0, tech: 0, speed: 0 };
-								return `
-            <div class=\"owned-drifter-row\" data-id=\"${merc.tokenId}\" style=\"border: 1px solid #00ff00; padding: 6px; margin: 4px 0; border-radius: 4px; font-size: 12px; cursor: pointer;\">
-              <strong>${merc.name} #${merc.tokenId}</strong>
-              <div style=\"color: #ccc;\">Combat: ${merc.combat + (b.combat || 0)} ${b.combat ? `(+${b.combat})` : ''} | Scavenging: ${merc.scavenging + (b.scavenging || 0)} ${b.scavenging ? `(+${b.scavenging})` : ''} | Tech: ${merc.tech + (b.tech || 0)} ${b.tech ? `(+${b.tech})` : ''} | Speed: ${merc.speed + (b.speed || 0)} ${b.speed ? `(+${b.speed})` : ''}</div>
-            </div>
-          `;
-							})
-							.join('') || '<p style=\"color: #888; font-size: 12px;\">No owned Drifters</p>'
-					}
-        </div>
-      </div>
-    `;
-
-		// Click to open DrifterInfo (global function wired in UIManager)
-		document.querySelectorAll('.owned-drifter-row').forEach((row) => {
-			row.addEventListener('click', () => {
-				const id = Number((row as HTMLElement).getAttribute('data-id'));
-				(window as any).openDrifterInfo?.(id);
-			});
-		});
+    // Attach row click handlers (open drifter info in browse mode)
+    DriftersList.attachHandlers({
+      idPrefix: 'drifters-panel',
+      mode: 'browse',
+      drifters: state.ownedDrifters,
+      state,
+    });
 	}
 }
