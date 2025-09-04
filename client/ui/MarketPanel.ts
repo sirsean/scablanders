@@ -2,11 +2,11 @@ import type { Vehicle } from '@shared/models';
 import { gameState } from '../gameState';
 
 export class MarketPanel {
-  static createMarketPanel(): HTMLElement {
-    const panel = document.createElement('div');
-    panel.id = 'market-panel';
-    panel.className = 'game-panel';
-    panel.style.cssText = `
+	static createMarketPanel(): HTMLElement {
+		const panel = document.createElement('div');
+		panel.id = 'market-panel';
+		panel.className = 'game-panel';
+		panel.style.cssText = `
       position: fixed;
       width: 800px;
       max-height: 600px;
@@ -21,11 +21,11 @@ export class MarketPanel {
       z-index: 1000;
     `;
 
-    // Base width and unified z-index
-    (panel as any).dataset.baseWidth = '800';
-    panel.style.zIndex = '1050';
+		// Base width and unified z-index
+		(panel as any).dataset.baseWidth = '800';
+		panel.style.zIndex = '1050';
 
-    panel.innerHTML = `
+		panel.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px;">
         <h3 style="margin: 0; color: #FFD700;">Vehicle Market</h3>
         <div id="market-balance" style="margin-left: auto; color: #ccc; font-size: 12px;">Balance: —</div>
@@ -36,67 +36,65 @@ export class MarketPanel {
       </div>
     `;
 
-    return panel;
-  }
+		return panel;
+	}
 
-  static updateMarketPanel(vehicles: Vehicle[], isLoading: boolean) {
-    const content = document.getElementById('market-content');
-    if (!content) return;
+	static updateMarketPanel(vehicles: Vehicle[], isLoading: boolean) {
+		const content = document.getElementById('market-content');
+		if (!content) return;
 
-    // Update balance display
-    const state = gameState.getState();
-    const balance = state.profile?.balance ?? 0;
-    const balanceEl = document.getElementById('market-balance');
-    if (balanceEl) {
-      balanceEl.textContent = `Balance: ${balance} credits`;
-    }
+		// Update balance display
+		const state = gameState.getState();
+		const balance = state.profile?.balance ?? 0;
+		const balanceEl = document.getElementById('market-balance');
+		if (balanceEl) {
+			balanceEl.textContent = `Balance: ${balance} credits`;
+		}
 
-    if (isLoading) {
-      content.innerHTML = '<p>Loading vehicles...</p>';
-      return;
-    }
+		if (isLoading) {
+			content.innerHTML = '<p>Loading vehicles...</p>';
+			return;
+		}
 
-    if (!vehicles || vehicles.length === 0) {
-      content.innerHTML = '<p>No vehicles available for purchase.</p>';
-      return;
-    }
+		if (!vehicles || vehicles.length === 0) {
+			content.innerHTML = '<p>No vehicles available for purchase.</p>';
+			return;
+		}
 
-    content.innerHTML = `
+		content.innerHTML = `
       <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px;">
-        ${vehicles.map(vehicle => this.renderVehicleCard(vehicle, balance)).join('')}
+        ${vehicles.map((vehicle) => this.renderVehicleCard(vehicle, balance)).join('')}
       </div>
     `;
 
-    document.querySelectorAll('.purchase-vehicle-btn').forEach(button => {
-      button.addEventListener('click', async (e) => {
-        const btn = e.currentTarget as HTMLButtonElement;
-        if (btn.disabled) {
-          const name = btn.dataset.name || 'this vehicle';
-          gameState.addNotification({
-            type: 'error',
-            title: 'Insufficient Credits',
-            message: `You cannot afford ${name} yet.`,
-          });
-          return;
-        }
-        const vehicleId = btn.dataset.id;
-        if (vehicleId) {
-          await gameState.purchaseVehicle(vehicleId);
-        }
-      });
-    });
-  }
+		document.querySelectorAll('.purchase-vehicle-btn').forEach((button) => {
+			button.addEventListener('click', async (e) => {
+				const btn = e.currentTarget as HTMLButtonElement;
+				if (btn.disabled) {
+					const name = btn.dataset.name || 'this vehicle';
+					gameState.addNotification({
+						type: 'error',
+						title: 'Insufficient Credits',
+						message: `You cannot afford ${name} yet.`,
+					});
+					return;
+				}
+				const vehicleId = btn.dataset.id;
+				if (vehicleId) {
+					await gameState.purchaseVehicle(vehicleId);
+				}
+			});
+		});
+	}
 
-  private static renderVehicleCard(vehicle: Vehicle, balance: number): string {
-    const canAfford = balance >= vehicle.cost;
-    const buttonStyles = canAfford
-      ? 'background: #2c5530; border: 1px solid #4a7c59; color: #fff; cursor: pointer;'
-      : 'background: #333; border: 1px solid #555; color: #aaa; cursor: not-allowed; opacity: 0.7;';
-    const affordText = canAfford
-      ? `Purchase (${vehicle.cost} credits)`
-      : `Insufficient credits (${vehicle.cost} needed)`;
+	private static renderVehicleCard(vehicle: Vehicle, balance: number): string {
+		const canAfford = balance >= vehicle.cost;
+		const buttonStyles = canAfford
+			? 'background: #2c5530; border: 1px solid #4a7c59; color: #fff; cursor: pointer;'
+			: 'background: #333; border: 1px solid #555; color: #aaa; cursor: not-allowed; opacity: 0.7;';
+		const affordText = canAfford ? `Purchase (${vehicle.cost} credits)` : `Insufficient credits (${vehicle.cost} needed)`;
 
-    return `
+		return `
       <div style="border: 1px solid #555; border-radius: 6px; padding: 12px; background: rgba(255, 255, 255, 0.02);">
         <h4 style="color: #FFD700; margin-top: 0;">${vehicle.name}</h4>
         <p style="font-size: 12px; color: #ccc;">${vehicle.description}</p>
@@ -114,5 +112,5 @@ export class MarketPanel {
         ${canAfford ? '' : `<p style="margin: 6px 0 0; font-size: 11px; color: #bbb;">You have ${balance} credits.</p>`}
       </div>
     `;
-  }
+	}
 }

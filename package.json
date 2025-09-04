@@ -2,7 +2,7 @@
 	"name": "scablanders",
 	"version": "0.0.0",
 	"type": "module",
-  "scripts": {
+	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
 		"deploy": "wrangler deploy",

@@ -10,7 +10,7 @@ missions.use('*', authMiddleware);
 missions.post('/start', requireAuth, async (c) => {
 	try {
 		const playerAddress = c.get('playerAddress')!;
-const body = (await c.req.json()) as {
+		const body = (await c.req.json()) as {
 			drifterIds: number[];
 			targetNodeId: string;
 			missionType: 'scavenge' | 'strip_mine' | 'combat' | 'sabotage';
@@ -22,7 +22,13 @@ const body = (await c.req.json()) as {
 		const gameStub = c.env.GAME_DO.get(gameId);
 
 		// Start the mission through the GameDO
-const result = await gameStub.startMission(playerAddress, body.missionType, body.drifterIds, body.targetNodeId, body.vehicleInstanceId ?? undefined);
+		const result = await gameStub.startMission(
+			playerAddress,
+			body.missionType,
+			body.drifterIds,
+			body.targetNodeId,
+			body.vehicleInstanceId ?? undefined,
+		);
 
 		if (!result.success) {
 			return c.json({ success: false, error: result.error }, 400);

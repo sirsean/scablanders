@@ -257,12 +257,7 @@ export const INTERCEPT_BASE_COST = 25;
 // Notification system
 export interface NotificationMessage {
 	id: string;
-	type:
-		| 'mission_complete'
-		| 'mission_intercepted'
-		| 'resource_depleted'
-		| 'upgrade_purchased'
-		| 'drifter_level_up';
+	type: 'mission_complete' | 'mission_intercepted' | 'resource_depleted' | 'upgrade_purchased' | 'drifter_level_up';
 	title: string;
 	message: string;
 	timestamp: Date;

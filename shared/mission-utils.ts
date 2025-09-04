@@ -415,9 +415,14 @@ export function calculateLiveEstimates(
 	// If a vehicle is provided, include its scavenging/tech/combat as an additional entry for reward estimates
 	const driftersWithVehicle = vehicle
 		? [
-			...drifters,
-			{ combat: (vehicle as any).combat ?? 0, scavenging: (vehicle as any).scavenging ?? 0, tech: (vehicle as any).tech ?? 0, speed: vehicle.speed },
-		]
+				...drifters,
+				{
+					combat: (vehicle as any).combat ?? 0,
+					scavenging: (vehicle as any).scavenging ?? 0,
+					tech: (vehicle as any).tech ?? 0,
+					speed: vehicle.speed,
+				},
+			]
 		: drifters;
 
 	// Calculate rewards estimate with combined team bonuses
@@ -428,9 +433,14 @@ export function calculateLiveEstimates(
 
 	const combinedForDisplay = vehicle
 		? [
-			...drifters,
-			{ combat: (vehicle as any).combat ?? 0, scavenging: (vehicle as any).scavenging ?? 0, tech: (vehicle as any).tech ?? 0, speed: vehicle.speed },
-		]
+				...drifters,
+				{
+					combat: (vehicle as any).combat ?? 0,
+					scavenging: (vehicle as any).scavenging ?? 0,
+					tech: (vehicle as any).tech ?? 0,
+					speed: vehicle.speed,
+				},
+			]
 		: drifters;
 
 	if (combinedForDisplay.length > 0) {

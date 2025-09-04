@@ -90,7 +90,7 @@ export class GameDO extends DurableObject {
 		this.playerReplayQueues = new Map();
 
 		// Initialize empty game state
-this.gameState = {
+		this.gameState = {
 			players: new Map(),
 			notifications: new Map(),
 			missions: new Map(),
@@ -147,7 +147,7 @@ this.gameState = {
 				this.gameState.players = new Map(Object.entries(playersData));
 			}
 
-// Load notifications
+			// Load notifications
 			const notificationsData = await this.ctx.storage.get<Record<string, NotificationMessage[]>>('notifications');
 			if (notificationsData) {
 				this.gameState.notifications = new Map(Object.entries(notificationsData));
@@ -175,7 +175,7 @@ this.gameState = {
 				this.gameState.resourceNodes = new Map(Object.entries(nodesData));
 			}
 
-// Load world metrics
+			// Load world metrics
 			const worldMetrics = await this.ctx.storage.get<typeof this.gameState.worldMetrics>('worldMetrics');
 			if (worldMetrics) {
 				this.gameState.worldMetrics = worldMetrics;
@@ -225,7 +225,7 @@ this.gameState = {
 			console.log(`[GameDO] Saving game state - missions count: ${this.gameState.missions.size}`);
 			console.log(`[GameDO] Missions being saved:`, Object.keys(missionsToSave));
 
-await Promise.all([
+			await Promise.all([
 				this.ctx.storage.put('players', Object.fromEntries(this.gameState.players)),
 				this.ctx.storage.put('notifications', Object.fromEntries(this.gameState.notifications)),
 				this.ctx.storage.put('missions', missionsToSave),
@@ -419,7 +419,7 @@ await Promise.all([
 		}
 	}
 
-/**
+	/**
 	 * Broadcast mission update to all authenticated sessions
 	 */
 	private async broadcastMissionUpdate(update: any) {
@@ -611,7 +611,7 @@ await Promise.all([
 	/**
 	 * Start a mission
 	 */
-async startMission(
+	async startMission(
 		playerAddress: string,
 		missionType: MissionType,
 		drifterIds: number[],
@@ -722,7 +722,9 @@ async startMission(
 
 		// Calculate mission duration and rewards using shared utilities with drifter stats
 		const duration = calculateMissionDuration(targetNode, teamStats, vehicle || undefined, missionType);
-		console.log(`[GameDO] duration: ${duration} (with ${teamStats.length} drifter/vehicle entries and vehicle ${vehicle ? vehicle.name : 'On Foot'})`);
+		console.log(
+			`[GameDO] duration: ${duration} (with ${teamStats.length} drifter/vehicle entries and vehicle ${vehicle ? vehicle.name : 'On Foot'})`,
+		);
 		const rewards = calculateMissionRewards(targetNode, missionType, duration, teamStats);
 		console.log(`[GameDO] rewards: ${rewards}`);
 
@@ -746,15 +748,15 @@ async startMission(
 			rewards,
 		};
 
-// Add to game state
+		// Add to game state
 		this.gameState.missions.set(missionId, mission);
 		player.activeMissions.push(missionId);
 		if (vehicleInstance) {
 			vehicleInstance.status = 'on_mission';
 		}
 
-// Log event: mission started
-await this.addEvent({
+		// Log event: mission started
+		await this.addEvent({
 			type: 'mission_started',
 			playerAddress,
 			missionId,
@@ -762,7 +764,7 @@ await this.addEvent({
 			resourceType: targetNode.type,
 			rarity: targetNode.rarity,
 			drifterIds,
-			vehicleName: vehicle ? (vehicle as any).name ?? 'On Foot' : 'On Foot',
+			vehicleName: vehicle ? ((vehicle as any).name ?? 'On Foot') : 'On Foot',
 			message: `${playerAddress.slice(0, 6)}… started ${missionType.toUpperCase()} at ${targetNode.type.toUpperCase()} (${targetNode.rarity.toUpperCase()}) node with drifters ${drifterIds.map((id) => `#${id}`).join(', ')} ${vehicle ? `in ${(vehicle as any).name}` : 'on foot'}`,
 		});
 
@@ -828,21 +830,21 @@ await this.addEvent({
 			node.depletion += extractedActual;
 			node.lastHarvested = new Date();
 
-// Mark as inactive if fully depleted
+			// Mark as inactive if fully depleted
 			if (node.currentYield <= 0) {
 				node.currentYield = 0;
 				node.isActive = false;
 				console.log(`[GameDO] Node ${mission.targetNodeId} is now fully depleted and inactive`);
 
 				// Log resource depleted
-await this.addEvent({
-			type: 'resource_depleted',
-			playerAddress: mission.playerAddress,
-			nodeId: mission.targetNodeId,
-			resourceType: resourceType,
-			rarity: node.rarity,
-			message: `${resourceType.toUpperCase()} (${node.rarity.toUpperCase()}) node depleted by ${mission.playerAddress.slice(0, 6)}…`,
-			});
+				await this.addEvent({
+					type: 'resource_depleted',
+					playerAddress: mission.playerAddress,
+					nodeId: mission.targetNodeId,
+					resourceType: resourceType,
+					rarity: node.rarity,
+					message: `${resourceType.toUpperCase()} (${node.rarity.toUpperCase()}) node depleted by ${mission.playerAddress.slice(0, 6)}…`,
+				});
 
 				// Add depletion notification to player
 				await this.addNotification(mission.playerAddress, {
@@ -866,11 +868,11 @@ await this.addEvent({
 			player.activeMissions.splice(missionIndex, 1);
 		}
 
-// Mark mission as completed
+		// Mark mission as completed
 		mission.status = 'completed';
 
-// Log mission completion
-await this.addEvent({
+		// Log mission completion
+		await this.addEvent({
 			type: 'mission_complete',
 			playerAddress: mission.playerAddress,
 			missionId: mission.id,
@@ -878,8 +880,19 @@ await this.addEvent({
 			resourceType: (node?.type ?? undefined) as any,
 			rarity: (node?.rarity ?? undefined) as any,
 			drifterIds: mission.drifterIds,
-			vehicleName: mission.vehicleInstanceId ? (player.vehicles.find(v => v.instanceId === mission.vehicleInstanceId) ? getVehicle(player.vehicles.find(v => v.instanceId === mission.vehicleInstanceId)!.vehicleId)?.name : 'On Foot') : 'On Foot',
-			message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} at ${(node?.type ?? '').toString().toUpperCase()} (${(node?.rarity ?? 'unknown').toString().toUpperCase()}) with drifters ${mission.drifterIds.map((id) => `#${id}`).join(', ')} ${mission.vehicleInstanceId ? `in ${(() => { const vi = player.vehicles.find(v => v.instanceId === mission.vehicleInstanceId); return vi ? (getVehicle(vi.vehicleId)?.name || 'On Foot') : 'On Foot'; })()}` : 'on foot'} (+${mission.rewards.credits} cr)`,
+			vehicleName: mission.vehicleInstanceId
+				? player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId)
+					? getVehicle(player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId)!.vehicleId)?.name
+					: 'On Foot'
+				: 'On Foot',
+			message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} at ${(node?.type ?? '').toString().toUpperCase()} (${(node?.rarity ?? 'unknown').toString().toUpperCase()}) with drifters ${mission.drifterIds.map((id) => `#${id}`).join(', ')} ${
+				mission.vehicleInstanceId
+					? `in ${(() => {
+							const vi = player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
+							return vi ? getVehicle(vi.vehicleId)?.name || 'On Foot' : 'On Foot';
+						})()}`
+					: 'on foot'
+			} (+${mission.rewards.credits} cr)`,
 		});
 
 		// Award XP to participating drifters based on credits earned
@@ -975,7 +988,9 @@ await this.addEvent({
 	 * Reconcile a player's vehicle statuses: set any vehicles marked on_mission to idle
 	 * if there is no active mission referencing that vehicle instance.
 	 */
-	async reconcileVehicleStatusesForPlayer(playerAddress: string): Promise<{ success: boolean; resetCount: number; stuckVehicles: string[] }> {
+	async reconcileVehicleStatusesForPlayer(
+		playerAddress: string,
+	): Promise<{ success: boolean; resetCount: number; stuckVehicles: string[] }> {
 		const player = this.gameState.players.get(playerAddress);
 		if (!player) {
 			return { success: false, resetCount: 0, stuckVehicles: [] };
@@ -1212,19 +1227,19 @@ await this.addEvent({
 			}
 		}
 
-// 3. Remove fully degraded nodes immediately
+		// 3. Remove fully degraded nodes immediately
 		if (depleted.length > 0) {
 			console.log(`[GameDO] Removing ${depleted.length} fully degraded nodes`);
 			for (const nodeId of depleted) {
 				const removed = this.gameState.resourceNodes.get(nodeId);
 				this.gameState.resourceNodes.delete(nodeId);
-await this.addEvent({
-			type: 'node_removed',
-			nodeId,
-			resourceType: removed?.type,
-			rarity: removed?.rarity,
-			message: `Fully depleted ${removed?.type?.toUpperCase() || 'resource'} (${removed?.rarity?.toUpperCase() || 'UNKNOWN'}) node removed`,
-			});
+				await this.addEvent({
+					type: 'node_removed',
+					nodeId,
+					resourceType: removed?.type,
+					rarity: removed?.rarity,
+					message: `Fully depleted ${removed?.type?.toUpperCase() || 'resource'} (${removed?.rarity?.toUpperCase() || 'UNKNOWN'}) node removed`,
+				});
 			}
 			changesMade = true;
 		}
@@ -1258,7 +1273,7 @@ await this.addEvent({
 			}
 		}
 
-// Spawn the needed nodes
+		// Spawn the needed nodes
 		for (const { type, count } of nodesToSpawn) {
 			for (let i = 0; i < count; i++) {
 				const newNode = this.createRandomResourceNodeWithAntiOverlap(type);
@@ -1266,13 +1281,13 @@ await this.addEvent({
 				console.log(
 					`[GameDO] Spawned replacement ${type} node at (${newNode.coordinates.x}, ${newNode.coordinates.y}) with ${newNode.currentYield} yield`,
 				);
-await this.addEvent({
-			type: 'node_spawned',
-			nodeId: newNode.id,
-			resourceType: newNode.type,
-			rarity: newNode.rarity,
-			message: `New ${type.toUpperCase()} (${newNode.rarity.toUpperCase()}) node spawned (${newNode.coordinates.x}, ${newNode.coordinates.y})`,
-			});
+				await this.addEvent({
+					type: 'node_spawned',
+					nodeId: newNode.id,
+					resourceType: newNode.type,
+					rarity: newNode.rarity,
+					message: `New ${type.toUpperCase()} (${newNode.rarity.toUpperCase()}) node spawned (${newNode.coordinates.x}, ${newNode.coordinates.y})`,
+				});
 				changesMade = true;
 			}
 		}
@@ -1823,7 +1838,7 @@ await this.addEvent({
 		return new Response('Resources API - implement as needed', { status: 200 });
 	}
 
-private async handleStatsRequest(request: Request): Promise<Response> {
+	private async handleStatsRequest(request: Request): Promise<Response> {
 		const stats = await this.getStats();
 		return new Response(JSON.stringify(stats), {
 			headers: { 'Content-Type': 'application/json' },

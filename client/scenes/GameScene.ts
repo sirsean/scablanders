@@ -15,8 +15,8 @@ const RESOURCE_NODE_LABEL_OFFSET = 30; // Distance above the node to place the l
 
 // Mission color palette (Material-inspired)
 const COLOR_OTHER_ACTIVE = 0xe53935; // red 600
-const COLOR_SELF_ACTIVE = 0xffc107;  // amber 500
-const COLOR_COMPLETED   = 0x43a047;  // green 600
+const COLOR_SELF_ACTIVE = 0xffc107; // amber 500
+const COLOR_COMPLETED = 0x43a047; // green 600
 
 // How long to show completed missions after completion (ms)
 const RECENT_COMPLETED_MS = 15_000;
@@ -227,7 +227,6 @@ export class GameScene extends Phaser.Scene {
 		return isSelf ? COLOR_SELF_ACTIVE : COLOR_OTHER_ACTIVE;
 	}
 
-
 	private isSelfMission(mission: Mission, playerAddress?: string | null): boolean {
 		return !!playerAddress && mission.playerAddress?.toLowerCase() === playerAddress.toLowerCase();
 	}
@@ -236,7 +235,7 @@ export class GameScene extends Phaser.Scene {
 		return mission.status === 'active' && this.isSelfMission(mission, playerAddress);
 	}
 
-private updateWorldDisplay(state: GameState) {
+	private updateWorldDisplay(state: GameState) {
 		if (state.resourceNodes && state.resourceNodes.length > 0) {
 			this.updateResourceNodes(state.resourceNodes);
 			// Use world missions for indicators
@@ -1138,7 +1137,7 @@ private updateWorldDisplay(state: GameState) {
 			}
 			if (m.status === 'completed') {
 				const expiresAt = this.recentCompletedMissions.get(id) ?? 0;
-				const completionTs = (m.completionTime instanceof Date ? m.completionTime.getTime() : new Date(m.completionTime).getTime());
+				const completionTs = m.completionTime instanceof Date ? m.completionTime.getTime() : new Date(m.completionTime).getTime();
 				const shouldExpire = now > (expiresAt || completionTs + RECENT_COMPLETED_MS);
 				if (shouldExpire) {
 					indicator.destroy();
@@ -1155,7 +1154,7 @@ private updateWorldDisplay(state: GameState) {
 			}
 			if (m.status === 'completed') {
 				const expiresAt = this.recentCompletedMissions.get(id) ?? 0;
-				const completionTs = (m.completionTime instanceof Date ? m.completionTime.getTime() : new Date(m.completionTime).getTime());
+				const completionTs = m.completionTime instanceof Date ? m.completionTime.getTime() : new Date(m.completionTime).getTime();
 				const shouldExpire = now > (expiresAt || completionTs + RECENT_COMPLETED_MS);
 				if (shouldExpire) {
 					route.destroy();

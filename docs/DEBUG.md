@@ -11,11 +11,13 @@ The following functions are automatically loaded in the browser console when run
 **Purpose**: Quick diagnostic check of the current resource management state.
 
 **Usage**:
+
 ```javascript
-debugResourceFlow()
+debugResourceFlow();
 ```
 
 **Output**:
+
 ```
 🔧 Resource Management Debug Info
 ========================================
@@ -42,17 +44,20 @@ debugResourceFlow()
 **Purpose**: End-to-end test of the complete resource degradation flow from server to client.
 
 **Usage**:
+
 ```javascript
-await testResourceManagement()
+await testResourceManagement();
 ```
 
 **Process**:
+
 1. **State Check**: Validates WebSocket connection and authentication
 2. **Server Trigger**: Manually triggers resource management on the server
 3. **Update Monitor**: Waits up to 10 seconds for WebSocket updates
 4. **Results Analysis**: Reports on node count changes and yield updates
 
 **Expected Output**:
+
 ```
 🔧 Starting Resource Management Debug Test
 ==================================================
@@ -81,11 +86,13 @@ await testResourceManagement()
 ### Issue: "WebSocket not authenticated"
 
 **Symptoms**:
+
 ```
 ❌ WebSocket not authenticated. Resource updates may not be received.
 ```
 
 **Solutions**:
+
 1. Ensure you're logged in with your wallet
 2. Check browser console for authentication errors
 3. Try refreshing the page
@@ -96,6 +103,7 @@ await testResourceManagement()
 ### Issue: "No state update received within 10 seconds"
 
 **Symptoms**:
+
 ```
 ❌ No state update received within 10 seconds
    Possible issues:
@@ -105,6 +113,7 @@ await testResourceManagement()
 ```
 
 **Debugging Steps**:
+
 1. Check WebSocket status with `debugResourceFlow()`
 2. Verify server logs for resource management execution
 3. Check if resource nodes have any yield remaining to degrade
@@ -115,17 +124,20 @@ await testResourceManagement()
 ### Issue: "No changes detected in resource nodes"
 
 **Symptoms**:
+
 ```
 ⚠️ No changes detected in resource nodes
 ```
 
 **Possible Causes**:
+
 - All nodes are at minimum degradation levels
 - Time elapsed since last update is too small
 - Degradation rate configuration is too low
 - Resource management isn't running as expected
 
 **Solutions**:
+
 1. Wait longer between tests (degradation is time-based)
 2. Check server degradation rate configuration
 3. Verify server alarm scheduling is working
@@ -173,13 +185,15 @@ Server-side logging shows broadcast activities:
 ### Manual Testing Workflow
 
 1. **Initial Check**:
+
    ```javascript
-   debugResourceFlow()
+   debugResourceFlow();
    ```
 
 2. **Trigger Update**:
+
    ```javascript
-   await testResourceManagement()
+   await testResourceManagement();
    ```
 
 3. **Monitor Changes**:
@@ -190,7 +204,7 @@ Server-side logging shows broadcast activities:
 4. **Repeat Testing**:
    ```javascript
    // Wait a few seconds, then test again
-   setTimeout(() => testResourceManagement(), 5000)
+   setTimeout(() => testResourceManagement(), 5000);
    ```
 
 ### Rapid Testing (Multiple Triggers)
@@ -198,10 +212,10 @@ Server-side logging shows broadcast activities:
 ```javascript
 // Test multiple degradation cycles quickly
 for (let i = 0; i < 3; i++) {
-  setTimeout(() => {
-    console.log(`--- Test Run ${i + 1} ---`);
-    testResourceManagement();
-  }, i * 2000);
+	setTimeout(() => {
+		console.log(`--- Test Run ${i + 1} ---`);
+		testResourceManagement();
+	}, i * 2000);
 }
 ```
 
@@ -236,9 +250,9 @@ To add your own debugging:
 ```javascript
 // Listen for specific state changes
 gameState.onStateChange((state) => {
-  if (state.resourceNodes?.length !== previousCount) {
-    console.log('Resource count changed!', state.resourceNodes?.length);
-  }
+	if (state.resourceNodes?.length !== previousCount) {
+		console.log('Resource count changed!', state.resourceNodes?.length);
+	}
 });
 ```
 
@@ -247,9 +261,11 @@ gameState.onStateChange((state) => {
 ```javascript
 // Test with different degradation rates
 fetch('/api/world/debug/trigger-resource-management', {
-  method: 'POST',
-  credentials: 'include'
-}).then(r => r.json()).then(console.log);
+	method: 'POST',
+	credentials: 'include',
+})
+	.then((r) => r.json())
+	.then(console.log);
 ```
 
 ### Performance Monitoring
@@ -266,6 +282,7 @@ console.timeEnd('resource-update');
 ## 📝 Expected Log Patterns
 
 ### Successful Operation
+
 ```
 🔧 Starting Resource Management Debug Test
 📊 Step 1: Checking initial game state ✓
@@ -276,6 +293,7 @@ console.timeEnd('resource-update');
 ```
 
 ### System Issues
+
 ```
 ❌ WebSocket not authenticated
 ❌ Failed to trigger resource management: 500 Internal Server Error

@@ -419,7 +419,7 @@ class GameStateManager extends EventTarget {
 	}
 
 	// Mission operations
-async startMission(
+	async startMission(
 		drifterIds: number[],
 		targetId: string,
 		missionType: 'scavenge' | 'strip_mine' | 'combat' | 'sabotage',
@@ -519,7 +519,7 @@ async startMission(
 	}
 
 	// Allocation API
-	async allocateDrifterPoint(tokenId: number, attribute: 'combat'|'scavenging'|'tech'|'speed') {
+	async allocateDrifterPoint(tokenId: number, attribute: 'combat' | 'scavenging' | 'tech' | 'speed') {
 		try {
 			const response = await this.apiCall('/drifters/allocate-point', {
 				method: 'POST',
@@ -745,7 +745,7 @@ async startMission(
 		try {
 			const response = await this.apiCall(`/logs?limit=${limit}`);
 			const json = await response.json();
-			const events = (json.events || []).map((e: any) => ({ ...e, timestamp: new Date(e.timestamp) } as GameEvent));
+			const events = (json.events || []).map((e: any) => ({ ...e, timestamp: new Date(e.timestamp) }) as GameEvent);
 			this.setState({ eventLog: events });
 		} catch (err) {
 			console.error('Failed to sync event log', err);

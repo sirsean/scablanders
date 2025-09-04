@@ -3,25 +3,25 @@ import { gameState } from '../gameState';
 import { getVehicleData } from '../utils/vehicleUtils';
 
 export class ActiveMissionsPanel {
-  private static updateInterval: number | null = null;
-  private static lastMissions: Mission[] = [];
-  private static lastOwnedDrifters: DrifterProfile[] = [];
-  private static lastResources: ResourceNode[] = [];
-  
-  // Set up cleanup on page unload
-  static {
-    if (typeof window !== 'undefined') {
-      window.addEventListener('beforeunload', () => {
-        ActiveMissionsPanel.stopLiveTimer();
-      });
-    }
-  }
-  
-  static createActiveMissionsPanel(): HTMLElement {
-    const panel = document.createElement('div');
-    panel.id = 'active-missions-panel';
-    panel.className = 'game-panel';
-    panel.style.cssText = `
+	private static updateInterval: number | null = null;
+	private static lastMissions: Mission[] = [];
+	private static lastOwnedDrifters: DrifterProfile[] = [];
+	private static lastResources: ResourceNode[] = [];
+
+	// Set up cleanup on page unload
+	static {
+		if (typeof window !== 'undefined') {
+			window.addEventListener('beforeunload', () => {
+				ActiveMissionsPanel.stopLiveTimer();
+			});
+		}
+	}
+
+	static createActiveMissionsPanel(): HTMLElement {
+		const panel = document.createElement('div');
+		panel.id = 'active-missions-panel';
+		panel.className = 'game-panel';
+		panel.style.cssText = `
       position: fixed;
       width: 600px;
       max-height: 400px;
@@ -36,11 +36,11 @@ export class ActiveMissionsPanel {
       z-index: 1000;
     `;
 
-    // Base width and unified z-index
-    (panel as any).dataset.baseWidth = '600';
-    panel.style.zIndex = '1050';
+		// Base width and unified z-index
+		(panel as any).dataset.baseWidth = '600';
+		panel.style.zIndex = '1050';
 
-    panel.innerHTML = `
+		panel.innerHTML = `
       <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 16px;">
         <h3 style="margin: 0; color: #FFD700;">Active Missions</h3>
         <button id="close-active-missions-panel" style="background: none; border: 1px solid #666; color: #fff; padding: 4px 8px; cursor: pointer; margin-left: auto;">✕</button>
@@ -50,123 +50,123 @@ export class ActiveMissionsPanel {
       </div>
     `;
 
-    return panel;
-  }
+		return panel;
+	}
 
-  static updateActiveMissionsPanel(
-    playerMissions: Mission[], 
-    ownedDrifters: DrifterProfile[], 
-    resources: ResourceNode[],
-    isLoading: boolean
-  ) {
-    // Store the data for live updates
-    this.lastMissions = playerMissions || [];
-    this.lastOwnedDrifters = ownedDrifters || [];
-    this.lastResources = resources || [];
-    
-    this.renderContent(isLoading);
-    
-    // Start or restart the live timer
-    this.startLiveTimer();
-  }
-  
-  /**
-   * Start the live timer that updates countdowns every second
-   */
-  private static startLiveTimer() {
-    // Clear any existing timer
-    if (this.updateInterval) {
-      clearInterval(this.updateInterval);
-    }
-    
-    // Start new timer
-    this.updateInterval = setInterval(() => {
-      // Only update if the panel is visible and we have missions
-      const panel = document.getElementById('active-missions-panel');
-      if (panel && panel.style.display !== 'none') {
-        this.renderContent(false); // Not loading, just live update
-      }
-    }, 1000) as any;
-  }
-  
-  /**
-   * Stop the live timer
-   */
-  static stopLiveTimer() {
-    if (this.updateInterval) {
-      clearInterval(this.updateInterval);
-      this.updateInterval = null;
-    }
-  }
-  
-  /**
-   * Render the content using stored data
-   */
-  private static renderContent(isLoading: boolean) {
-    const content = document.getElementById('active-missions-content');
-    if (!content) return;
+	static updateActiveMissionsPanel(
+		playerMissions: Mission[],
+		ownedDrifters: DrifterProfile[],
+		resources: ResourceNode[],
+		isLoading: boolean,
+	) {
+		// Store the data for live updates
+		this.lastMissions = playerMissions || [];
+		this.lastOwnedDrifters = ownedDrifters || [];
+		this.lastResources = resources || [];
 
-    if (isLoading) {
-      content.innerHTML = '<p>Loading active missions...</p>';
-      return;
-    }
+		this.renderContent(isLoading);
 
-    if (!this.lastMissions || this.lastMissions.length === 0) {
-      content.innerHTML = `
+		// Start or restart the live timer
+		this.startLiveTimer();
+	}
+
+	/**
+	 * Start the live timer that updates countdowns every second
+	 */
+	private static startLiveTimer() {
+		// Clear any existing timer
+		if (this.updateInterval) {
+			clearInterval(this.updateInterval);
+		}
+
+		// Start new timer
+		this.updateInterval = setInterval(() => {
+			// Only update if the panel is visible and we have missions
+			const panel = document.getElementById('active-missions-panel');
+			if (panel && panel.style.display !== 'none') {
+				this.renderContent(false); // Not loading, just live update
+			}
+		}, 1000) as any;
+	}
+
+	/**
+	 * Stop the live timer
+	 */
+	static stopLiveTimer() {
+		if (this.updateInterval) {
+			clearInterval(this.updateInterval);
+			this.updateInterval = null;
+		}
+	}
+
+	/**
+	 * Render the content using stored data
+	 */
+	private static renderContent(isLoading: boolean) {
+		const content = document.getElementById('active-missions-content');
+		if (!content) return;
+
+		if (isLoading) {
+			content.innerHTML = '<p>Loading active missions...</p>';
+			return;
+		}
+
+		if (!this.lastMissions || this.lastMissions.length === 0) {
+			content.innerHTML = `
         <div style="text-align: center; color: #888; padding: 20px;">
           <p>No active missions</p>
           <p style="font-size: 14px;">Start a mission by selecting a resource node on the map!</p>
         </div>
       `;
-      this.stopLiveTimer(); // No point running timer with no missions
-      return;
-    }
+			this.stopLiveTimer(); // No point running timer with no missions
+			return;
+		}
 
-    // Filter and sort by soonest completion
-    const activeMissions = this.lastMissions
-      .filter(m => m.status === 'active')
-      .sort((a, b) => new Date(a.completionTime).getTime() - new Date(b.completionTime).getTime());
-    
-    if (activeMissions.length === 0) {
-      content.innerHTML = `
+		// Filter and sort by soonest completion
+		const activeMissions = this.lastMissions
+			.filter((m) => m.status === 'active')
+			.sort((a, b) => new Date(a.completionTime).getTime() - new Date(b.completionTime).getTime());
+
+		if (activeMissions.length === 0) {
+			content.innerHTML = `
         <div style="text-align: center; color: #888; padding: 20px;">
           <p>No active missions</p>
           <p style="font-size: 14px;">Start a mission by selecting a resource node on the map!</p>
         </div>
       `;
-      this.stopLiveTimer(); // No active missions, stop the timer
-      return;
-    }
+			this.stopLiveTimer(); // No active missions, stop the timer
+			return;
+		}
 
-    content.innerHTML = `
+		content.innerHTML = `
       <div style="margin-bottom: 12px;">
         <span style="color: #00ff00; font-weight: bold;">Active Missions: ${activeMissions.length}</span>
       </div>
       
-      ${activeMissions.map(mission => this.renderMissionCard(mission, this.lastOwnedDrifters, this.lastResources)).join('')}
+      ${activeMissions.map((mission) => this.renderMissionCard(mission, this.lastOwnedDrifters, this.lastResources)).join('')}
     `;
-  }
+	}
 
-  private static renderMissionCard(mission: Mission, ownedDrifters: DrifterProfile[], resources: ResourceNode[]): string {
-    const targetResource = resources.find(r => r.id === mission.targetNodeId);
-    const missionDrifters = ownedDrifters.filter(d => mission.drifterIds.includes(d.tokenId));
+	private static renderMissionCard(mission: Mission, ownedDrifters: DrifterProfile[], resources: ResourceNode[]): string {
+		const targetResource = resources.find((r) => r.id === mission.targetNodeId);
+		const missionDrifters = ownedDrifters.filter((d) => mission.drifterIds.includes(d.tokenId));
 
-    // Determine vehicle name from player's profile if present
-    const profile = gameState.getState().profile;
-    let vehicleName = 'On Foot';
-    if (mission.vehicleInstanceId && profile) {
-      const vi = profile.vehicles.find(v => v.instanceId === mission.vehicleInstanceId);
-      if (vi) {
-        const v = getVehicleData(vi.vehicleId);
-        if (v) vehicleName = v.name;
-      }
-    }
-    
-    const now = new Date();
-    const progress = this.calculateMissionProgress(mission.startTime, mission.completionTime, now);
-    const timeRemaining = this.formatTimeRemaining(mission.completionTime, now);
-    
-    return `
+		// Determine vehicle name from player's profile if present
+		const profile = gameState.getState().profile;
+		let vehicleName = 'On Foot';
+		if (mission.vehicleInstanceId && profile) {
+			const vi = profile.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
+			if (vi) {
+				const v = getVehicleData(vi.vehicleId);
+				if (v) vehicleName = v.name;
+			}
+		}
+
+		const now = new Date();
+		const progress = this.calculateMissionProgress(mission.startTime, mission.completionTime, now);
+		const timeRemaining = this.formatTimeRemaining(mission.completionTime, now);
+
+		return `
       <div style="
         border: 1px solid #555; 
         border-radius: 6px; 
@@ -189,19 +189,25 @@ export class ActiveMissionsPanel {
         <div style="margin-bottom: 8px;">
           <span style="color: #ccc;">Target: </span>
           <span style="color: #00ff00;">
-            ${targetResource 
-              ? `${targetResource.type.toUpperCase()} (${targetResource.rarity.toUpperCase()}) (${targetResource.coordinates.x}, ${targetResource.coordinates.y})`
-              : 'Unknown location'}
+            ${
+							targetResource
+								? `${targetResource.type.toUpperCase()} (${targetResource.rarity.toUpperCase()}) (${targetResource.coordinates.x}, ${targetResource.coordinates.y})`
+								: 'Unknown location'
+						}
           </span>
         </div>
         
         <div style="margin-bottom: 8px;">
           <span style="color: #ccc;">Drifters: </span>
-          ${missionDrifters.map(d => `
+          ${missionDrifters
+						.map(
+							(d) => `
             <span style="color: #00bfff; font-size: 12px; margin-right: 8px;">
               ${d.name} #${d.tokenId}
             </span>
-          `).join('')}
+          `,
+						)
+						.join('')}
         </div>
 
         <div style="margin-bottom: 8px;">
@@ -223,7 +229,9 @@ export class ActiveMissionsPanel {
           </div>
         </div>
         
-        ${progress >= 100 ? `
+        ${
+					progress >= 100
+						? `
           <button 
             onclick="collectMission('${mission.id}')" 
             style="
@@ -239,73 +247,75 @@ export class ActiveMissionsPanel {
           >
             Collect Rewards
           </button>
-        ` : ''}
+        `
+						: ''
+				}
       </div>
     `;
-  }
+	}
 
-  private static calculateMissionProgress(startTime: Date | string, completionTime: Date | string, currentTime: Date): number {
-    const startDate = startTime instanceof Date ? startTime : new Date(startTime);
-    const endDate = completionTime instanceof Date ? completionTime : new Date(completionTime);
-    
-    const totalDuration = endDate.getTime() - startDate.getTime();
-    const elapsed = currentTime.getTime() - startDate.getTime();
-    return Math.max(0, Math.min(100, (elapsed / totalDuration) * 100));
-  }
+	private static calculateMissionProgress(startTime: Date | string, completionTime: Date | string, currentTime: Date): number {
+		const startDate = startTime instanceof Date ? startTime : new Date(startTime);
+		const endDate = completionTime instanceof Date ? completionTime : new Date(completionTime);
 
-  private static formatTimeRemaining(completionTime: Date | string, currentTime: Date): string {
-    const endDate = completionTime instanceof Date ? completionTime : new Date(completionTime);
-    const remainingMs = endDate.getTime() - currentTime.getTime();
-    
-    if (remainingMs <= 0) return 'Complete!';
-    
-    const totalSeconds = Math.floor(remainingMs / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    
-    if (hours > 0) {
-      return `${hours}h ${minutes}m ${seconds}s`;
-    } else if (minutes > 0) {
-      return `${minutes}m ${seconds}s`;
-    } else {
-      return `${seconds}s`;
-    }
-  }
+		const totalDuration = endDate.getTime() - startDate.getTime();
+		const elapsed = currentTime.getTime() - startDate.getTime();
+		return Math.max(0, Math.min(100, (elapsed / totalDuration) * 100));
+	}
+
+	private static formatTimeRemaining(completionTime: Date | string, currentTime: Date): string {
+		const endDate = completionTime instanceof Date ? completionTime : new Date(completionTime);
+		const remainingMs = endDate.getTime() - currentTime.getTime();
+
+		if (remainingMs <= 0) return 'Complete!';
+
+		const totalSeconds = Math.floor(remainingMs / 1000);
+		const hours = Math.floor(totalSeconds / 3600);
+		const minutes = Math.floor((totalSeconds % 3600) / 60);
+		const seconds = totalSeconds % 60;
+
+		if (hours > 0) {
+			return `${hours}h ${minutes}m ${seconds}s`;
+		} else if (minutes > 0) {
+			return `${minutes}m ${seconds}s`;
+		} else {
+			return `${seconds}s`;
+		}
+	}
 }
 
 // Global function for collecting missions
 (window as any).collectMission = async (missionId: string) => {
-  try {
-    const response = await fetch('/api/missions/complete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ missionId })
-    });
-    
-    const result = await response.json();
-    if (result.success) {
-      // NOTE: Removed client-side notification - server will broadcast via WebSocket
-      // gameState.addNotification({
-      //   type: 'success',
-      //   title: 'Mission Complete!',
-      //   message: `Collected rewards from mission #${missionId.slice(-6)}`
-      // });
-      gameState.loadPlayerMissions();
-      gameState.loadPlayerProfile();
-    } else {
-      gameState.addNotification({
-        type: 'error',
-        title: 'Collection Failed',
-        message: result.error || 'Failed to collect mission rewards'
-      });
-    }
-  } catch (error) {
-    gameState.addNotification({
-      type: 'error',
-      title: 'Network Error',
-      message: 'Failed to collect mission rewards'
-    });
-  }
+	try {
+		const response = await fetch('/api/missions/complete', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			credentials: 'include',
+			body: JSON.stringify({ missionId }),
+		});
+
+		const result = await response.json();
+		if (result.success) {
+			// NOTE: Removed client-side notification - server will broadcast via WebSocket
+			// gameState.addNotification({
+			//   type: 'success',
+			//   title: 'Mission Complete!',
+			//   message: `Collected rewards from mission #${missionId.slice(-6)}`
+			// });
+			gameState.loadPlayerMissions();
+			gameState.loadPlayerProfile();
+		} else {
+			gameState.addNotification({
+				type: 'error',
+				title: 'Collection Failed',
+				message: result.error || 'Failed to collect mission rewards',
+			});
+		}
+	} catch (error) {
+		gameState.addNotification({
+			type: 'error',
+			title: 'Network Error',
+			message: 'Failed to collect mission rewards',
+		});
+	}
 };
