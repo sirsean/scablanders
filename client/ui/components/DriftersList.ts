@@ -12,6 +12,23 @@ export interface DriftersListOptions {
   state: GameState;
 }
 
+const SORTABLE_STATS = ['combat', 'scavenging', 'tech', 'speed'] as const;
+export type SortableStat = (typeof SORTABLE_STATS)[number];
+
+function isSortableStat(x: string): x is SortableStat {
+  return (SORTABLE_STATS as readonly string[]).includes(x);
+}
+
+function getEffectiveStat(
+  drifter: DrifterProfile,
+  stat: SortableStat,
+  state: GameState
+): number {
+  const dp = state.profile?.drifterProgress?.[String(drifter.tokenId)];
+  const bonus = dp?.bonuses?.[stat] || 0;
+  return (drifter as any)[stat] + bonus;
+}
+
 export class DrifterListRow {
   static render(
     drifter: DrifterProfile,
@@ -24,8 +41,8 @@ export class DrifterListRow {
     const { isSelected, isBusy, mode } = opts;
     const checkbox = `
       <div style="
-        width: 16px;
-        height: 16px;
+        width: 18px;
+        height: 18px;
         border: 2px solid ${isSelected ? '#00ff00' : '#666'};
         border-radius: 3px;
         background: ${isSelected ? '#00ff00' : 'transparent'};
@@ -33,42 +50,53 @@ export class DrifterListRow {
         align-items: center;
         justify-content: center;
       ">
-        ${isSelected ? '<span style="color: #000; font-size: 10px; font-weight: bold;">✓</span>' : ''}
+        ${isSelected ? '<span style=\"color: #000; font-size: 12px; font-weight: bold;\">✓</span>' : ''}
       </div>`;
+
+    // Effective stats for display (include bonuses)
+    const state = gameState.getState();
+    const dp = state.profile?.drifterProgress?.[String(drifter.tokenId)];
+    const unspent = dp?.unspentPoints || 0;
+    const hasUnspent = unspent > 0;
+    const eff = {
+      combat: getEffectiveStat(drifter, 'combat', state),
+      scavenging: getEffectiveStat(drifter, 'scavenging', state),
+      tech: getEffectiveStat(drifter, 'tech', state),
+      speed: getEffectiveStat(drifter, 'speed', state),
+    };
+
+    const gridTemplateCols = mode === 'select' ? '28px 80px repeat(4, 1fr)' : '80px repeat(4, 1fr)';
 
     return `
       <div class="drifter-option" data-id="${drifter.tokenId}" data-busy="${isBusy}" style="
+        display: grid;
+        grid-template-columns: ${gridTemplateCols};
+        gap: 12px;
+        align-items: center;
         border: 2px solid ${isSelected ? '#00ff00' : isBusy ? '#666' : '#444'};
-        padding: 8px;
-        margin: 4px 0;
+        padding: 10px 12px;
+        margin: 6px 0;
         cursor: ${mode === 'select' ? (isBusy ? 'not-allowed' : 'pointer') : 'pointer'};
         border-radius: 4px;
         background: ${isSelected ? 'rgba(0, 255, 0, 0.1)' : isBusy ? 'rgba(100, 100, 100, 0.3)' : 'rgba(255, 255, 255, 0.05)'};
         opacity: ${isBusy && mode === 'select' ? '0.6' : '1'};
         position: relative;
       ">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <img
-              src="/images/drifters/thumbnails/${drifter.tokenId}.jpeg"
-              alt="${drifter.name} #${drifter.tokenId}"
-              style="width: 48px; height: 48px; border-radius: 4px; object-fit: cover; border: 1px solid #333;"
-              onerror="this.style.display='none'"
-            />
-            ${mode === 'select' ? checkbox : ''}
-            <strong style="color: ${isBusy ? '#999' : '#fff'};">${drifter.name} #${drifter.tokenId}</strong>
-          </div>
-          <div style="font-size: 11px;">
-            ${isBusy ? '<span style="color: #ff6666;">ON MISSION</span>' : '<span style="color: #00ff00;">OWNED</span>'}
-          </div>
+        ${mode === 'select' ? `<div style=\"display:flex; align-items:center; justify-content:center;\">${checkbox}</div>` : ''}
+        <div style="position: relative; display: flex; flex-direction: column; align-items: center;">
+          <img
+            src="/images/drifters/thumbnails/${drifter.tokenId}.jpeg"
+            alt="#${drifter.tokenId}"
+            style="width: 56px; height: 56px; border-radius: 4px; object-fit: cover; border: ${hasUnspent ? '2px solid #00ffcc' : '1px solid #333'}; box-shadow: ${hasUnspent ? '0 0 6px rgba(0,255,204,0.6)' : 'none'};"
+            onerror="this.style.display='none'"
+          />
+          <div style="margin-top: 4px; font-size: 12px; color: #ccc; text-align: center;">#${drifter.tokenId}</div>
+          ${isBusy ? '<div style="margin-top: 2px; font-size: 11px; color: #ff6666; text-align: center;">ON MISSION</div>' : ''}
         </div>
-        <div style="font-size: 11px; color: #ccc; margin-top: 4px;">
-          ${(() => {
-            const dp = gameState.getState().profile?.drifterProgress?.[String(drifter.tokenId)];
-            const b = dp?.bonuses || { combat:0, scavenging:0, tech:0, speed:0 };
-            return `Combat: <span style=\"color: #ff6666;\">${drifter.combat + (b.combat||0)}</span> ${b.combat?`(<span style=\"color:#ff9999;\">+${b.combat}</span>)`:''} | Scavenging: <span style=\"color: #66ff66;\">${drifter.scavenging + (b.scavenging||0)}</span> ${b.scavenging?`(<span style=\"color:#aaffaa;\">+${b.scavenging}</span>)`:''} | Tech: <span style=\"color: #6666ff;\">${drifter.tech + (b.tech||0)}</span> ${b.tech?`(<span style=\"color:#99aaff;\">+${b.tech}</span>)`:''} | Speed: <span style=\"color: #ffff66;\">${drifter.speed + (b.speed||0)}</span> ${b.speed?`(<span style=\"color:#ffff99;\">+${b.speed}</span>)`:''}`;
-          })()}
-        </div>
+        <div style="color: #ff6666; text-align: center; font-size: 16px; font-weight: 600;">${eff.combat}</div>
+        <div style="color: #66ff66; text-align: center; font-size: 16px; font-weight: 600;">${eff.scavenging}</div>
+        <div style="color: #6666ff; text-align: center; font-size: 16px; font-weight: 600;">${eff.tech}</div>
+        <div style="color: #ffff66; text-align: center; font-size: 16px; font-weight: 600;">${eff.speed}</div>
       </div>
     `;
   }
@@ -90,7 +118,10 @@ export class DriftersList {
     const maxDrifters = selectedVehicle?.maxDrifters || 0;
     const atCapacity = mode === 'select' && selectedVehicle && selectedIds.length >= maxDrifters;
 
-    // Sort drifters: available first then by chosen attribute
+    // Active sort metric
+    const activeSort: SortableStat = isSortableStat(state.drifterSortBy) ? (state.drifterSortBy as SortableStat) : 'combat';
+
+    // Sort drifters: available first then by chosen attribute (effective stat, desc)
     const sortedDrifters = [...drifters].sort((a, b) => {
       const aBusy = busyDrifterIds.has(a.tokenId);
       const bBusy = busyDrifterIds.has(b.tokenId);
@@ -100,33 +131,36 @@ export class DriftersList {
       if (!aBusy && bBusy) {
         return -1;
       }
-      const sortBy = state.drifterSortBy;
-      return (b as any)[sortBy] - (a as any)[sortBy];
+      const av = getEffectiveStat(a, activeSort, state);
+      const bv = getEffectiveStat(b, activeSort, state);
+      if (bv !== av) {
+        return bv - av;
+      }
+      // tie-breaker by token id asc
+      return a.tokenId - b.tokenId;
     });
 
     const headerRight = mode === 'select'
       ? `<span style="font-size: 11px; color: ${atCapacity ? '#ff6b6b' : '#ccc'}; margin-left: auto;">${selectedIds.length} / ${maxDrifters > 0 ? maxDrifters : '-'} Drifters Selected</span>`
       : `<span style="font-size: 11px; color: #888;">(Showing ${sortedDrifters.length}/${drifters.length})</span>`;
 
-    return `
-      <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-        <label style="font-size: 12px; color: #ccc;">Sort by:</label>
-        <select id="${idPrefix}-drifter-sort-select" style="
-          background: #333;
-          border: 1px solid #666;
-          color: #fff;
-          padding: 4px 8px;
-          border-radius: 4px;
-          font-size: 12px;
-        ">
-          <option value="combat" ${state.drifterSortBy === 'combat' ? 'selected' : ''}>Combat</option>
-          <option value="scavenging" ${state.drifterSortBy === 'scavenging' ? 'selected' : ''}>Scavenging</option>
-          <option value="tech" ${state.drifterSortBy === 'tech' ? 'selected' : ''}>Tech</option>
-          <option value="speed" ${state.drifterSortBy === 'speed' ? 'selected' : ''}>Speed</option>
-        </select>
-        ${headerRight}
-      </div>
+    const headerGridCols = mode === 'select' ? '28px 80px repeat(4, 1fr)' : '80px repeat(4, 1fr)';
+    const headerLeading = mode === 'select' ? '<div></div><div></div>' : '<div></div>';
 
+    const headerGrid = `
+      <div id="${idPrefix}-drifter-header" style="margin-bottom: 8px; display: grid; grid-template-columns: ${headerGridCols}; gap: 12px; align-items: center; padding-right: 16px;">
+        ${headerLeading}
+        ${SORTABLE_STATS.map((s) => {
+          const label = (s === 'combat') ? 'COMBAT' : (s === 'scavenging') ? 'SCAV' : (s === 'tech') ? 'TECH' : 'SPEED';
+          const active = s === activeSort;
+          const color = s === 'combat' ? '#ff6666' : s === 'scavenging' ? '#66ff66' : s === 'tech' ? '#6666ff' : '#ffff66';
+          return `<div id=\"${idPrefix}-sort-${s}\" data-sort=\"${s}\" role=\"button\" tabindex=\"0\" aria-pressed=\"${active ? 'true' : 'false'}\" style=\"\n            cursor: pointer;\n            text-align: center;\n            color: ${color};\n            font-size: 16px;\n            letter-spacing: 0.5px;\n            ${active ? 'font-weight: 800; text-decoration: underline;' : 'opacity: 0.9; font-weight: 600;'}\n          \">${label}</div>`;
+        }).join('')}
+      </div>
+    `;
+
+    return `
+      ${headerGrid}
       <div id="${idPrefix}-drifter-list-container" style="flex: 1; overflow-y: auto; margin-bottom: 12px; min-height: 0; max-height: 405px;">
         ${sortedDrifters.map((d) => DrifterListRow.render(d, {
           isSelected: selectedIds.includes(d.tokenId),
@@ -140,15 +174,23 @@ export class DriftersList {
   static attachHandlers(opts: DriftersListOptions & { idPrefix: string; onChanged?: () => void }): void {
     const { idPrefix, mode, onChanged } = opts;
 
-    // Sort change
-    const sortSelect = document.getElementById(`${idPrefix}-drifter-sort-select`) as HTMLSelectElement | null;
-    if (sortSelect) {
-      sortSelect.addEventListener('change', (event) => {
-        const sortBy = (event.target as HTMLSelectElement).value as 'combat' | 'scavenging' | 'tech' | 'speed';
-        gameState.setDrifterSortBy(sortBy);
-        onChanged?.();
-      });
-    }
+    // Header sort clicks (single click)
+    SORTABLE_STATS.forEach((s) => {
+      const el = document.getElementById(`${idPrefix}-sort-${s}`);
+      if (el) {
+        const activate = () => {
+          gameState.setDrifterSortBy(s);
+          onChanged?.();
+        };
+        el.addEventListener('click', activate);
+        el.addEventListener('keydown', (e) => {
+          if ((e as KeyboardEvent).key === 'Enter' || (e as KeyboardEvent).key === ' ') {
+            e.preventDefault();
+            activate();
+          }
+        });
+      }
+    });
 
     // Row click
     document.querySelectorAll(`#${idPrefix}-drifter-list-container .drifter-option`).forEach((row) => {

@@ -25,9 +25,10 @@ export class DriftersPanel {
 		panel.style.zIndex = '1050';
 
 		panel.innerHTML = `
-      <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 16px;">
+      <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 16px; gap: 8px;">
         <h3 style="margin: 0; color: #FFD700;">Owned Drifters</h3>
-        <button id=\"close-drifters-panel\" style=\"background: none; border: 1px solid #666; color: #fff; padding: 4px 8px; cursor: pointer; margin-left: auto;\">✕</button>
+        <span id="drifters-panel-summary" style="font-size: 11px; color: #888; margin-left: auto;"></span>
+        <button id=\"close-drifters-panel\" style=\"background: none; border: 1px solid #666; color: #fff; padding: 4px 8px; cursor: pointer;\">✕</button>
       </div>
       <div id=\"drifters-content\">
         <p>Loading drifters...</p>
@@ -59,6 +60,13 @@ export class DriftersPanel {
       drifters: state.ownedDrifters,
       state,
     });
+
+    // Update summary counter in the header row
+    const summaryEl = document.getElementById('drifters-panel-summary');
+    if (summaryEl) {
+      const total = state.ownedDrifters.length;
+      summaryEl.textContent = `(Showing ${total}/${total})`;
+    }
 
     // Attach row click handlers (open drifter info in browse mode)
     DriftersList.attachHandlers({

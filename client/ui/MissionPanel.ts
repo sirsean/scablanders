@@ -96,14 +96,17 @@ export class MissionPanel {
 			};
 		});
 
-		const selectedVehicleInstance = state.profile?.vehicles.find((v) => v.instanceId === state.selectedVehicleInstanceId);
-		const selectedVehicle = selectedVehicleInstance ? getVehicleData(selectedVehicleInstance.vehicleId) : undefined;
+        const selectedVehicleInstance = state.profile?.vehicles.find((v) => v.instanceId === state.selectedVehicleInstanceId);
+        const selectedVehicle = selectedVehicleInstance ? getVehicleData(selectedVehicleInstance.vehicleId) : undefined;
 
-		// Calculate live estimates using selected team and mission type
-		const liveEstimates = calculateLiveEstimates(selectedResource, selectedMissionType, teamStats, selectedVehicle);
-		const durationText = formatDuration(liveEstimates.duration);
+        const maxDrifters = selectedVehicle?.maxDrifters || 0;
+        const atCapacity = !!selectedVehicle && selectedDrifterIds.length >= maxDrifters;
 
-		content.innerHTML = `
+        // Calculate live estimates using selected team and mission type
+        const liveEstimates = calculateLiveEstimates(selectedResource, selectedMissionType, teamStats, selectedVehicle);
+        const durationText = formatDuration(liveEstimates.duration);
+
+        content.innerHTML = `
       <!-- Side-by-side layout container - full height -->
       <div style="display: flex; gap: 20px; height: 100%;">
 
@@ -164,8 +167,11 @@ export class MissionPanel {
 
         <!-- Right Panel: Team Selection - Full Height -->
         <div style="flex: 1; display: flex; flex-direction: column; height: 100%;">
-          <h4 style="color: #FFD700; margin: 0 0 12px 0;">Select Team</h4>
-<div id="drifter-selection" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin: 0 0 12px 0;">
+            <h4 style="color: #FFD700; margin: 0;">Select Team</h4>
+            <span style="font-size: 11px; color: ${atCapacity ? '#ff6b6b' : '#ccc'};">${selectedDrifterIds.length} / ${maxDrifters > 0 ? maxDrifters : '-'} Drifters Selected</span>
+          </div>
+          <div id="drifter-selection" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
             ${DriftersList.render({ idPrefix: 'mission', mode: 'select', drifters: state.ownedDrifters, state })}
             ${MissionPanel.renderTeamSummary(selectedDrifterIds, state.ownedDrifters)}
           </div>
