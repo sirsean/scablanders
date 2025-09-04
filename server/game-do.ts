@@ -416,7 +416,7 @@ export class GameDO extends DurableObject {
 		console.log(`[GameDO] Broadcasting world state update to all clients (${activeNodes.length} active nodes)`);
 
 		// Send to all authenticated sessions
-		for (const [_sessionId, session] of this.webSocketSessions) {
+		for (const [sessionId, session] of this.webSocketSessions) {
 			if (session.authenticated && session.websocket.readyState === WebSocket.READY_STATE_OPEN) {
 				session.websocket.send(JSON.stringify(message));
 				console.log(`[GameDO] Sent world state update to session ${sessionId}`);
@@ -437,7 +437,7 @@ export class GameDO extends DurableObject {
 		console.log('[GameDO] Broadcasting mission update to all clients');
 
 		// Send to all authenticated sessions
-		for (const [_sessionId, session] of this.webSocketSessions) {
+		for (const [sessionId, session] of this.webSocketSessions) {
 			if (session.authenticated && session.websocket.readyState === WebSocket.READY_STATE_OPEN) {
 				session.websocket.send(JSON.stringify(message));
 				console.log(`[GameDO] Sent mission update to session ${sessionId}`);
