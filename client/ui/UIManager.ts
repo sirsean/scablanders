@@ -21,6 +21,33 @@ export class UIManager {
 	private drifterInfoPanel: HTMLElement | null = null;
 	private buttonUpdateInterval: number | null = null;
 
+	/**
+	 * Attach bubbling-phase handlers to swallow pointer/mouse/touch events
+	 * so they don't bubble to the Phaser canvas behind. We intentionally do
+	 * NOT use capture-phase so UI controls inside the element still receive
+	 * their events and can handle them normally; we only stop propagation at
+	 * the panel boundary.
+	 */
+	private swallowPointerEvents(el: HTMLElement | null) {
+		if (!el) return;
+		const stop = (e: Event) => {
+			// Do not preventDefault so scrolling and button behavior still work
+			e.stopPropagation();
+		};
+		const types: (keyof DocumentEventMap)[] = [
+			'pointerdown',
+			'pointerup',
+			'click',
+			'mousedown',
+			'mouseup',
+			'touchstart',
+			'touchend',
+			'wheel',
+			'contextmenu',
+		];
+		types.forEach((t) => el.addEventListener(t, stop));
+	}
+
 	constructor() {
 		this.createUIElements();
 		this.setupEventListeners();
@@ -79,7 +106,7 @@ export class UIManager {
 		this.createDrifterInfoPanel();
 	}
 
-	private createActionMenu() {
+private createActionMenu() {
 		const menu = document.createElement('div');
 		menu.id = 'action-menu';
 		menu.style.cssText = `
@@ -138,9 +165,12 @@ export class UIManager {
 		menu.appendChild(connectButton);
 
 		document.body.appendChild(menu);
+
+		// Ensure clicks on the action menu don't reach the map behind
+		this.swallowPointerEvents(menu);
 	}
 
-	private createNotificationContainer() {
+private createNotificationContainer() {
 		this.notificationContainer = document.createElement('div');
 		this.notificationContainer.id = 'notifications';
 		this.notificationContainer.style.cssText = `
@@ -152,48 +182,62 @@ export class UIManager {
       pointer-events: none;
     `;
 		document.body.appendChild(this.notificationContainer);
+
+		// Even though the container itself is hit-test disabled, child
+		// notifications are clickable. Swallow bubbling events here so
+		// clicks on toasts don't also select the map behind.
+		this.swallowPointerEvents(this.notificationContainer);
 	}
 
-	private createMissionPanel() {
+private createMissionPanel() {
 		this.missionPanel = MissionPanel.createMissionPanel();
 		document.body.appendChild(this.missionPanel);
-	}
+		this.swallowPointerEvents(this.missionPanel);
+}
 
-	private createDriftersPanel() {
+private createDriftersPanel() {
 		this.driftersPanel = DriftersPanel.createDriftersPanel();
 		document.body.appendChild(this.driftersPanel);
-	}
+		this.swallowPointerEvents(this.driftersPanel);
+}
 
-	private createProfilePanel() {
+private createProfilePanel() {
 		this.profilePanel = ProfilePanel.createProfilePanel();
 		document.body.appendChild(this.profilePanel);
-	}
+		this.swallowPointerEvents(this.profilePanel);
+}
 
-	private createActiveMissionsPanel() {
+private createActiveMissionsPanel() {
 		this.activeMissionsPanel = ActiveMissionsPanel.createActiveMissionsPanel();
 		document.body.appendChild(this.activeMissionsPanel);
-	}
+		this.swallowPointerEvents(this.activeMissionsPanel);
+}
 
-	private createMarketPanel() {
+private createMarketPanel() {
 		this.marketPanel = MarketPanel.createMarketPanel();
 		document.body.appendChild(this.marketPanel);
-	}
+		this.swallowPointerEvents(this.marketPanel);
+}
 
-	private createVehiclePanel() {
+private createVehiclePanel() {
 		this.vehiclePanel = VehiclePanel.createVehiclePanel();
 		document.body.appendChild(this.vehiclePanel);
-	}
+		this.swallowPointerEvents(this.vehiclePanel);
+}
 
-	private createLogPanel() {
+private createLogPanel() {
 		this.logPanel = LogPanel.createLogPanel();
 		document.body.appendChild(this.logPanel);
-	}
+		this.swallowPointerEvents(this.logPanel);
+}
 
-	private createDrifterInfoPanel() {
+private createDrifterInfoPanel() {
 		this.drifterInfoPanel = DrifterInfoPanel.createDrifterInfoPanel();
 		document.body.appendChild(this.drifterInfoPanel);
+		// Panel already stops 'click', add full pointer swallowing too
+		this.swallowPointerEvents(this.drifterInfoPanel);
 		(window as any).openDrifterInfo = (tokenId: number) => DrifterInfoPanel.open(tokenId);
-	}
+}
 
 	private setupEventListeners() {
 		// Panel close buttons
