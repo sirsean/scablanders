@@ -8,6 +8,9 @@ import { getVehicleData } from '../utils/vehicleUtils';
 const TOWN_X = 0;
 const TOWN_Y = 0;
 
+// Camera zoom limits
+const MIN_ZOOM = 1.0; // max zoom out
+const MAX_ZOOM = 1.0; // max zoom in
 // Resource node display constants
 const RESOURCE_NODE_BASE_SCALE = 0.15; // Base scale for resource nodes (adjust to resize all nodes)
 const RESOURCE_NODE_RARITY_SCALE_MULTIPLIER = 1.2; // How much bigger rare/epic/legendary nodes are
@@ -121,9 +124,8 @@ export class GameScene extends Phaser.Scene {
 		this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz: number, event: WheelEvent) => {
 			const cam = this.cameras.main;
 			const factor = dy > 0 ? 0.9 : 1.1;
-			const next = Phaser.Math.Clamp(cam.zoom * factor, 0.5, 2);
+			const next = Phaser.Math.Clamp(cam.zoom * factor, MIN_ZOOM, MAX_ZOOM);
 			cam.setZoom(next);
-			event.preventDefault();
 		});
 
 		// Periodically clean up expired completed mission visuals

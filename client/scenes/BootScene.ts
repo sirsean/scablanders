@@ -37,8 +37,7 @@ export class BootScene extends Phaser.Scene {
 		);
 
 		// Load the world map background image
-		this.load.image('tile-bg', this.generateTilePattern(128, '#2c1810', '#3a2a22'));
-		this.load.image('world-map', 'assets/images/scablanders-map.png');
+		this.load.image('tile-bg', 'assets/images/map-tile.png');
 
 		// Load resource node textures by type and rarity
 		for (const type of RESOURCE_TYPES) {
