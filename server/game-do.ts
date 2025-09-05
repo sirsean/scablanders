@@ -38,12 +38,8 @@ interface ResourceManagementConfig {
 	totalTargetNodes: number;
 	degradationCheckInterval: number; // minutes
 	degradationRate: number; // percentage per hour (negative)
-	spawnArea: {
-		minX: number;
-		maxX: number;
-		minY: number;
-		maxY: number;
-	};
+	// World is centered at (0,0); resources spawn within this radius
+	spawnRadius: number; // in world units (pixels)
 }
 
 interface GameState {
@@ -73,6 +69,31 @@ interface GameState {
  * - Notifications
  */
 export class GameDO extends DurableObject {
+	/**
+	 * Choose rarity based on distance from town (0,0). Farther nodes have higher rarity probability.
+	 */
+	private pickRarityByRadius(r: number, R: number): Rarity {
+		const t = Math.min(Math.max(r / R, 0), 1); // 0 near town, 1 at outer edge
+		// Base weights near town
+		const near = { common: 60, uncommon: 25, rare: 10, epic: 4, legendary: 1 };
+		// Far weights at edge
+		const far = { common: 20, uncommon: 30, rare: 25, epic: 15, legendary: 10 };
+		const w = {
+			common: near.common * (1 - t) + far.common * t,
+			uncommon: near.uncommon * (1 - t) + far.uncommon * t,
+			rare: near.rare * (1 - t) + far.rare * t,
+			epic: near.epic * (1 - t) + far.epic * t,
+			legendary: near.legendary * (1 - t) + far.legendary * t,
+		};
+		const total = w.common + w.uncommon + w.rare + w.epic + w.legendary;
+		const roll = Math.random() * total;
+		let acc = 0;
+		if ((acc += w.common) >= roll) return 'common';
+		if ((acc += w.uncommon) >= roll) return 'uncommon';
+		if ((acc += w.rare) >= roll) return 'rare';
+		if ((acc += w.epic) >= roll) return 'epic';
+		return 'legendary';
+	}
 	private gameState: GameState;
 	private webSocketSessions: Map<string, WebSocketSession>;
 	private pendingNotifications: Map<string, Set<string>>; // sessionId -> Set<notificationId>
@@ -111,12 +132,7 @@ export class GameDO extends DurableObject {
 				totalTargetNodes: 8,
 				degradationCheckInterval: 15, // Check every 15 minutes
 				degradationRate: 10, // 10% per hour (negative effect)
-				spawnArea: {
-					minX: 30,
-					maxX: 1170, // 1200 - 30 margin
-					minY: 80, // Account for title area
-					maxY: 770, // 800 - 30 margin
-				},
+				spawnRadius: 2000, // Arbitrary large world radius around town (0,0)
 			},
 		};
 
@@ -244,8 +260,16 @@ export class GameDO extends DurableObject {
 	 * Initialize resource nodes if they don't exist
 	 */
 	private async initializeResourceNodes() {
+		// Migration: if existing nodes are present but coordinate system version changed, regenerate
+		const storedVer = (await this.ctx.storage.get<number>('coordSystemVersion')) ?? 0;
+		const CURRENT_VER = 2;
+		if (storedVer !== CURRENT_VER && this.gameState.resourceNodes.size > 0) {
+			console.log(`[GameDO] Coordinate system version changed (${storedVer} -> ${CURRENT_VER}). Regenerating resource nodes.`);
+			this.gameState.resourceNodes.clear();
+		}
+
 		if (this.gameState.resourceNodes.size > 0) {
-			return; // Already initialized
+			return; // Already initialized with current version
 		}
 
 		console.log('[GameDO] Initializing resource nodes (no existing nodes found)');
@@ -277,6 +301,7 @@ export class GameDO extends DurableObject {
 		// Only save resource nodes, don't overwrite entire game state
 		console.log(`[GameDO] Saving resource nodes only (preserving existing missions: ${this.gameState.missions.size})`);
 		await this.ctx.storage.put('resourceNodes', Object.fromEntries(this.gameState.resourceNodes));
+		await this.ctx.storage.put('coordSystemVersion', CURRENT_VER);
 		console.log('[GameDO] Initialized', nodes.length, 'resource nodes');
 	}
 
@@ -1314,27 +1339,19 @@ export class GameDO extends DurableObject {
 	 */
 	private createRandomResourceNode(type: ResourceType): ResourceNode {
 		const config = this.gameState.resourceConfig;
-		const spawnArea = config.spawnArea;
+		const R = config.spawnRadius;
 
-		// Random coordinates within spawn area
-		const x = Math.floor(Math.random() * (spawnArea.maxX - spawnArea.minX)) + spawnArea.minX;
-		const y = Math.floor(Math.random() * (spawnArea.maxY - spawnArea.minY)) + spawnArea.minY;
+		// Polar sampling around (0,0); bias density toward town by choosing r from a concave distribution
+		// Base area-uniform would be r = R * Math.sqrt(u). To bias inward, raise u to a power > 1 before sqrt.
+		const u = Math.random();
+		const inwardBias = 1.8; // >1 makes nodes more likely closer to town
+		const r = R * Math.sqrt(Math.pow(u, inwardBias));
+		const theta = Math.random() * Math.PI * 2;
+		const x = Math.round(r * Math.cos(theta));
+		const y = Math.round(r * Math.sin(theta));
 
-		// Base yield based on type and rarity
-		const rarities: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
-		const rarityWeights = [50, 30, 15, 4, 1]; // Percentage weights
-
-		let selectedRarity: Rarity = 'common';
-		const roll = Math.random() * 100;
-		let cumulative = 0;
-
-		for (let i = 0; i < rarities.length; i++) {
-			cumulative += rarityWeights[i];
-			if (roll <= cumulative) {
-				selectedRarity = rarities[i];
-				break;
-			}
-		}
+		// Rarity weighting increases with distance from town
+		const selectedRarity = this.pickRarityByRadius(r, R);
 
 		// Base yield varies by type and rarity
 		const baseYields = {
@@ -1346,7 +1363,7 @@ export class GameDO extends DurableObject {
 		const baseYield = baseYields[type][selectedRarity];
 
 		return {
-			id: `${type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+			id: `${type}-${crypto.randomUUID()}`,
 			type,
 			coordinates: { x, y },
 			baseYield,
@@ -1364,9 +1381,9 @@ export class GameDO extends DurableObject {
 	 */
 	private createRandomResourceNodeWithAntiOverlap(type: ResourceType): ResourceNode {
 		const config = this.gameState.resourceConfig;
-		const spawnArea = config.spawnArea;
-		const minDistance = 40; // Minimum distance between nodes in pixels
-		const maxAttempts = 10; // Maximum attempts to find a non-overlapping position
+		const R = config.spawnRadius;
+		const minDistance = 40; // Minimum distance between nodes in world units
+		const maxAttempts = 20; // Try more times in larger world
 
 		// Get existing node positions
 		const existingPositions: { x: number; y: number }[] = [];
@@ -1376,19 +1393,26 @@ export class GameDO extends DurableObject {
 			}
 		}
 
-		let x: number, y: number;
+		let x = 0, y = 0;
 		let attempts = 0;
 		let positionIsValid = false;
+		let chosenRarity: Rarity = 'common';
 
-		// Try to find a non-overlapping position
+		// Try to find a non-overlapping position via polar sampling with inward bias
 		do {
-			x = Math.floor(Math.random() * (spawnArea.maxX - spawnArea.minX)) + spawnArea.minX;
-			y = Math.floor(Math.random() * (spawnArea.maxY - spawnArea.minY)) + spawnArea.minY;
+			const u = Math.random();
+			const inwardBias = 1.8;
+			const r = R * Math.sqrt(Math.pow(u, inwardBias));
+			const theta = Math.random() * Math.PI * 2;
+			x = Math.round(r * Math.cos(theta));
+			y = Math.round(r * Math.sin(theta));
 
-			// Check if this position is far enough from existing nodes
+			// Check distance to existing nodes
 			positionIsValid = true;
 			for (const existing of existingPositions) {
-				const distance = Math.sqrt(Math.pow(x - existing.x, 2) + Math.pow(y - existing.y, 2));
+				const dx = x - existing.x;
+				const dy = y - existing.y;
+				const distance = Math.sqrt(dx * dx + dy * dy);
 				if (distance < minDistance) {
 					positionIsValid = false;
 					break;
@@ -1398,26 +1422,12 @@ export class GameDO extends DurableObject {
 			attempts++;
 		} while (!positionIsValid && attempts < maxAttempts);
 
-		// If we couldn't find a good position after maxAttempts, just use the last generated position
 		if (!positionIsValid) {
 			console.log(`[GameDO] Could not find non-overlapping position after ${maxAttempts} attempts, using position (${x}, ${y})`);
 		}
 
-		// Generate rarity and yield (same logic as createRandomResourceNode)
-		const rarities: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
-		const rarityWeights = [50, 30, 15, 4, 1];
-
-		let selectedRarity: Rarity = 'common';
-		const roll = Math.random() * 100;
-		let cumulative = 0;
-
-		for (let i = 0; i < rarities.length; i++) {
-			cumulative += rarityWeights[i];
-			if (roll <= cumulative) {
-				selectedRarity = rarities[i];
-				break;
-			}
-		}
+		const rFromCenter = Math.sqrt(x * x + y * y);
+		chosenRarity = this.pickRarityByRadius(rFromCenter, R);
 
 		const baseYields = {
 			ore: { common: 40, uncommon: 60, rare: 80, epic: 120, legendary: 200 },
@@ -1425,7 +1435,7 @@ export class GameDO extends DurableObject {
 			organic: { common: 25, uncommon: 40, rare: 60, epic: 90, legendary: 150 },
 		};
 
-		const baseYield = baseYields[type][selectedRarity];
+		const baseYield = baseYields[type][chosenRarity];
 
 		return {
 			id: `${type}-${crypto.randomUUID()}`,
@@ -1434,7 +1444,7 @@ export class GameDO extends DurableObject {
 			baseYield,
 			currentYield: baseYield,
 			depletion: 0,
-			rarity: selectedRarity,
+			rarity: chosenRarity,
 			discoveredBy: [],
 			lastHarvested: new Date(0),
 			isActive: true,

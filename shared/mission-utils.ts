@@ -3,8 +3,8 @@ import type { ResourceNode, MissionType, DrifterProfile, Vehicle } from './model
 // Type alias for drifter stats to avoid circular imports
 export type DrifterStats = Pick<DrifterProfile, 'combat' | 'scavenging' | 'tech' | 'speed'>;
 
-// Town coordinates (center of the map area)
-export const TOWN_COORDINATES = { x: 500, y: 350 };
+// Town coordinates (world origin)
+export const TOWN_COORDINATES = { x: 0, y: 0 };
 
 // Base speed value (in the same units as Drifter/Vehicle speed) for mission duration calculations
 // Choose 6 so that a drifter with speed 6 is the baseline (factor = 1.0)
@@ -60,10 +60,9 @@ export function calculateMissionDuration(
 	const baseDurationMinutes = 15;
 
 	// Distance factor: add time based on distance
-	// Assuming map coordinates range roughly 50-650 for X and 50-450 for Y
-	// Maximum distance would be roughly sqrt((650-50)^2 + (450-50)^2) ≈ 715
-	// So we'll normalize distance to 0-1 range and add up to 45 additional minutes
-	const maxExpectedDistance = 715;
+// For an arbitrarily large map, normalize using an expected gameplay radius (same order as server spawnRadius)
+// This keeps durations reasonable even as the world grows. Tune as needed.
+const maxExpectedDistance = 2000;
 	const normalizedDistance = Math.min(distance / maxExpectedDistance, 1.0);
 	const additionalMinutes = normalizedDistance * 45; // 0-45 additional minutes
 
