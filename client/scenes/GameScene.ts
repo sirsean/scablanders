@@ -41,46 +41,63 @@ export class GameScene extends Phaser.Scene {
 	private recentCompletedMissions = new Map<string, number>(); // missionId -> expiresAt (epoch ms)
 	private recentCompletedCleanupTimer?: Phaser.Time.TimerEvent;
 
+	private bgTile: Phaser.GameObjects.TileSprite | null = null;
+	private isDragging = false;
+	private dragMoved = false;
+	private dragStart = { x: 0, y: 0 };
+	private cameraStart = { x: 0, y: 0 };
+	private cursorKeys!: Phaser.Types.Input.Keyboard.CursorKeys;
+
 	constructor() {
 		super({ key: 'GameScene' });
 	}
 
 	create() {
-		// Add the world map background image
-		const _bg = this.add
-			.image(0, 0, 'world-map')
+		// Infinite tiled background
+		this.bgTile = this.add
+			.tileSprite(0, 0, this.scale.width, this.scale.height, 'tile-bg')
 			.setOrigin(0, 0)
-			.setDisplaySize(this.cameras.main.width, this.cameras.main.height)
-			.setDepth(-10); // ensure it stays behind everything
+			.setScrollFactor(0)
+			.setDepth(-10);
 
-		// Add invisible background rectangle for click detection
-		const background = this.add.rectangle(0, 0, this.cameras.main.width, this.cameras.main.height, 0x000000, 0);
-		background.setOrigin(0, 0);
-		background.setInteractive();
-
-		// Handle background clicks
-		background.on('pointerdown', () => {
-			this.handleBackgroundClick();
+		// Resize background to always cover the viewport
+		this.scale.on('resize', (gameSize: any) => {
+			if (this.bgTile) {
+				this.bgTile.setSize(gameSize.width, gameSize.height);
+			}
 		});
 
-		// Add title
-		this.add
-			.text(this.cameras.main.centerX, 50, 'THE SCABLANDS', {
-				fontSize: '36px',
-				color: '#FFD700',
-				fontFamily: 'Courier New',
-				fontStyle: 'bold',
-			})
-			.setOrigin(0.5);
+		// Scene-level input: drag-to-pan and background clicks (only when not over interactive objects)
+		this.input.on('pointerdown', (pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
+			if (currentlyOver.length === 0 && pointer.leftButtonDown()) {
+				const cam = this.cameras.main;
+				this.isDragging = true;
+				this.dragMoved = false;
+				this.dragStart.x = pointer.x;
+				this.dragStart.y = pointer.y;
+				this.cameraStart.x = cam.scrollX;
+				this.cameraStart.y = cam.scrollY;
+			}
+		});
+		this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+			if (!this.isDragging) return;
+			const cam = this.cameras.main;
+			const dx = pointer.x - this.dragStart.x;
+			const dy = pointer.y - this.dragStart.y;
+			if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this.dragMoved = true;
+			cam.scrollX = this.cameraStart.x - dx / cam.zoom;
+			cam.scrollY = this.cameraStart.y - dy / cam.zoom;
+		});
+		this.input.on('pointerup', (_pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
+			const wasDragging = this.isDragging;
+			this.isDragging = false;
+			if (currentlyOver.length === 0) {
+				if (!wasDragging || !this.dragMoved) {
+					this.handleBackgroundClick();
+				}
+			}
+		});
 
-		this.add
-			.text(this.cameras.main.centerX, 90, 'A harsh world of opportunity and danger', {
-				fontSize: '16px',
-				color: '#DAA520',
-				fontFamily: 'Courier New',
-				fontStyle: 'italic',
-			})
-			.setOrigin(0.5);
 
 		// Listen for game state changes
 		gameState.onStateChange((state: GameState) => {
@@ -94,6 +111,18 @@ export class GameScene extends Phaser.Scene {
 		// Resource nodes will be loaded from server via gameState
 
 		console.log('Game Scene initialized');
+
+		// Keyboard controls (arrows) and Shift for faster pan
+		this.cursorKeys = this.input.keyboard.createCursorKeys();
+
+		// Mouse wheel zoom
+		this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz: number, event: WheelEvent) => {
+			const cam = this.cameras.main;
+			const factor = dy > 0 ? 0.9 : 1.1;
+			const next = Phaser.Math.Clamp(cam.zoom * factor, 0.5, 2);
+			cam.setZoom(next);
+			event.preventDefault();
+		});
 
 		// Periodically clean up expired completed mission visuals
 		this.recentCompletedCleanupTimer = this.time.addEvent({
@@ -981,19 +1010,33 @@ export class GameScene extends Phaser.Scene {
 		}
 	}
 
-	update() {
-		const cursors = this.input.keyboard?.createCursorKeys();
-		if (!cursors) {
-			return;
-		}
+	update(time: number, delta: number) {
+		const cam = this.cameras.main;
 
-		// ESC to close mission panel and deselect
-		if (Phaser.Input.Keyboard.JustDown(cursors.space)) {
+		// Space to close mission panel and deselect
+		if (Phaser.Input.Keyboard.JustDown(this.cursorKeys.space!)) {
 			const currentState = gameState.getState();
 			if (currentState.showMissionPanel) {
 				gameState.hideMissionPanel();
 				this.deselectCurrentNode();
 			}
+		}
+
+		// Keyboard panning (arrows or WASD); hold Shift to accelerate
+		const dt = delta / 1000;
+		const accel = (this.cursorKeys.shift?.isDown) ? 1200 : 600;
+		let vx = 0;
+		let vy = 0;
+		if (this.cursorKeys.left?.isDown) vx -= 1;
+		if (this.cursorKeys.right?.isDown) vx += 1;
+		if (this.cursorKeys.up?.isDown) vy -= 1;
+		if (this.cursorKeys.down?.isDown) vy += 1;
+		if (vx !== 0 || vy !== 0) {
+			const len = Math.hypot(vx, vy) || 1;
+			vx /= len;
+			vy /= len;
+			cam.scrollX += vx * accel * dt;
+			cam.scrollY += vy * accel * dt;
 		}
 
 		// Update mission drifter positions
@@ -1013,6 +1056,13 @@ export class GameScene extends Phaser.Scene {
 		if (Math.floor(this.time.now / 5000) !== this.lastCleanupCheck) {
 			this.lastCleanupCheck = Math.floor(this.time.now / 5000);
 			this.checkForOrphanedContainers();
+		}
+
+		// Sync tiled background with camera scroll/zoom
+		if (this.bgTile) {
+			this.bgTile.tilePositionX = cam.scrollX * cam.zoom;
+			this.bgTile.tilePositionY = cam.scrollY * cam.zoom;
+			this.bgTile.setTileScale(cam.zoom);
 		}
 	}
 

@@ -37,6 +37,7 @@ export class BootScene extends Phaser.Scene {
 		);
 
 		// Load the world map background image
+		this.load.image('tile-bg', this.generateTilePattern(128, '#2c1810', '#3a2a22'));
 		this.load.image('world-map', 'assets/images/scablanders-map.png');
 
 		// Load resource node textures by type and rarity
@@ -99,6 +100,37 @@ export class BootScene extends Phaser.Scene {
 		ctx.strokeRect(2, 2, width - 4, height - 4);
 
 		return canvas.toDataURL();
+	}
+
+	private generateTilePattern(size: number, base: string, dot: string): string {
+		const c = document.createElement('canvas');
+		c.width = size;
+		c.height = size;
+		const g = c.getContext('2d');
+		if (!g) return '';
+		g.fillStyle = base;
+		g.fillRect(0, 0, size, size);
+		// Subtle dot grid
+		g.globalAlpha = 0.25;
+		g.fillStyle = dot;
+		for (let y = 0; y <= size; y += 16) {
+			for (let x = 0; x <= size; x += 16) {
+				g.fillRect(x, y, 2, 2);
+			}
+		}
+		// Light grid lines to break monotony, seamless at edges
+		g.globalAlpha = 0.12;
+		g.strokeStyle = dot;
+		g.lineWidth = 1;
+		g.beginPath();
+		for (let i = 0; i <= size; i += 32) {
+			g.moveTo(i + 0.5, 0);
+			g.lineTo(i + 0.5, size);
+			g.moveTo(0, i + 0.5);
+			g.lineTo(size, i + 0.5);
+		}
+		g.stroke();
+		return c.toDataURL();
 	}
 
 	create() {

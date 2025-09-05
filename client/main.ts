@@ -12,8 +12,6 @@ import { UIManager } from './ui/UIManager';
 // Game configuration
 const config: Phaser.Types.Core.GameConfig = {
 	type: Phaser.AUTO,
-	width: 1200,
-	height: 800,
 	parent: 'game-container',
 	backgroundColor: '#2c1810',
 	physics: {
@@ -24,6 +22,9 @@ const config: Phaser.Types.Core.GameConfig = {
 		},
 	},
 	scene: [BootScene, GameScene],
+	scale: {
+		mode: Phaser.Scale.RESIZE,
+	},
 };
 
 // Initialize the game
