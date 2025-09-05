@@ -28,6 +28,7 @@ export class GameScene extends Phaser.Scene {
 	private nodeLabels = new Map<string, Phaser.GameObjects.Text>();
 	private nodeGlows = new Map<string, Phaser.GameObjects.Arc>(); // Track glow circles
 	private missionIndicators = new Map<string, Phaser.GameObjects.Graphics>();
+	private missionIndicatorGlows = new Map<string, Phaser.GameObjects.Graphics>();
 	private missionRoutes = new Map<string, Phaser.GameObjects.Graphics>();
 	private missionDrifters = new Map<string, Phaser.GameObjects.Container>();
 	private pendingTinyLoads = new Map<string, Promise<string>>();
@@ -462,8 +463,13 @@ export class GameScene extends Phaser.Scene {
 		console.log(`[GameScene] 🎯 Updating mission indicators for ${missions.length} missions`);
 
 		// Clear existing indicators completely for a clean redraw
-		this.missionIndicators.forEach((indicator, _missionId) => {
+		this.missionIndicators.forEach((indicator, missionId) => {
 			indicator.destroy();
+			const glow = this.missionIndicatorGlows.get(missionId);
+			if (glow) {
+				try { glow.destroy(); } catch {}
+				this.missionIndicatorGlows.delete(missionId);
+			}
 		});
 		this.missionIndicators.clear();
 
@@ -488,7 +494,7 @@ export class GameScene extends Phaser.Scene {
 			indicator.lineStyle(3, color as number, 1);
 			indicator.strokeCircle(node.x, node.y, 40);
 
-			// Animate the indicator pulse
+			// Animate the indicator pulse (subtle for all)
 			this.tweens.add({
 				targets: indicator,
 				alpha: { from: 1, to: 0.3 },
@@ -496,6 +502,24 @@ export class GameScene extends Phaser.Scene {
 				yoyo: true,
 				repeat: -1,
 			});
+
+			// Add glow for ready-to-collect (green) missions
+			if (color === COLOR_COMPLETED) {
+				const glow = this.add.graphics();
+				glow.fillStyle(COLOR_COMPLETED, 0.18);
+				glow.fillCircle(node.x, node.y, 46);
+				glow.setBlendMode(Phaser.BlendModes.ADD);
+				glow.setScale(1);
+				this.tweens.add({
+					targets: glow,
+					scale: { from: 1, to: 1.25 },
+					alpha: { from: 0.18, to: 0 },
+					duration: 1200,
+					yoyo: false,
+					repeat: -1,
+				});
+				this.missionIndicatorGlows.set(mission.id, glow);
+			}
 
 			this.missionIndicators.set(mission.id, indicator);
 		});
@@ -700,19 +724,17 @@ export class GameScene extends Phaser.Scene {
 		const { x: nodeX, y: nodeY } = targetNode.coordinates;
 		const routeGraphics = this.add.graphics();
 
-		// Draw dashed route from town to resource node in the provided mission color
-		routeGraphics.lineStyle(2, color, 0.9);
-		const distance = Phaser.Math.Distance.Between(TOWN_X, TOWN_Y, nodeX, nodeY);
-		const steps = Math.max(1, Math.floor(distance / 20));
-		for (let i = 0; i < steps; i += 2) {
-			const t1 = i / steps;
-			const t2 = Math.min((i + 1) / steps, 1);
-			const x1 = TOWN_X + (nodeX - TOWN_X) * t1;
-			const y1 = TOWN_Y + (nodeY - TOWN_Y) * t1;
-			const x2 = TOWN_X + (nodeX - TOWN_X) * t2;
-			const y2 = TOWN_Y + (nodeY - TOWN_Y) * t2;
-			routeGraphics.lineBetween(x1, y1, x2, y2);
-		}
+		// Store route data for animation
+		routeGraphics.setData('x1', TOWN_X);
+		routeGraphics.setData('y1', TOWN_Y);
+		routeGraphics.setData('x2', nodeX);
+		routeGraphics.setData('y2', nodeY);
+		routeGraphics.setData('phase', 0);
+		routeGraphics.setData('color', color);
+		routeGraphics.setData('animated', color !== COLOR_COMPLETED);
+
+		// Initial draw
+		this.drawDashedLine(routeGraphics, TOWN_X, TOWN_Y, nodeX, nodeY, color, 0);
 
 		this.missionRoutes.set(mission.id, routeGraphics);
 	}
@@ -1014,17 +1036,76 @@ export class GameScene extends Phaser.Scene {
 			});
 		}
 
-		// Periodic cleanup check for orphaned containers (every 5 seconds)
+	// Periodic cleanup check for orphaned containers (every 5 seconds)
 		if (Math.floor(this.time.now / 5000) !== this.lastCleanupCheck) {
 			this.lastCleanupCheck = Math.floor(this.time.now / 5000);
 			this.checkForOrphanedContainers();
 		}
+
+		// Animate mission routes (amber in-progress)
+		const dashLen = 12;
+		const gapLen = 8;
+		const cycle = dashLen + gapLen;
+		const speed = 60; // px/s
+		const playerAddr = gameState.getState().playerAddress;
+		this.missionRoutes.forEach((route, missionId) => {
+			const m = (gameState.getState().activeMissions || []).find((mm) => mm.id === missionId);
+			if (!m) return;
+			const newColor = this.getMissionRenderColor(m, playerAddr) ?? COLOR_SELF_ACTIVE;
+			const x1 = route.getData('x1') as number;
+			const y1 = route.getData('y1') as number;
+			const x2 = route.getData('x2') as number;
+			const y2 = route.getData('y2') as number;
+			let phase = (route.getData('phase') as number) || 0;
+			const wasAnimated = !!route.getData('animated');
+			const nowAnimated = newColor !== COLOR_COMPLETED;
+			route.setData('animated', nowAnimated);
+			route.setData('color', newColor);
+			if (nowAnimated) {
+				phase = (phase + speed * dt) % cycle;
+				route.setData('phase', phase);
+			}
+			route.clear();
+			this.drawDashedLine(route, x1, y1, x2, y2, newColor, nowAnimated ? phase : 0, dashLen, gapLen);
+		});
 
 		// Sync tiled background with camera scroll/zoom
 		if (this.bgTile) {
 			this.bgTile.tilePositionX = cam.scrollX * cam.zoom;
 			this.bgTile.tilePositionY = cam.scrollY * cam.zoom;
 			this.bgTile.setTileScale(cam.zoom);
+		}
+}
+
+	private drawDashedLine(
+		route: Phaser.GameObjects.Graphics,
+		x1: number,
+		y1: number,
+		x2: number,
+		y2: number,
+		color: number,
+		phase: number,
+		dash: number = 12,
+		gap: number = 8,
+	) {
+		route.lineStyle(2, color, 0.9);
+		const dx = x2 - x1;
+		const dy = y2 - y1;
+		const dist = Math.sqrt(dx * dx + dy * dy);
+		if (dist <= 0) return;
+		const ux = dx / dist;
+		const uy = dy / dist;
+		let traveled = phase % (dash + gap);
+		let sx = x1 + ux * traveled;
+		let sy = y1 + uy * traveled;
+		while (traveled < dist) {
+			const seg = Math.min(dash, dist - traveled);
+			const ex = sx + ux * seg;
+			const ey = sy + uy * seg;
+			route.lineBetween(sx, sy, ex, ey);
+			traveled += dash + gap;
+			sx = x1 + ux * traveled;
+			sy = y1 + uy * traveled;
 		}
 	}
 
