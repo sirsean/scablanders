@@ -1084,7 +1084,17 @@ export class GameScene extends Phaser.Scene {
 
 			// Animate dash phase for amber in-progress
 			if (nowAnimated) {
-				phase = (phase + speed * dt) % cycle;
+				// Determine mission progress (0..1) to reverse direction on return leg
+				const startTs = m.startTime instanceof Date ? m.startTime.getTime() : new Date(m.startTime).getTime();
+				const endTs = m.completionTime instanceof Date ? m.completionTime.getTime() : new Date(m.completionTime).getTime();
+				let prog = 0.0;
+				if (Number.isFinite(startTs) && Number.isFinite(endTs) && endTs > startTs) {
+					prog = Math.max(0, Math.min(1, (Date.now() - startTs) / (endTs - startTs)));
+				}
+				const dir = prog <= 0.5 ? 1 : -1; // outward first half, inward second half
+				phase += dir * speed * dt;
+				if (phase >= cycle) phase -= cycle;
+				if (phase < 0) phase += cycle;
 				route.setData('phase', phase);
 			}
 			route.clear();
