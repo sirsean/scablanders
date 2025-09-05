@@ -164,11 +164,30 @@ class GameStateManager extends EventTarget {
 			const { status, authenticated } = event.detail;
 			console.log('[GameState] WebSocket connection status changed:', { status, authenticated });
 
+			// Capture previous WS auth state to detect downgrades
+			const prevWsConnected = this.state.wsConnected;
+			const prevWsAuthenticated = this.state.wsAuthenticated;
+			const prevConnectionStatus = this.state.connectionStatus;
+
 			this.setState({
 				connectionStatus: status,
 				wsConnected: status === 'connected',
 				wsAuthenticated: authenticated || false,
 			});
+
+			// Only force logout if the socket was previously authenticated while connected
+			// and then reports connected but unauthenticated (auth downgrade).
+			const downgradedAuth =
+				prevConnectionStatus === 'connected' && prevWsConnected && prevWsAuthenticated && status === 'connected' && !authenticated;
+			if (this.state.isAuthenticated && downgradedAuth) {
+				this.addNotification({
+					type: 'info',
+					title: 'Session Expired',
+					message: 'Please reconnect to continue.',
+				});
+				// Best-effort disconnect; listeners will cascade UI changes and data clears
+				auth.disconnect();
+			}
 
 			if (status === 'connected') {
 				this.setState({
@@ -345,18 +364,41 @@ class GameStateManager extends EventTarget {
 			});
 
 			if (!response.ok) {
+				// Handle session expiry explicitly
+				if (response.status === 401) {
+					// Only trigger logout if we currently believe we're authenticated
+					if (this.state.isAuthenticated) {
+						this.addNotification({
+							type: 'info',
+							title: 'Session Expired',
+							message: 'Please reconnect to continue.',
+						});
+						try {
+							await auth.disconnect();
+						} catch {}
+						const err: any = new Error('Unauthorized');
+						err.__handled = true; // skip generic error toast in catch
+						throw err;
+					}
+					// If we already consider ourselves logged out, just throw without extra toast
+					throw new Error('Unauthorized');
+				}
+
 				const error = await response.json().catch(() => ({ error: 'Network error' }));
 				throw new Error(error.error || `HTTP ${response.status}`);
 			}
 
 			return response;
-		} catch (error) {
+		} catch (error: any) {
 			console.error(`API call failed for ${endpoint}:`, error);
-			this.addNotification({
-				type: 'error',
-				title: 'Network Error',
-				message: `Failed to ${endpoint}: ${error.message}`,
-			});
+			// Avoid duplicate toast for explicitly handled cases (e.g., 401)
+			if (!error?.__handled) {
+				this.addNotification({
+					type: 'error',
+					title: 'Network Error',
+					message: `Failed to ${endpoint}: ${error.message}`,
+				});
+			}
 			throw error;
 		}
 	}
