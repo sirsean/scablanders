@@ -758,10 +758,15 @@ export class GameScene extends Phaser.Scene {
 			return;
 		}
 
-		// Mission indicator ring (amber for self active missions)
+		// Mission indicator ring (color reflects status: amber active, green when time reached)
 		const missionIndicator = this.add.graphics();
-		missionIndicator.lineStyle(2, COLOR_SELF_ACTIVE);
+		// Determine initial color
+		const playerAddr = gameState.getState().playerAddress;
+		const initialColor = this.getMissionRenderColor(mission, playerAddr) ?? COLOR_SELF_ACTIVE;
+		missionIndicator.lineStyle(2, initialColor);
 		missionIndicator.strokeCircle(0, 0, 14);
+		// Stash reference for live updates
+		drifterContainer.setData('indicatorRing', missionIndicator);
 		console.log(
 			`[GameScene] 🟢 Created mission indicator ring for mission ${mission.id.slice(-6)} at container position (0, 0) - will be positioned later`,
 		);
@@ -996,6 +1001,15 @@ export class GameScene extends Phaser.Scene {
 				const targetNode = currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId);
 				if (drifterContainer && targetNode) {
 					this.updateDrifterPosition(drifterContainer, mission, targetNode);
+					// Update ring color live based on time
+					const ring = drifterContainer.getData('indicatorRing') as Phaser.GameObjects.Graphics | undefined;
+					if (ring) {
+						const playerAddr = gameState.getState().playerAddress;
+						const color = this.getMissionRenderColor(mission, playerAddr) ?? COLOR_SELF_ACTIVE;
+						ring.clear();
+						ring.lineStyle(2, color);
+						ring.strokeCircle(0, 0, 14);
+					}
 				}
 			});
 		}
