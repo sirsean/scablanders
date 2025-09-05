@@ -13,6 +13,7 @@ import { buildNotificationStyle } from './utils/notificationStyles';
 export class UIManager {
 	private notificationContainer: HTMLElement | null = null;
 	private missionPanel: HTMLElement | null = null;
+	private missionTooltipEl: HTMLElement | null = null;
 	private driftersPanel: HTMLElement | null = null;
 	private profilePanel: HTMLElement | null = null;
 	private activeMissionsPanel: HTMLElement | null = null;
@@ -97,6 +98,7 @@ export class UIManager {
 	private createUIElements() {
 		this.createNotificationContainer();
 		this.createActionMenu();
+		this.createMissionTooltip();
 		this.createMissionPanel();
 		this.createDriftersPanel();
 		this.createProfilePanel();
@@ -236,6 +238,26 @@ private createLogPanel() {
 		this.swallowPointerEvents(this.logPanel);
 }
 
+private createMissionTooltip() {
+		this.missionTooltipEl = document.createElement('div');
+		this.missionTooltipEl.id = 'mission-tooltip';
+		this.missionTooltipEl.style.cssText = `
+		  position: fixed;
+		  display: none;
+		  max-width: 260px;
+		  background: rgba(0, 0, 0, 0.9);
+		  border: 1px solid #aaaaaa;
+		  color: #ffffff;
+		  font-family: 'Courier New', monospace;
+		  font-size: 12px;
+		  padding: 8px 10px;
+		  border-radius: 6px;
+		  z-index: 1200;
+		  pointer-events: none;
+		`;
+		document.body.appendChild(this.missionTooltipEl);
+	}
+
 private createDrifterInfoPanel() {
 		this.drifterInfoPanel = DrifterInfoPanel.createDrifterInfoPanel();
 		document.body.appendChild(this.drifterInfoPanel);
@@ -245,6 +267,33 @@ private createDrifterInfoPanel() {
 }
 
 	private setupEventListeners() {
+		// HUD mission tooltip events from GameScene
+		window.addEventListener('hud:mission-tooltip' as any, (ev: any) => {
+			const detail = ev?.detail || {};
+			if (!this.missionTooltipEl) return;
+			if (!detail.visible) {
+				this.missionTooltipEl.style.display = 'none';
+				return;
+			}
+			if (detail.content !== undefined) {
+				this.missionTooltipEl.innerHTML = detail.content;
+			}
+			// Position near pointer; clamp to viewport
+			const padding = 10;
+			const el = this.missionTooltipEl;
+			el.style.display = 'block';
+			el.style.position = 'fixed';
+			// Temporarily place to measure size
+			el.style.left = `${detail.x + 16}px`;
+			el.style.top = `${detail.y + 16}px`;
+			const rect = el.getBoundingClientRect();
+			let x = detail.x + 16;
+			let y = detail.y + 16;
+			if (x + rect.width + padding > window.innerWidth) x = Math.max(padding, window.innerWidth - rect.width - padding);
+			if (y + rect.height + padding > window.innerHeight) y = Math.max(padding, window.innerHeight - rect.height - padding);
+			el.style.left = `${x}px`;
+			el.style.top = `${y}px`;
+		});
 		// Panel close buttons
 		document.getElementById('close-mission-panel')?.addEventListener('click', () => {
 			gameState.toggleMissionPanel();

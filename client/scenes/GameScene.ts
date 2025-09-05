@@ -33,7 +33,6 @@ export class GameScene extends Phaser.Scene {
 	private pendingTinyLoads = new Map<string, Promise<string>>();
 	private townMarker: Phaser.GameObjects.Container | null = null;
 	private missionRenderVersion = 0;
-	private missionTooltip: Phaser.GameObjects.Container | null = null;
 	// Mission planning overlay
 	private planningRoute: Phaser.GameObjects.Graphics | null = null;
 	private planningCircle: Phaser.GameObjects.Graphics | null = null;
@@ -109,7 +108,6 @@ export class GameScene extends Phaser.Scene {
 
 		// Create town marker
 		this.createTownMarker();
-		this.createMissionTooltip();
 
 		// Resource nodes will be loaded from server via gameState
 
@@ -135,104 +133,48 @@ export class GameScene extends Phaser.Scene {
 		});
 	}
 
-	private createMissionTooltip() {
-		this.missionTooltip = this.add.container(0, 0);
-		this.missionTooltip.setDepth(1000); // High depth to be on top of everything
-		this.missionTooltip.setVisible(false);
 
-		const tooltipBg = this.add.graphics();
-		const tooltipText = this.add.text(10, 10, '', {
-			fontSize: '12px',
-			fontFamily: 'Courier New',
-			color: '#ffffff',
-			wordWrap: { width: 230 },
-		});
-
-		this.missionTooltip.add([tooltipBg, tooltipText]);
-	}
-
-	private showMissionTooltip(pointer: Phaser.Input.Pointer, mission: Mission) {
-		if (!this.missionTooltip) {
-			return;
-		}
-
-		const textObject = this.missionTooltip.getAt(1) as Phaser.GameObjects.Text;
-		const bgObject = this.missionTooltip.getAt(0) as Phaser.GameObjects.Graphics;
+	private buildMissionTooltipHtml(mission: Mission): string {
 		const currentState = gameState.getState();
-
 		const timeRemaining = this.formatTimeRemaining(mission.completionTime);
-
 		const drifterProfiles = currentState.ownedDrifters.filter((d) => mission.drifterIds.includes(d.tokenId));
 		let drifterNames = drifterProfiles.map((d) => d.name).join(', ');
 		if (drifterProfiles.length === 0) {
 			drifterNames = mission.drifterIds.map((id) => `#${id}`).join(', ');
 		} else if (drifterProfiles.length > 3) {
-			drifterNames =
-				drifterProfiles
-					.slice(0, 3)
-					.map((d) => d.name)
-					.join(', ') + `, +${drifterProfiles.length - 3} more`;
+			drifterNames = drifterProfiles.slice(0, 3).map((d) => d.name).join(', ') + `, +${drifterProfiles.length - 3} more`;
 		}
-
 		const targetNode = currentState.resourceNodes?.find((r) => r.id === mission.targetNodeId);
 		const targetName = targetNode ? `${targetNode.type.toUpperCase()} (${targetNode.rarity})` : 'Unknown Target';
-
 		let vehicleName = 'On Foot';
 		if (mission.vehicleInstanceId) {
 			const vehicleInstance = currentState.profile?.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
 			if (vehicleInstance) {
 				const vehicleData = getVehicleData(vehicleInstance.vehicleId);
-				if (vehicleData) {
-					vehicleName = vehicleData.name;
-				}
+				if (vehicleData) vehicleName = vehicleData.name;
 			}
 		}
-
-		const content =
-			`Mission: ${mission.type.toUpperCase()}
-` +
-			`Target: ${targetName}
-` +
-			`Vehicle: ${vehicleName}
-` +
-			`Time Left: ${timeRemaining}
-` +
-			`Drifters: ${drifterNames}`;
-
-		textObject.setText(content);
-
-		// Resize background based on text content
-		const textBounds = textObject.getBounds();
-		const padding = 10;
-		const newWidth = textBounds.width + padding * 2;
-		const newHeight = textBounds.height + padding * 2;
-
-		bgObject.clear();
-		bgObject.fillStyle(0x111111, 0.9);
-		bgObject.fillRoundedRect(0, 0, newWidth, newHeight, 5);
-		bgObject.lineStyle(1, 0xaaaaaa, 1);
-		bgObject.strokeRoundedRect(0, 0, newWidth, newHeight, 5);
-
-		// Position tooltip near cursor, ensuring it stays within screen bounds
-		let x = pointer.x + 20;
-		let y = pointer.y + 20;
-
-		if (x + newWidth > this.cameras.main.width) {
-			x = pointer.x - newWidth - 20;
-		}
-		if (y + newHeight > this.cameras.main.height) {
-			y = pointer.y - newHeight - 20;
-		}
-
-		this.missionTooltip.setPosition(x, y);
-		this.missionTooltip.setVisible(true);
+		// Simple HTML formatting
+		return [
+			`<div><strong>Mission:</strong> ${mission.type.toUpperCase()}</div>`,
+			`<div><strong>Target:</strong> ${targetName}</div>`,
+			`<div><strong>Vehicle:</strong> ${vehicleName}</div>`,
+			`<div><strong>Time Left:</strong> ${timeRemaining}</div>`,
+			`<div><strong>Drifters:</strong> ${drifterNames}</div>`,
+		].join('');
 	}
 
-	private hideMissionTooltip() {
-		if (this.missionTooltip) {
-			this.missionTooltip.setVisible(false);
-		}
+	private hudShowMissionTooltip(pointer: Phaser.Input.Pointer, mission: Mission) {
+		const html = this.buildMissionTooltipHtml(mission);
+		window.dispatchEvent(new CustomEvent('hud:mission-tooltip', { detail: { visible: true, x: pointer.x, y: pointer.y, content: html } } as any));
 	}
+	private hudUpdateMissionTooltip(pointer: Phaser.Input.Pointer) {
+		window.dispatchEvent(new CustomEvent('hud:mission-tooltip', { detail: { visible: true, x: pointer.x, y: pointer.y } } as any));
+	}
+	private hudHideMissionTooltip() {
+		window.dispatchEvent(new CustomEvent('hud:mission-tooltip', { detail: { visible: false } } as any));
+	}
+
 
 	private formatTimeRemaining(completionTime: Date | string): string {
 		const endDate = completionTime instanceof Date ? completionTime : new Date(completionTime);
@@ -801,10 +743,13 @@ export class GameScene extends Phaser.Scene {
 		// A larger circle for easier hovering
 		drifterContainer.setInteractive(new Phaser.Geom.Circle(0, 0, 20), Phaser.Geom.Circle.Contains);
 		drifterContainer.on('pointerover', (pointer: Phaser.Input.Pointer) => {
-			this.showMissionTooltip(pointer, mission);
+			this.hudShowMissionTooltip(pointer, mission);
+		});
+		drifterContainer.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+			this.hudUpdateMissionTooltip(pointer);
 		});
 		drifterContainer.on('pointerout', () => {
-			this.hideMissionTooltip();
+			this.hudHideMissionTooltip();
 		});
 
 		// If a newer render started while we were setting up, abort
