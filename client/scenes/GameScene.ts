@@ -1046,7 +1046,7 @@ export class GameScene extends Phaser.Scene {
 		const dashLen = 12;
 		const gapLen = 8;
 		const cycle = dashLen + gapLen;
-		const speed = 60; // px/s
+		const speed = 12; // px/s (slower to match drifter movement)
 		const playerAddr = gameState.getState().playerAddress;
 		this.missionRoutes.forEach((route, missionId) => {
 			const m = (gameState.getState().activeMissions || []).find((mm) => mm.id === missionId);
@@ -1057,10 +1057,32 @@ export class GameScene extends Phaser.Scene {
 			const x2 = route.getData('x2') as number;
 			const y2 = route.getData('y2') as number;
 			let phase = (route.getData('phase') as number) || 0;
-			const wasAnimated = !!route.getData('animated');
-			const nowAnimated = newColor !== COLOR_COMPLETED;
+			const nowAnimated = newColor !== COLOR_COMPLETED; // amber moves, green pulses
 			route.setData('animated', nowAnimated);
 			route.setData('color', newColor);
+			// Manage pulse tween for ready-to-collect (green) routes
+			const isReady = newColor === COLOR_COMPLETED;
+			let pulseTween = route.getData('pulseTween') as Phaser.Tweens.Tween | null;
+			if (isReady) {
+				if (!pulseTween) {
+					pulseTween = this.tweens.add({
+						targets: route,
+						alpha: { from: 1, to: 0.5 },
+						duration: 900,
+						yoyo: true,
+						repeat: -1,
+					});
+					route.setData('pulseTween', pulseTween);
+				}
+			} else {
+				if (pulseTween) {
+					pulseTween.stop();
+					route.setData('pulseTween', null);
+					route.setAlpha(1);
+				}
+			}
+
+			// Animate dash phase for amber in-progress
 			if (nowAnimated) {
 				phase = (phase + speed * dt) % cycle;
 				route.setData('phase', phase);
