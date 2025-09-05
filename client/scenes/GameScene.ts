@@ -4,9 +4,9 @@ import { gameState, GameState } from '../gameState';
 import { getResourceTextureKey } from '../utils/resourceTextures';
 import { getVehicleData } from '../utils/vehicleUtils';
 
-// Town coordinates - center of the map area
-const TOWN_X = 500;
-const TOWN_Y = 350;
+// Town coordinates - world origin
+const TOWN_X = 0;
+const TOWN_Y = 0;
 
 // Resource node display constants
 const RESOURCE_NODE_BASE_SCALE = 0.15; // Base scale for resource nodes (adjust to resize all nodes)
@@ -66,6 +66,9 @@ export class GameScene extends Phaser.Scene {
 				this.bgTile.setSize(gameSize.width, gameSize.height);
 			}
 		});
+
+		// Center camera on town at startup
+		this.cameras.main.centerOn(TOWN_X, TOWN_Y);
 
 		// Scene-level input: drag-to-pan and background clicks (only when not over interactive objects)
 		this.input.on('pointerdown', (pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
