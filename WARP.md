@@ -20,9 +20,6 @@ Quick commands
 Agent workflow and version control
 
 - Do NOT run `git commit` or `git push` unless explicitly instructed by the user.
-- Before any commit, always surface changes for review first:
-  - Show a concise status: `git --no-pager status --porcelain`
-  - Show diffs as requested (working tree or staged) using `--no-pager`
 - Prefer to wait for explicit approval before staging/committing. If staging is necessary for a task (e.g., to run a staged-only tool), announce it and confirm.
 - Avoid pager output in the terminal; use `--no-pager` for all git commands.
 

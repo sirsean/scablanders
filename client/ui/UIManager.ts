@@ -144,11 +144,13 @@ private createActionMenu() {
 		connectButton.id = 'connect-wallet';
 		connectButton.textContent = 'Connect Wallet';
 		connectButton.className = 'button';
+		// Make connect button span full width of the action menu
+		connectButton.style.width = '100%';
 
 		const walletInfo = document.createElement('div');
 		walletInfo.id = 'wallet-info';
-		walletInfo.style.display = 'none';
-		walletInfo.style.cssText = 'display: none;';
+		// Hidden by default; ensure the container spans full width
+		walletInfo.style.cssText = 'display: none; width: 100%;';
 
 		const addressDisplay = document.createElement('div');
 		addressDisplay.id = 'address-display';
@@ -159,6 +161,8 @@ private createActionMenu() {
 		disconnectButton.id = 'disconnect-wallet';
 		disconnectButton.textContent = 'Disconnect';
 		disconnectButton.className = 'button';
+		// Make disconnect button span full width of the action menu
+		disconnectButton.style.width = '100%';
 		walletInfo.appendChild(disconnectButton);
 
 		// Append wallet controls last (bottom of stack)
