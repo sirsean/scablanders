@@ -106,9 +106,15 @@ export class DriftersList {
   static render(opts: DriftersListOptions): string {
     const { idPrefix, mode, drifters, state } = opts;
 
-    // Compute busy set from active missions
+    // Compute busy set from active missions (merge playerMissions with global filtered list)
+    const selfAddr = state.playerAddress?.toLowerCase() || '';
+    const fromPlayer = state.playerMissions || [];
+    const fromGlobal = (state.activeMissions || []).filter((m) => m.playerAddress?.toLowerCase() === selfAddr);
+    const mergedMap = new Map<string, any>();
+    for (const m of fromGlobal) mergedMap.set(m.id, m);
+    for (const m of fromPlayer) mergedMap.set(m.id, m);
     const busyDrifterIds = new Set(
-      state.playerMissions.filter((m) => m.status === 'active').flatMap((m) => m.drifterIds)
+      Array.from(mergedMap.values()).filter((m: any) => m.status === 'active').flatMap((m: any) => m.drifterIds)
     );
 
     // Selected and capacity (mission-select mode)

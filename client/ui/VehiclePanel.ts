@@ -75,6 +75,20 @@ export class VehiclePanel {
 			return;
 		}
 
+		// Build a unified set of vehicle instance IDs that are currently used by any of the player's active missions
+		const state = gameState.getState();
+		const selfAddr = state.playerAddress?.toLowerCase() || '';
+		const fromPlayer = state.playerMissions || [];
+		const fromGlobal = (state.activeMissions || []).filter((m) => m.playerAddress?.toLowerCase() === selfAddr);
+		const mergedMap = new Map<string, any>();
+		for (const m of fromGlobal) mergedMap.set(m.id, m);
+		for (const m of fromPlayer) mergedMap.set(m.id, m);
+		const activeVehicleIds = new Set<string>(
+			Array.from(mergedMap.values())
+				.filter((m: any) => m.status === 'active' && !!m.vehicleInstanceId)
+				.map((m: any) => m.vehicleInstanceId as string),
+		);
+
 		const vehiclesByType = vehicles.reduce(
 			(acc, vehicle) => {
 				if (!acc[vehicle.vehicleId]) {
@@ -87,12 +101,12 @@ export class VehiclePanel {
 		);
 
 		content.innerHTML = `
-      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px;">
-        ${Object.entries(vehiclesByType)
-					.map(([vehicleId, instances]) => this.renderVehicleCard(vehicleId, instances))
+	      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px;">
+	        ${Object.entries(vehiclesByType)
+					.map(([vehicleId, instances]) => this.renderVehicleCard(vehicleId, instances, activeVehicleIds))
 					.join('')}
-      </div>
-    `;
+	      </div>
+	    `;
 
 		document.querySelectorAll('.select-vehicle-btn').forEach((button) => {
 			button.addEventListener('click', async (e) => {
@@ -116,39 +130,40 @@ export class VehiclePanel {
 		});
 	}
 
-	private static renderVehicleCard(vehicleId: string, instances: PlayerVehicle[]): string {
+	private static renderVehicleCard(vehicleId: string, instances: PlayerVehicle[], activeVehicleIds: Set<string>): string {
 		const vehicleData = getVehicleData(vehicleId);
 		if (!vehicleData) {
 			return '';
 		}
 
 		return `
-      <div style="border: 1px solid #555; border-radius: 6px; padding: 12px; background: rgba(255, 255, 255, 0.02);">
-        <h4 style="color: #FFD700; margin-top: 0;">${vehicleData.name} (${instances.length})</h4>
-        <p style="font-size: 12px; color: #ccc;">${vehicleData.description}</p>
-        <div style="font-size: 12px; margin-top: 8px;">
-          <p style="margin: 4px 0;">Speed: <span style="color: #00ff00;">${vehicleData.speed}</span></p>
-          <p style="margin: 4px 0;">Combat Bonus: <span style="color: #ff6666;">${(vehicleData as any).combat ?? 0}</span></p>
-          <p style="margin: 4px 0;">Scavenging Bonus: <span style="color: #66ff66;">${(vehicleData as any).scavenging ?? 0}</span></p>
-          <p style="margin: 4px 0;">Tech Bonus: <span style="color: #6666ff;">${(vehicleData as any).tech ?? 0}</span></p>
-          <p style="margin: 4px 0;">Max Drifters: <span style="color: #00ff00;">${vehicleData.maxDrifters}</span></p>
-          <p style="margin: 4px 0;">Max Cargo: <span style="color: #00ff00;">${vehicleData.maxCargo}</span></p>
-        </div>
-		<div style="margin-top: 12px;">
-			${instances.map((instance) => this.renderVehicleInstance(instance)).join('')}
-		</div>
-      </div>
-    `;
+	      <div style="border: 1px solid #555; border-radius: 6px; padding: 12px; background: rgba(255, 255, 255, 0.02);">
+	        <h4 style="color: #FFD700; margin-top: 0;">${vehicleData.name} (${instances.length})</h4>
+	        <p style="font-size: 12px; color: #ccc;">${vehicleData.description}</p>
+	        <div style="font-size: 12px; margin-top: 8px;">
+	          <p style="margin: 4px 0;">Speed: <span style="color: #00ff00;">${vehicleData.speed}</span></p>
+	          <p style="margin: 4px 0;">Combat Bonus: <span style="color: #ff6666;">${(vehicleData as any).combat ?? 0}</span></p>
+	          <p style="margin: 4px 0;">Scavenging Bonus: <span style="color: #66ff66;">${(vehicleData as any).scavenging ?? 0}</span></p>
+	          <p style="margin: 4px 0;">Tech Bonus: <span style="color: #6666ff;">${(vehicleData as any).tech ?? 0}</span></p>
+	          <p style="margin: 4px 0;">Max Drifters: <span style="color: #00ff00;">${vehicleData.maxDrifters}</span></p>
+	          <p style="margin: 4px 0;">Max Cargo: <span style="color: #00ff00;">${vehicleData.maxCargo}</span></p>
+	        </div>
+			<div style="margin-top: 12px;">
+				${instances.map((instance) => this.renderVehicleInstance(instance, activeVehicleIds)).join('')}
+			</div>
+	      </div>
+	    `;
 	}
 
-	private static renderVehicleInstance(instance: PlayerVehicle): string {
-		const isIdle = instance.status === 'idle';
+	private static renderVehicleInstance(instance: PlayerVehicle, activeVehicleIds: Set<string>): string {
+		const isOnMission = instance.status === 'on_mission' || activeVehicleIds.has(instance.instanceId);
+		const isIdle = !isOnMission;
 		const selectedId = gameState.getState().selectedVehicleInstanceId;
 		const isSelected = selectedId === instance.instanceId;
 		const bg = isSelected ? '#2a3d55' : isIdle ? '#2c5530' : '#552c2c';
 		const border = isSelected ? '#4a6a8a' : isIdle ? '#4a7c59' : '#7c4a4a';
 		const buttonLabel = isSelected ? 'Deselect' : isIdle ? 'Select' : 'On Mission';
-		const buttonDisabled = !isIdle; // allow clicking selected (idle) to deselect
+		const buttonDisabled = !isIdle; // prevent selecting while on a mission
 		const buttonBg = isSelected ? '#2f5d87' : isIdle ? '#4a7c59' : '#7c4a4a';
 		return `
 			<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; margin-top: 8px; background: ${bg}; border: 1px solid ${border}; border-radius: 4px; position: relative;">
