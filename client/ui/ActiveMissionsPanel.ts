@@ -312,6 +312,7 @@ export class ActiveMissionsPanel {
 			//   title: 'Mission Complete!',
 			//   message: `Collected rewards from mission #${missionId.slice(-6)}`
 			// });
+			await gameState.loadWorldState();
 			gameState.loadPlayerMissions();
 			gameState.loadPlayerProfile();
 		} else {
