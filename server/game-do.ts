@@ -2088,16 +2088,68 @@ private async monsterMovementTick(now: Date): Promise<boolean> {
 				changed = true;
 			}
 		}
-		if (changed) {
-			await this.setStoredMonsters(monsters);
-			await this.ctx.storage.put('lastMonsterMoveAt', now.toISOString());
-			await this.broadcastWorldStateUpdate();
-			console.log(`[Monsters] Movement: updated ${moved} moved, ${arrived} arrived, total=${monsters.length}`);
-		} else {
-			console.log('[Monsters] Movement: no changes');
-		}
-		return changed;
-	} catch (e) {
+			if (changed) {
+				// Persist monster changes
+				await this.setStoredMonsters(monsters);
+				await this.ctx.storage.put('lastMonsterMoveAt', now.toISOString());
+
+				// Recalculate and potentially shrink completionTime for active combat missions targeting moved monsters
+				let missionsAdjusted = 0;
+				for (const mission of this.gameState.missions.values()) {
+					const targetMonsterId = (mission as any).targetMonsterId as string | undefined;
+					if (!targetMonsterId) continue;
+					if (mission.status !== 'active') continue;
+					const monsterNow = monsters.find((mm) => mm.id === targetMonsterId);
+					if (!monsterNow) continue; // Monster may have been killed
+					// Only adjust for traveling/attacking monsters
+					if (monsterNow.state !== 'traveling' && monsterNow.state !== 'attacking') continue;
+					try {
+						// Build team stats and vehicle for speed
+						const player = this.gameState.players.get(mission.playerAddress);
+						let vehicleData: any = undefined;
+						if (mission.vehicleInstanceId && player) {
+							const vInst = player.vehicles?.find((v) => v.instanceId === mission.vehicleInstanceId) || null;
+							if (vInst) {
+								vehicleData = getVehicle(vInst.vehicleId);
+							}
+						}
+						const dStats: DrifterStats[] = [];
+						for (const id of mission.drifterIds) {
+							const base = await getDrifterStats(id, this.env);
+							const eff = this.getEffectiveDrifterStats(id, base);
+							dStats.push({ combat: eff.combat, scavenging: eff.scavenging, tech: eff.tech, speed: eff.speed });
+						}
+						const newDuration = calculateMonsterMissionDuration(monsterNow.coordinates as any, dStats, vehicleData as any);
+						const startTs = (mission.startTime instanceof Date ? mission.startTime : new Date(mission.startTime)).getTime();
+						const currentPlannedEnd = (mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime)).getTime();
+						const newEnd = startTs + newDuration;
+						if (Number.isFinite(startTs) && Number.isFinite(currentPlannedEnd) && Number.isFinite(newEnd)) {
+							// Only shrink (never extend) by at least 1 second to avoid jitter
+							if (newEnd + 1000 < currentPlannedEnd) {
+								(mission as any).completionTime = new Date(newEnd);
+								missionsAdjusted++;
+								// Notify clients about the mission timing change
+								await this.broadcastMissionUpdate({ mission });
+							}
+						}
+					} catch (err) {
+						console.warn('[Monsters] Failed to recompute mission time for combat mission', mission.id, err);
+					}
+				}
+
+				if (missionsAdjusted > 0) {
+					await this.saveGameState();
+					console.log(`[Monsters] Adjusted completionTime for ${missionsAdjusted} combat mission(s) due to monster movement`);
+				}
+
+				// Broadcast world update (includes missions and monsters)
+				await this.broadcastWorldStateUpdate();
+				console.log(`[Monsters] Movement: updated ${moved} moved, ${arrived} arrived, total=${monsters.length}`);
+			} else {
+				console.log('[Monsters] Movement: no changes');
+			}
+			return changed;
+		} catch (e) {
 		console.error('[GameDO] monsterMovementTick error', e);
 		return false;
 	}
