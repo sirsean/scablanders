@@ -942,6 +942,8 @@ async startMonsterCombatMission(
 		// Award rewards
 		player.balance += mission.rewards.credits;
 
+		let totalCombatXpAwarded = 0; // for monster missions
+
 		// Branch handling based on target type
 		if ((mission as any).targetMonsterId) {
 			const targetMonsterId = (mission as any).targetMonsterId as string;
@@ -984,6 +986,7 @@ async startMonsterCombatMission(
 				const xpPerDamage = 0.005; // 0.5% of damage
 				let xpGain = Math.max(1, Math.ceil(dmg * xpPerDamage));
 				if (killed) xpGain += 10; // bonus for kill
+				totalCombatXpAwarded = xpGain * (mission.drifterIds?.length || 0);
 				for (const drifterId of mission.drifterIds) {
 					const { leveled, levelsGained, newLevel } = this.applyXp(drifterId, xpGain);
 					if (leveled) {
@@ -1098,7 +1101,7 @@ async startMonsterCombatMission(
 							return vi ? getVehicle(vi.vehicleId)?.name || 'On Foot' : 'On Foot';
 						})()}`
 					: 'on foot'
-			} (+${mission.rewards.credits} cr)`,
+			} ${ (mission as any).targetMonsterId ? `(+${totalCombatXpAwarded} XP)` : `(+${mission.rewards.credits} cr)` }`,
 		});
 
 		// Award XP to participating drifters based on credits earned
