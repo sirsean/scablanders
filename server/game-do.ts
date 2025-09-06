@@ -982,10 +982,8 @@ async startMonsterCombatMission(
 				}
 				await this.setStoredMonsters(monsters);
 
-				// Award combat XP to participating drifters based on damage dealt
-				const xpPerDamage = 0.005; // 0.5% of damage
-				let xpGain = Math.max(1, Math.ceil(dmg * xpPerDamage));
-				if (killed) xpGain += 10; // bonus for kill
+				// Award combat XP at 25% of damage (per drifter)
+				let xpGain = Math.max(1, Math.floor(dmg * 0.25));
 				totalCombatXpAwarded = xpGain * (mission.drifterIds?.length || 0);
 				for (const drifterId of mission.drifterIds) {
 					const { leveled, levelsGained, newLevel } = this.applyXp(drifterId, xpGain);
