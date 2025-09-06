@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware, AuthVariables } from '../middleware/auth';
 import { getVehicleRegistry } from '../data/vehicles';
-import { isVehicleUnlocked, requiredMarketLevel } from '../data/vehicle-tiers';
+import { isVehicleUnlocked, requiredMarketLevel } from '../../shared/vehicle-tiers';
 
 const market = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
