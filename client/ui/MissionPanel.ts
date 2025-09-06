@@ -63,6 +63,58 @@ export class MissionPanel {
 		const drifterList = document.getElementById('mission-drifter-list-container') as HTMLElement;
 		const scrollTop = drifterList?.scrollTop || 0;
 
+		// Monster-targeting mode
+		if (state.selectedTargetMonsterId) {
+			if (!state.isAuthenticated) {
+				content.innerHTML = '<p style="color: #ff6b6b;">Please connect your wallet to start missions.</p>';
+				return;
+			}
+
+			const monster = (state.monsters || []).find((m) => m.id === state.selectedTargetMonsterId);
+			if (!monster) {
+				content.innerHTML = '<p>Monster not found.</p>';
+				return;
+			}
+
+			const selectedDrifterIds = state.selectedDrifterIds || [];
+			const selectedVehicleInstance = state.profile?.vehicles.find((v) => v.instanceId === state.selectedVehicleInstanceId);
+			const maxDrifters = selectedVehicleInstance ? (getVehicleData(selectedVehicleInstance.vehicleId)?.maxDrifters || 0) : 0;
+			const atCapacity = !!selectedVehicleInstance && selectedDrifterIds.length >= maxDrifters;
+
+			content.innerHTML = `
+			  <div style="display:flex; gap: 20px; height:100%;">
+			    <div style="flex:1; display:flex; flex-direction:column;">
+			      <div style="margin-bottom: 16px; border: 2px solid #444; border-radius: 8px; padding: 16px; background: rgba(255, 255, 255, 0.02);">
+			        <h4 style="color:#FFD700; margin:0 0 12px 0;">Combat Mission (Monster)</h4>
+			        <div>Monster: <b>${monster.id.slice(0,8)}...</b></div>
+			        <div>HP: <b style="color:#ff6666;">${monster.hp}</b> / <b>${monster.maxHp}</b></div>
+			        <div>Coords: (${monster.coordinates.x}, ${monster.coordinates.y})</div>
+			        <div>State: ${monster.state}</div>
+			      </div>
+			      <div style="margin-bottom: 16px;">
+			        <h4 style="color:#FFD700; margin: 0 0 8px 0;">Vehicle</h4>
+			        ${MissionPanel.renderVehicleSelection(state)}
+			      </div>
+			      <div style="margin-top:auto;">
+			        <button id="start-monster-mission-btn" disabled style="width:100%; padding: 14px 24px; background:#666; border:1px solid #888; color:#fff; cursor:not-allowed; border-radius:6px; font-size:16px; font-weight:bold;">Select Drifter(s)</button>
+			      </div>
+			    </div>
+			    <div style="flex:1; display:flex; flex-direction:column; height:100%;">
+			      <div style="display:flex; align-items:center; justify-content:space-between; margin:0 0 12px 0;">
+			        <h4 style="color:#FFD700; margin:0;">Select Team</h4>
+			        <span style="font-size:11px; color: ${atCapacity ? '#ff6b6b' : '#ccc'};">${selectedDrifterIds.length} / ${maxDrifters > 0 ? maxDrifters : '-'} Drifters Selected</span>
+			      </div>
+			      <div id="drifter-selection" style="flex:1; display:flex; flex-direction:column; min-height:0;">
+			        ${DriftersList.render({ idPrefix: 'mission', mode: 'select', drifters: state.ownedDrifters, state })}
+			      </div>
+			    </div>
+			  </div>
+			`;
+
+			MissionPanel.setupMonsterMissionHandlers();
+			return;
+		}
+
 		if (!state.selectedResourceNode) {
 			content.innerHTML = '<p>Select a resource node to plan a mission.</p>';
 			return;
@@ -354,6 +406,56 @@ const newDrifterList = document.getElementById('mission-drifter-list-container')
 				}
 			}
 		});
+	}
+
+	private static setupMonsterMissionHandlers() {
+		const stateNow = gameState.getState();
+		DriftersList.attachHandlers({
+			idPrefix: 'mission',
+			mode: 'select',
+			drifters: stateNow.ownedDrifters,
+			state: stateNow,
+			onChanged: () => setTimeout(() => MissionPanel.setupMonsterStartButton(), 50),
+		});
+
+		document.getElementById('select-vehicle-btn')?.addEventListener('click', () => {
+			gameState.toggleVehiclePanel();
+		});
+
+		MissionPanel.setupMonsterStartButton();
+	}
+
+	private static setupMonsterStartButton() {
+		const btn = document.getElementById('start-monster-mission-btn') as HTMLButtonElement | null;
+		if (!btn) return;
+		const state = gameState.getState();
+		const selectedIds = state.selectedDrifterIds || [];
+		const vehicleInstanceId = state.selectedVehicleInstanceId;
+		if (selectedIds.length > 0) {
+			btn.disabled = false;
+			btn.style.background = '#2c5530';
+			btn.style.cursor = 'pointer';
+			btn.textContent = `Start COMBAT Mission (${selectedIds.length} Drifter${selectedIds.length>1?'s':''})`;
+		} else {
+			btn.disabled = true;
+			btn.style.background = '#666';
+			btn.style.cursor = 'not-allowed';
+			btn.textContent = 'Select Drifter(s)';
+		}
+
+		btn.onclick = async () => {
+			const st = gameState.getState();
+			const mid = st.selectedTargetMonsterId;
+			if (!mid) return;
+			const res = await gameState.startMonsterCombatMission(selectedIds, mid, vehicleInstanceId);
+			if (res?.success) {
+				gameState.clearSelectedDrifters();
+				gameState.setMissionType(null);
+				gameState.setSelectedTargetMonster(null);
+				gameState.selectVehicleInstance(null);
+				gameState.toggleMissionPanel();
+			}
+		};
 	}
 
 	static updateStartButton() {

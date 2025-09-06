@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware, AuthVariables } from '../middleware/auth';
 import { getVehicleRegistry } from '../data/vehicles';
+import { isVehicleUnlocked, requiredMarketLevel } from '../data/vehicle-tiers';
 
 const market = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
@@ -33,10 +34,24 @@ market.post('/vehicles/purchase', async (c) => {
 		return c.json({ error: 'Vehicle not found' }, 404);
 	}
 
-	// Forward the purchase logic to the GameDO
+	// Access GameDO
 	const gameId = c.env.GAME_DO.idFromName('game');
 	const gameStub = c.env.GAME_DO.get(gameId);
 
+	// Vehicle Market gating: check current market level
+	try {
+		const town = await (gameStub as any).getTownState();
+		const marketLevel = town?.attributes?.vehicle_market?.level ?? 0;
+		const reqLevel = requiredMarketLevel(vehicleId);
+		if (!isVehicleUnlocked(vehicleId, marketLevel)) {
+			return c.json({ error: `Vehicle Market level ${reqLevel} required to purchase this vehicle.` }, 400);
+		}
+	} catch (e) {
+		console.warn('[Market] Failed to fetch Town state for gating; denying purchase as safe default.', e);
+		return c.json({ error: 'Unable to verify Vehicle Market level. Please try again later.' }, 503);
+	}
+
+	// Forward the purchase logic to the GameDO
 	const response = await gameStub.purchaseVehicle(playerAddress, vehicleToPurchase);
 
 	if (!response.success) {

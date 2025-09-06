@@ -14,11 +14,12 @@
 				overflow: hidden;
 			}
 			#game-container {
+				position: fixed;
+				top: 0;
+				left: 0;
 				width: 100vw;
 				height: 100vh;
-				display: flex;
-				justify-content: center;
-				align-items: center;
+				overflow: hidden;
 			}
 			#ui-overlay {
 				position: absolute;
@@ -42,7 +43,7 @@
 				right: 20px;
 			}
 			#credits-display {
-				top: 20px;
+				bottom: 20px;
 				left: 20px;
 			}
 			.button {
@@ -79,7 +80,7 @@
 				color: #888;
 			}
 		</style>
-		<script type="module" crossorigin src="/assets/index-BhXjQUgh.js"></script>
+		<script type="module" crossorigin src="/assets/index-uVAYbUdA.js"></script>
 	</head>
 	<body>
 		<div id="game-container">
@@ -87,27 +88,10 @@
 		</div>
 
 		<div id="ui-overlay">
-			<div id="auth-panel" class="ui-panel">
-				<button id="connect-wallet" class="button">Connect Wallet</button>
-				<div id="wallet-info" style="display: none">
-					<div id="address-display"></div>
-					<button id="disconnect-wallet" class="button">Disconnect</button>
-				</div>
-			</div>
-
 			<div id="credits-display" class="ui-panel">
 				<div>Credits: <span id="credits-amount">0</span></div>
 			</div>
-
-			<div
-				id="bottom-controls"
-				class="ui-panel"
-				style="bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; align-items: center"
-			>
-				<button id="toggle-mercenaries" class="button">Mercenaries (M)</button>
-				<button id="toggle-missions" class="button">Active Missions</button>
-				<button id="toggle-profile" class="button">Profile (P)</button>
-			</div>
 		</div>
+
 	</body>
 </html>
