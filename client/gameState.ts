@@ -212,7 +212,7 @@ class GameStateManager extends EventTarget {
 				// Subscribe to events once authenticated
 				if (authenticated) {
 					console.log('[GameState] WebSocket authenticated, subscribing to events');
-					webSocketManager.subscribe(['player_state', 'world_state', 'mission_update']);
+					webSocketManager.subscribe(['player_state', 'world_state', 'mission_update', 'event_log_append', 'event_log_snapshot', 'notification']);
 					// Initial sync of event log
 					this.syncEventLog();
 				}
@@ -325,6 +325,17 @@ class GameStateManager extends EventTarget {
 			const ev = { ...data.event, timestamp: new Date(data.event.timestamp) } as GameEvent;
 			const updated = [ev, ...this.state.eventLog].slice(0, 1000);
 			this.setState({ eventLog: updated });
+		});
+
+		// Listen for event log snapshot messages (if server emits them)
+		webSocketManager.addEventListener('eventLogSnapshot', (event: any) => {
+			try {
+				const data = event.detail as { events?: GameEvent[] };
+				const events = (data?.events || []).map((e: any) => ({ ...e, timestamp: new Date(e.timestamp) }) as GameEvent);
+				this.setState({ eventLog: events });
+			} catch (e) {
+				console.error('[GameState] Failed to process eventLogSnapshot:', e);
+			}
 		});
 
 		// Listen for direct notifications from server
@@ -721,7 +732,13 @@ toggleVehiclePanel() {
 	}
 
 	toggleLogPanel() {
-		this.setState({ showLogPanel: !this.state.showLogPanel });
+		const willShow = !this.state.showLogPanel;
+		this.setState({ showLogPanel: willShow });
+		// When opening the Log panel, refresh the log snapshot once
+		if (willShow) {
+			// Best-effort refresh; live updates will append thereafter
+			this.syncEventLog().catch((e) => console.warn('[GameState] syncEventLog on open failed:', e));
+		}
 	}
 
 	// Multi-drifter selection management
