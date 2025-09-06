@@ -6,6 +6,8 @@ import {
 	calculateLiveEstimates,
 	formatDuration,
 	getAvailableMissionTypes,
+	calculateMonsterMissionDuration,
+	estimateMonsterDamage,
 	type DrifterStats,
 	BASE_SPEED,
 } from '../../shared/mission-utils';
@@ -78,8 +80,33 @@ export class MissionPanel {
 
 			const selectedDrifterIds = state.selectedDrifterIds || [];
 			const selectedVehicleInstance = state.profile?.vehicles.find((v) => v.instanceId === state.selectedVehicleInstanceId);
-			const maxDrifters = selectedVehicleInstance ? (getVehicleData(selectedVehicleInstance.vehicleId)?.maxDrifters || 0) : 0;
-			const atCapacity = !!selectedVehicleInstance && selectedDrifterIds.length >= maxDrifters;
+			const selectedVehicle = selectedVehicleInstance ? getVehicleData(selectedVehicleInstance.vehicleId) : undefined;
+			const maxDrifters = selectedVehicle ? (selectedVehicle.maxDrifters || 0) : 0;
+			const atCapacity = !!selectedVehicle && selectedDrifterIds.length >= maxDrifters;
+
+			// Build effective team stats for estimates
+			const selectedDrifters = state.ownedDrifters.filter((d) => selectedDrifterIds.includes(d.tokenId));
+			const teamStats: DrifterStats[] = selectedDrifters.map((d) => {
+				const dp = state.profile?.drifterProgress?.[String(d.tokenId)];
+				return {
+					combat: d.combat + (dp?.bonuses.combat || 0),
+					scavenging: d.scavenging + (dp?.bonuses.scavenging || 0),
+					tech: d.tech + (dp?.bonuses.tech || 0),
+					speed: d.speed + (dp?.bonuses.speed || 0),
+				};
+			});
+
+			// Estimate duration and damage using shared helpers
+			const durationMs = calculateMonsterMissionDuration(
+				{ x: monster.coordinates.x, y: monster.coordinates.y },
+				teamStats,
+				selectedVehicle,
+			);
+			const durationText = formatDuration(durationMs);
+
+			const dmg = estimateMonsterDamage(teamStats, selectedVehicle);
+			const minDmg = dmg.min;
+			const maxDmg = dmg.max;
 
 			content.innerHTML = `
 			  <div style="display:flex; gap: 20px; height:100%;">
@@ -94,6 +121,13 @@ export class MissionPanel {
 			      <div style="margin-bottom: 16px;">
 			        <h4 style="color:#FFD700; margin: 0 0 8px 0;">Vehicle</h4>
 			        ${MissionPanel.renderVehicleSelection(state)}
+			      </div>
+			      <div style="margin-bottom: 16px; border: 2px solid #444; border-radius: 8px; padding: 12px; background: rgba(255,255,255,0.02);">
+			        <h4 style="color:#FFD700; margin: 0 0 8px 0;">Estimated Outcome</h4>
+			        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px;">
+			          <div>⏱️ Duration: <b style="color:#ffff66;">${durationText}</b></div>
+			          <div>🔥 Est. Damage: <b style="color:#ff8888;">${minDmg}-${maxDmg}</b></div>
+			        </div>
 			      </div>
 			      <div style="margin-top:auto;">
 			        <button id="start-monster-mission-btn" disabled style="width:100%; padding: 14px 24px; background:#666; border:1px solid #888; color:#fff; cursor:not-allowed; border-radius:6px; font-size:16px; font-weight:bold;">Select Drifter(s)</button>
@@ -415,7 +449,7 @@ const newDrifterList = document.getElementById('mission-drifter-list-container')
 			mode: 'select',
 			drifters: stateNow.ownedDrifters,
 			state: stateNow,
-			onChanged: () => setTimeout(() => MissionPanel.setupMonsterStartButton(), 50),
+			onChanged: () => setTimeout(() => MissionPanel.updateMissionPanel(gameState.getState()), 50),
 		});
 
 		document.getElementById('select-vehicle-btn')?.addEventListener('click', () => {
@@ -431,22 +465,35 @@ const newDrifterList = document.getElementById('mission-drifter-list-container')
 		const state = gameState.getState();
 		const selectedIds = state.selectedDrifterIds || [];
 		const vehicleInstanceId = state.selectedVehicleInstanceId;
-		if (selectedIds.length > 0) {
-			btn.disabled = false;
-			btn.style.background = '#2c5530';
-			btn.style.cursor = 'pointer';
-			btn.textContent = `Start COMBAT Mission (${selectedIds.length} Drifter${selectedIds.length>1?'s':''})`;
-		} else {
+		const selectedVehicleInstance = state.profile?.vehicles.find((v) => v.instanceId === vehicleInstanceId);
+		const selectedVehicle = selectedVehicleInstance ? getVehicleData(selectedVehicleInstance.vehicleId) : undefined;
+		const maxDrifters = selectedVehicle?.maxDrifters ?? Infinity;
+
+		if (selectedIds.length === 0) {
 			btn.disabled = true;
 			btn.style.background = '#666';
 			btn.style.cursor = 'not-allowed';
 			btn.textContent = 'Select Drifter(s)';
+		} else if (selectedVehicle && selectedIds.length > maxDrifters) {
+			btn.disabled = true;
+			btn.style.background = '#666';
+			btn.style.cursor = 'not-allowed';
+			btn.textContent = `Too many drifters for ${selectedVehicle.name}`;
+		} else {
+			btn.disabled = false;
+			btn.style.background = '#2c5530';
+			btn.style.cursor = 'pointer';
+			btn.textContent = `Start COMBAT Mission (${selectedIds.length} Drifter${selectedIds.length>1?'s':''})`;
 		}
 
 		btn.onclick = async () => {
 			const st = gameState.getState();
 			const mid = st.selectedTargetMonsterId;
 			if (!mid) return;
+			// Re-check capacity at click time
+			const vInst = st.profile?.vehicles.find((v) => v.instanceId === st.selectedVehicleInstanceId);
+			const v = vInst ? getVehicleData(vInst.vehicleId) : undefined;
+			if (v && selectedIds.length > (v.maxDrifters ?? Infinity)) return;
 			const res = await gameState.startMonsterCombatMission(selectedIds, mid, vehicleInstanceId);
 			if (res?.success) {
 				gameState.clearSelectedDrifters();

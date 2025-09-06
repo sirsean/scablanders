@@ -461,3 +461,42 @@ export function calculateLiveEstimates(
 		teamStats,
 	};
 }
+
+/** Monster mission helpers - used by both client and server to keep logic in sync */
+export function calculateMonsterMissionDuration(
+	coordinates: { x: number; y: number },
+	drifters: DrifterStats[] = [],
+	vehicle?: Vehicle,
+): number {
+	const dx = coordinates.x;
+	const dy = coordinates.y;
+	const distance = Math.sqrt(dx * dx + dy * dy);
+	const baseMinutes = 15;
+	const maxExpectedDistance = 2000;
+	const additionalMinutes = Math.min(1.0, distance / maxExpectedDistance) * 45;
+	let totalMinutes = baseMinutes + additionalMinutes;
+	let teamSpeed = BASE_SPEED;
+	if (vehicle) {
+		teamSpeed = vehicle.speed;
+	} else if (drifters.length > 0) {
+		teamSpeed = Math.min(...drifters.map((s) => s.speed)) || BASE_SPEED;
+	}
+	const speedFactor = Math.min(BASE_SPEED / Math.max(1, teamSpeed), MAX_SPEED_FACTOR);
+	totalMinutes *= speedFactor;
+	const outboundMs = Math.round(totalMinutes * 60 * 1000);
+	const engagementMs = 2 * 60 * 1000;
+	const returnMs = outboundMs;
+	return outboundMs + engagementMs + returnMs;
+}
+
+export function estimateMonsterDamage(
+	drifters: DrifterStats[] = [],
+	vehicle?: Vehicle,
+): { base: number; min: number; max: number; teamCombat: number } {
+	let teamCombat = drifters.reduce((sum, s) => sum + (s.combat || 0), 0);
+	if (vehicle) teamCombat += (vehicle as any).combat || 0;
+	const base = 120 + Math.round(teamCombat * 18);
+	const min = Math.max(1, Math.floor(base * 0.85));
+	const max = Math.max(min, Math.ceil(base * 1.15));
+	return { base, min, max, teamCombat };
+}

@@ -16,7 +16,7 @@ import type {
 	TownAttributeType,
 	Monster,
 } from '@shared/models';
-import { calculateMissionDuration, calculateMissionRewards, type DrifterStats, BASE_SPEED } from '../shared/mission-utils';
+import { calculateMissionDuration, calculateMissionRewards, type DrifterStats, BASE_SPEED, calculateMonsterMissionDuration, estimateMonsterDamage } from '../shared/mission-utils';
 import { getDrifterStats } from './drifters';
 import { getVehicle } from './vehicles';
 interface WebSocketSession {
@@ -699,22 +699,10 @@ async startMonsterCombatMission(
 			}
 		}
 
-		// Distance to monster
-		const dx = monster.coordinates.x;
-		const dy = monster.coordinates.y;
-		const distance = Math.sqrt(dx * dx + dy * dy);
-		const maxExpectedDistance = 2000;
-		const baseMinutes = 15;
-		const additionalMinutes = Math.min(1.0, distance / maxExpectedDistance) * 45;
-		let totalMinutes = baseMinutes + additionalMinutes;
-		const speedFactor = Math.min(BASE_SPEED / Math.max(1, teamSpeed), 5.0);
-		totalMinutes *= speedFactor;
-		// Engagement time 2 minutes, and assume symmetric return time equal to outbound
-		const outboundMs = Math.round(totalMinutes * 60 * 1000);
-		const engagementMs = 2 * 60 * 1000;
-		const returnMs = outboundMs; // simple symmetry
+		// Duration to monster using shared helper
+		const durationMs = calculateMonsterMissionDuration(monster.coordinates as any, stats, vehicleData as any);
 		const now = new Date();
-		const completion = new Date(now.getTime() + outboundMs + engagementMs + returnMs);
+		const completion = new Date(now.getTime() + durationMs);
 
 		// Create mission
 		const missionId = `mission-${crypto.randomUUID()}`;
@@ -961,24 +949,23 @@ async startMonsterCombatMission(
 			if (!monster) {
 				console.error(`[GameDO] Target monster ${targetMonsterId} not found during mission completion`);
 			} else if (monster.state !== 'dead') {
-				// Compute team combat power
-				let totalCombat = 0;
+				// Compute team combat power and damage via shared helper
+				const dStats: DrifterStats[] = [];
 				for (const id of mission.drifterIds) {
 					const base = await getDrifterStats(id, this.env);
 					const eff = this.getEffectiveDrifterStats(id, base);
-					totalCombat += eff.combat || 0;
+					dStats.push({ combat: eff.combat, scavenging: eff.scavenging, tech: eff.tech, speed: eff.speed });
 				}
+				let vehicleDataForDmg: any = undefined;
 				if (mission.vehicleInstanceId) {
 					const vInst = player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
 					if (vInst) {
-						const v = getVehicle(vInst.vehicleId);
-						totalCombat += (v?.combat || 0);
+						vehicleDataForDmg = getVehicle(vInst.vehicleId);
 					}
 				}
-				// Damage formula: base + linear scale by team combat, with small variance
-				const baseDamage = 120 + Math.round(totalCombat * 18);
-				const variance = 0.15; // ±15%
-				const dmg = Math.max(1, Math.round(baseDamage * (1 + (Math.random() * 2 - 1) * variance)));
+				const est = estimateMonsterDamage(dStats, vehicleDataForDmg);
+				const variance = 0.15; // ±15% (keep same as client range)
+				const dmg = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
 				const before = monster.hp;
 				monster.hp = Math.max(0, monster.hp - dmg);
 				const killed = monster.hp <= 0;
