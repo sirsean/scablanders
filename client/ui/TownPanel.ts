@@ -1,6 +1,8 @@
 import { gameState, type GameState } from '../gameState';
 
 export class TownPanel {
+  private static liveTimer: number | null = null;
+
   static createTownPanel(): HTMLElement {
     const panel = document.createElement('div');
     panel.id = 'town-panel';
@@ -134,7 +136,10 @@ const monsters = (state.monsters || []).filter((m: any) => m && m.state !== 'dea
       monstersEl.innerHTML = `
         <h4 style="margin:0 0 8px 0; color:#FFD700;">Monsters</h4>
         <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px;">
-          ${monsters.map(m => `
+          ${monsters.map(m => {
+            const isTraveling = m.state === 'traveling';
+            const etaText = (isTraveling && m.etaToTown) ? TownPanel.formatCountdown(m.etaToTown) : '';
+            return `
             <div style="border:1px solid #333; padding:8px; border-radius:6px; background: rgba(255,255,255,0.02); display:flex; flex-direction:column; gap:6px;">
               <div style="display:flex; align-items:center; gap:8px; justify-content:space-between;">
                 <div><b>${m.id.slice(0,8)}...</b></div>
@@ -142,10 +147,10 @@ const monsters = (state.monsters || []).filter((m: any) => m && m.state !== 'dea
               </div>
               <div>HP: <b>${m.hp}</b> / <b>${m.maxHp}</b></div>
               <div>State: <b>${m.state}</b></div>
-              <div>Coords: (${m.coordinates.x}, ${m.coordinates.y})</div>
-              ${m.etaToTown ? `<div>ETA: ${new Date(m.etaToTown).toLocaleTimeString()}</div>` : ''}
-            </div>
-          `).join('')}
+              ${isTraveling ? `<div>Coords: (${m.coordinates.x}, ${m.coordinates.y})</div>` : ''}
+              ${etaText ? `<div>ETA: ${etaText}</div>` : ''}
+            </div>`;
+          }).join('')}
         </div>
       `;
 
@@ -181,6 +186,36 @@ const monsters = (state.monsters || []).filter((m: any) => m && m.state !== 'dea
         <button id="town-contrib-custom-apply" style="background:#4a7c59; border:1px solid #fff; color:#fff; padding:4px 10px; cursor:pointer; border-radius:4px; margin-left:4px;" ${disabled ? 'disabled' : ''}>Contribute</button>
       </span>
     `;
+  }
+
+  // Start live timer to refresh ETA countdowns while panel is visible
+  static startLiveTimer(getState: () => GameState) {
+    if (TownPanel.liveTimer) {
+      clearInterval(TownPanel.liveTimer);
+    }
+    TownPanel.liveTimer = setInterval(() => {
+      const panel = document.getElementById('town-panel');
+      if (!panel || panel.style.display === 'none') return;
+      TownPanel.updateTownPanel(getState());
+    }, 1000) as any;
+  }
+
+  static stopLiveTimer() {
+    if (TownPanel.liveTimer) {
+      clearInterval(TownPanel.liveTimer);
+      TownPanel.liveTimer = null;
+    }
+  }
+
+  private static formatCountdown(eta: string | Date): string {
+    const d = typeof eta === 'string' ? new Date(eta) : eta;
+    const diffSec = Math.max(0, Math.floor((d.getTime() - Date.now()) / 1000));
+    const h = Math.floor(diffSec / 3600);
+    const m = Math.floor((diffSec % 3600) / 60);
+    const s = diffSec % 60;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
   }
 }
 

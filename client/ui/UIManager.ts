@@ -467,6 +467,9 @@ private createDrifterInfoPanel() {
 			this.townPanel.style.display = state.showTownPanel ? 'block' : 'none';
 			if (state.showTownPanel) {
 				TownPanel.updateTownPanel(state);
+				TownPanel.startLiveTimer(() => gameState.getState());
+			} else {
+				TownPanel.stopLiveTimer();
 			}
 		}
 
