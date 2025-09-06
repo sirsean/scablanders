@@ -24,6 +24,13 @@ const COLOR_COMPLETED = 0x43a047; // green 600
 // How long to show completed missions after completion (ms)
 const RECENT_COMPLETED_MS = 15_000;
 
+// Render depths
+const DEPTH_BG = -10;
+const DEPTH_TOWN = 100;
+const DEPTH_ROUTES = 200;
+const DEPTH_DRIFTERS = 300;
+const DEPTH_MONSTERS = 320;
+
 export class GameScene extends Phaser.Scene {
 	private resourceNodes = new Map<string, Phaser.GameObjects.Image>();
 	private worldData: any = null;
@@ -62,7 +69,7 @@ export class GameScene extends Phaser.Scene {
 			.tileSprite(0, 0, this.scale.width, this.scale.height, 'tile-bg')
 			.setOrigin(0, 0)
 			.setScrollFactor(0)
-			.setDepth(-10);
+			.setDepth(DEPTH_BG);
 
 		// Resize background to always cover the viewport
 		this.scale.on('resize', (gameSize: any) => {
@@ -597,6 +604,7 @@ export class GameScene extends Phaser.Scene {
 
 	private createTownMarker() {
 		const townContainer = this.add.container(TOWN_X, TOWN_Y);
+		townContainer.setDepth(DEPTH_TOWN);
 
 		// Town building silhouette
 		const townBuilding = this.add.graphics();
@@ -629,6 +637,7 @@ export class GameScene extends Phaser.Scene {
 		// Add subtle glow effect
 		const glow = this.add.circle(TOWN_X, TOWN_Y, 25, 0xffd700, 0.1);
 		glow.setBlendMode(Phaser.BlendModes.ADD);
+		glow.setDepth(DEPTH_TOWN - 1);
 	}
 
 	private async ensureDrifterTinyTexture(tokenId: number | string): Promise<string> {
@@ -747,6 +756,7 @@ export class GameScene extends Phaser.Scene {
 		}
 
 		const routeGraphics = this.add.graphics();
+		routeGraphics.setDepth(DEPTH_ROUTES);
 
 		// Store route data for animation
 		routeGraphics.setData('x1', TOWN_X);
@@ -787,6 +797,7 @@ export class GameScene extends Phaser.Scene {
 
 		// Create container at (0,0) but hide it initially to prevent showing green circle at wrong position
 		const drifterContainer = this.add.container(0, 0);
+		drifterContainer.setDepth(DEPTH_DRIFTERS);
 		drifterContainer.setVisible(false); // Hide until properly positioned
 
 		// Make container interactive for hover tooltips
@@ -855,7 +866,7 @@ export class GameScene extends Phaser.Scene {
 		}
 
 		// Calculate and set initial position based on mission progress
-		this.updateDrifterPosition(drifterContainer, mission, targetNode);
+		this.updateDrifterPosition(drifterContainer, mission, targetNode, targetMonster);
 
 		this.missionDrifters.set(mission.id, drifterContainer);
 	}
@@ -1188,14 +1199,20 @@ export class GameScene extends Phaser.Scene {
 	private lastCleanupCheck = 0;
 
 	private checkForOrphanedContainers() {
-		// Get current mission IDs
-		const currentMissionIds = new Set(gameState.getState().playerMissions?.map((m) => m.id) || []);
+		// Build unified set of the player's current mission IDs (playerMissions + global filtered by player)
+		const state = gameState.getState();
+		const self = state.playerAddress?.toLowerCase() || '';
+		const fromPlayer = state.playerMissions || [];
+		const fromGlobal = (state.activeMissions || []).filter((m) => m.playerAddress?.toLowerCase() === self);
+		const idSet = new Set<string>();
+		for (const m of fromPlayer) idSet.add(m.id);
+		for (const m of fromGlobal) idSet.add(m.id);
 
 		// Check for containers whose missions no longer exist
 		this.missionDrifters.forEach((container, missionId) => {
-			if (!currentMissionIds.has(missionId)) {
+			if (!idSet.has(missionId)) {
 				console.warn(
-					`[GameScene] 🧟 Mission ${missionId.slice(-6)} no longer exists, destroying its container at (${container.x}, ${container.y})`,
+					`[GameScene] 🧟 Mission ${missionId.slice(-6)} no longer exists (not in player/global sets), destroying its container at (${container.x}, ${container.y})`,
 				);
 				this.missionDrifters.delete(missionId);
 				container.destroy();
@@ -1381,6 +1398,7 @@ export class GameScene extends Phaser.Scene {
 			let container = this.monsterIcons.get(m.id);
 			if (!container) {
 				container = this.add.container(m.coordinates.x, m.coordinates.y);
+				container.setDepth(DEPTH_MONSTERS);
 				const circle = this.add.circle(0, 0, 10, 0xdc143c, 0.9);
 				circle.setStrokeStyle(2, 0x000000, 1);
 				const label = this.add.text(0, -18, `HP ${m.hp}/${m.maxHp}`, {
