@@ -676,7 +676,13 @@ async startMonsterCombatMission(
 		if (!monster) return { success: false, error: 'Monster not found' };
 		if (monster.state === 'dead') return { success: false, error: 'Monster already defeated' };
 
-		// Compute team speed
+		// Build effective drifter stats and compute team speed
+		const dStats: DrifterStats[] = [];
+		for (const id of drifterIds) {
+			const base = await getDrifterStats(id, this.env);
+			const eff = this.getEffectiveDrifterStats(id, base);
+			dStats.push({ combat: eff.combat, scavenging: eff.scavenging, tech: eff.tech, speed: eff.speed });
+		}
 		let teamSpeed = BASE_SPEED;
 		let vehicleData: any = undefined;
 		if (vehicleInstanceId) {
@@ -688,19 +694,13 @@ async startMonsterCombatMission(
 			vInst.status = 'on_mission';
 		} else {
 			// derive from slowest drifter effective speed
-			const stats: DrifterStats[] = [];
-			for (const id of drifterIds) {
-				const base = await getDrifterStats(id, this.env);
-				const eff = this.getEffectiveDrifterStats(id, base);
-				stats.push(eff);
-			}
-			if (stats.length > 0) {
-				teamSpeed = Math.min(...stats.map((s) => s.speed)) || BASE_SPEED;
+			if (dStats.length > 0) {
+				teamSpeed = Math.min(...dStats.map((s) => s.speed)) || BASE_SPEED;
 			}
 		}
 
 		// Duration to monster using shared helper
-		const durationMs = calculateMonsterMissionDuration(monster.coordinates as any, stats, vehicleData as any);
+		const durationMs = calculateMonsterMissionDuration(monster.coordinates as any, dStats, vehicleData as any);
 		const now = new Date();
 		const completion = new Date(now.getTime() + durationMs);
 
@@ -944,7 +944,7 @@ async startMonsterCombatMission(
 		if ((mission as any).targetMonsterId) {
 			const targetMonsterId = (mission as any).targetMonsterId as string;
 			// Load monsters
-			const monsters = await this.getStoredMonsters();
+			let monsters = await this.getStoredMonsters();
 			const monster = monsters.find((m) => m.id === targetMonsterId);
 			if (!monster) {
 				console.error(`[GameDO] Target monster ${targetMonsterId} not found during mission completion`);
@@ -970,7 +970,8 @@ async startMonsterCombatMission(
 				monster.hp = Math.max(0, monster.hp - dmg);
 				const killed = monster.hp <= 0;
 				if (killed) {
-					monster.state = 'dead';
+					// Remove the monster entirely when killed
+					monsters = monsters.filter((mm) => mm.id !== monster.id);
 					await this.addEvent({ type: 'monster_killed', message: `Monster ${monster.id} killed (damage ${dmg}, hp ${before}→0)`, data: { id: monster.id, damage: dmg } });
 				} else {
 					await this.addEvent({ type: 'town_damaged', message: `Monster ${monster.id} damaged for ${dmg} (hp ${before}→${monster.hp})`, data: { id: monster.id, damage: dmg } });
@@ -1973,7 +1974,13 @@ private async monsterMovementTick(now: Date): Promise<boolean> {
 		}
 
 		let changed = false;
-		const monsters = await this.getStoredMonsters();
+		let monsters = await this.getStoredMonsters();
+		// Prune any dead monsters lingering in storage
+		const beforeCount = monsters.length;
+		monsters = monsters.filter((m) => m.state !== 'dead');
+		if (monsters.length !== beforeCount) {
+			changed = true;
+		}
 		const arrivalThreshold = 20;
 		for (const m of monsters) {
 			if (m.state !== 'traveling') continue;
@@ -2023,7 +2030,14 @@ private async monsterAttackTick(now: Date): Promise<boolean> {
 		}
 
 		let changed = false;
-		const monsters = await this.getStoredMonsters();
+		let monsters = await this.getStoredMonsters();
+		// Clean up any dead monsters
+		const beforeCount = monsters.length;
+		monsters = monsters.filter((m) => m.state !== 'dead');
+		if (monsters.length !== beforeCount) {
+			await this.setStoredMonsters(monsters);
+			changed = true;
+		}
 		const attackers = monsters.filter((m) => m.state === 'attacking');
 		if (attackers.length === 0) {
 			await this.ctx.storage.put('lastMonsterAttackAt', now.toISOString());
