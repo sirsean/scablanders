@@ -684,6 +684,8 @@ async startMonsterCombatMission(
 			if (!vInst) return { success: false, error: 'Vehicle not available' };
 			vehicleData = getVehicle(vInst.vehicleId);
 			teamSpeed = vehicleData?.speed || BASE_SPEED;
+			// Mark vehicle as on-mission immediately for combat missions too
+			vInst.status = 'on_mission';
 		} else {
 			// derive from slowest drifter effective speed
 			const stats: DrifterStats[] = [];
