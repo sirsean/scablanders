@@ -2148,12 +2148,29 @@ private async monsterAttackTick(now: Date): Promise<boolean> {
 					data: { monsterId: m.id, ...outcome },
 				});
 			}
+			// Self-damage equal to damage dealt (monsters wear down while attacking)
+			const beforeHp = m.hp;
+			m.hp = Math.max(0, (m.hp || 0) - totalDamage);
+			if (m.hp !== beforeHp) {
+				changed = true;
+				console.log(`[Monsters] Attack: ${m.id} self-damaged ${beforeHp - m.hp}, hp ${beforeHp}→${m.hp}`);
+				if (m.hp <= 0) {
+					// Remove from list when defeated at the walls
+					monsters = monsters.filter((mm) => mm.id !== m.id);
+					await this.addEvent({ type: 'monster_killed', message: `Monster ${m.id} died while attacking the town`, data: { id: m.id } });
+				}
+			}
 		}
 
-		if (townChanged) {
-			await this.setTownState(town);
+		// Persist monster HP updates if any
+		if (changed) {
+			await this.setStoredMonsters(monsters);
+		}
+
+		if (townChanged || changed) {
+			if (townChanged) await this.setTownState(town);
 			await this.broadcastWorldStateUpdate();
-			console.log(`[Monsters] Attack: town state updated`);
+			console.log(`[Monsters] Attack: ${townChanged ? 'town state updated' : ''} ${changed ? 'monsters updated' : ''}`.trim());
 		} else {
 			console.log('[Monsters] Attack: no town changes');
 		}
