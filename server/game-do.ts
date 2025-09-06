@@ -139,11 +139,12 @@ export class GameDO extends DurableObject {
 			},
 		};
 
-		// Load persisted data first, then initialize resources
+		// Load persisted data first
 		this.initializeGameState();
 
-		// Run resource management immediately on startup, then schedule recurring alarms
+		// Initialize subsystems independently
 		this.initializeResourceManagement();
+		this.initializeMonsterManagement();
 	}
 
 	/**
@@ -662,6 +663,7 @@ async startMonsterCombatMission(
 	vehicleInstanceId?: string | null,
 ): Promise<{ success: boolean; missionId?: string; error?: string }> {
 	try {
+		await this.ensureAlarmsInitialized();
 		if (!playerAddress || !Array.isArray(drifterIds) || drifterIds.length === 0 || !targetMonsterId) {
 			return { success: false, error: 'Invalid request' };
 		}
@@ -1313,40 +1315,84 @@ async startMonsterCombatMission(
 	/**
 	 * Get all resource nodes
 	 */
-	async getResourceNodes(): Promise<ResourceNode[]> {
+async getResourceNodes(): Promise<ResourceNode[]> {
+		await this.ensureAlarmsInitialized();
 		return Array.from(this.gameState.resourceNodes.values());
-	}
+}
 
 	/**
 	 * Get world metrics
 	 */
-	async getWorldMetrics() {
+async getWorldMetrics() {
+		await this.ensureAlarmsInitialized();
 		return this.gameState.worldMetrics;
-	}
+}
 
 	/**
 	 * Get all active missions
 	 */
-	async getActiveMissions(): Promise<Mission[]> {
+async getActiveMissions(): Promise<Mission[]> {
+		await this.ensureAlarmsInitialized();
 		return Array.from(this.gameState.missions.values()).filter((m) => m.status === 'active');
-	}
+}
 
 	/**
 	 * Return a snapshot of the global event log (newest first)
 	 */
-	async getEventLog(limit: number = 1000): Promise<GameEvent[]> {
+async getEventLog(limit: number = 1000): Promise<GameEvent[]> {
+		await this.ensureAlarmsInitialized();
 		return this.gameState.eventLog.slice(-limit).reverse();
-	}
+}
 
-	// =============================================================================
-	// Resource Management and Regeneration
-	// =============================================================================
+// =============================================================================
+// Resource Management and Regeneration
+// =============================================================================
+
+/** Ensure alarm keys exist; if missing, initialize and schedule */
+private async ensureAlarmsInitialized() {
+	const [resIso, monIso] = await Promise.all([
+		this.ctx.storage.get<string>('nextResourceAlarmAt'),
+		this.ctx.storage.get<string>('nextMonsterAlarmAt'),
+	]);
+	let changed = false;
+	const now = Date.now();
+	if (!resIso) {
+		const resIntervalMs = this.gameState.resourceConfig.degradationCheckInterval * 60 * 1000;
+		await this.ctx.storage.put('nextResourceAlarmAt', new Date(now + resIntervalMs).toISOString());
+		changed = true;
+	}
+	if (!monIso) {
+		await this.ctx.storage.put('nextMonsterAlarmAt', new Date(now + this.monsterTickIntervalMs).toISOString());
+		changed = true;
+	}
+	if (changed) {
+		console.log('[GameDO] Initialized missing alarm keys; scheduling next alarm');
+		await this.scheduleNextAlarm();
+	}
+}
 
 	/**
 	 * Initialize resource management: run immediately, then schedule recurring alarms
 	 */
-	private async initializeResourceManagement() {
-		console.log('[GameDO] Initializing resource management system');
+private monsterTickIntervalMs = 60 * 1000; // 1 minute monster tick frequency
+
+private async initializeMonsterManagement() {
+	console.log('[GameDO] Initializing monster management');
+	try {
+		const nowDate = new Date();
+		await this.monsterMovementTick(nowDate);
+		await this.monsterAttackTick(nowDate);
+		console.log('[GameDO] Initial monster tick completed');
+	} catch (error) {
+		console.error('[GameDO] Error during initial monster tick:', error);
+	}
+	const now = Date.now();
+	await this.ctx.storage.put('nextMonsterAlarmAt', new Date(now + this.monsterTickIntervalMs).toISOString());
+	await this.scheduleNextAlarm();
+}
+
+private async initializeResourceManagement() {
+		console.log('[GameDO] Initializing resource management');
 
 		try {
 			// Run resource management immediately on startup
@@ -1356,40 +1402,63 @@ async startMonsterCombatMission(
 			console.error('[GameDO] Error during initial resource management:', error);
 		}
 
-		// Schedule recurring alarms
-		await this.scheduleResourceManagementAlarm();
+		// Initialize next resource alarm time
+		const now = Date.now();
+		const resIntervalMs = this.gameState.resourceConfig.degradationCheckInterval * 60 * 1000;
+		await this.ctx.storage.put('nextResourceAlarmAt', new Date(now + resIntervalMs).toISOString());
+
+		// Schedule earliest alarm across systems
+		await this.scheduleNextAlarm();
 	}
 
-	/**
-	 * Schedule the next resource degradation alarm
-	 */
-	private async scheduleResourceManagementAlarm() {
-		const intervalMs = this.gameState.resourceConfig.degradationCheckInterval * 60 * 1000;
-		const nextAlarmTime = new Date(Date.now() + intervalMs);
-
-		console.log(`[GameDO] Scheduling resource degradation alarm for ${nextAlarmTime.toISOString()}`);
-		await this.ctx.storage.setAlarm(nextAlarmTime);
+/** Schedule the next alarm trigger based on the earliest of resource/monster needs */
+	private async scheduleNextAlarm() {
+		const [resIso, monIso] = await Promise.all([
+			this.ctx.storage.get<string>('nextResourceAlarmAt'),
+			this.ctx.storage.get<string>('nextMonsterAlarmAt'),
+		]);
+		const resAt = resIso ? new Date(resIso).getTime() : Date.now();
+		const monAt = monIso ? new Date(monIso).getTime() : Date.now();
+		const nextMs = Math.min(resAt, monAt);
+		const next = new Date(Math.max(Date.now() + 1000, nextMs)); // at least 1s in future
+		console.log(`[GameDO] Scheduling next alarm for ${next.toISOString()} (res=${new Date(resAt).toISOString()} mon=${new Date(monAt).toISOString()})`);
+		await this.ctx.storage.setAlarm(next);
 	}
 
 /**
-	 * Handle alarm - resource and monster management
+	 * Handle alarm - run whichever systems are due and reschedule
 	 */
 	async alarm() {
-		console.log('[GameDO] Resource/Monster management alarm triggered');
+		console.log('[GameDO] Alarm triggered');
 
 		try {
 			const now = new Date();
-			// Drive monster movement and attack ticks first
-			await this.monsterMovementTick(now);
-			await this.monsterAttackTick(now);
-			// Then resource management
-			await this.performResourceManagement();
+
+			// Monster tick: run when due
+			const monIso = await this.ctx.storage.get<string>('nextMonsterAlarmAt');
+			let monAt = monIso ? new Date(monIso) : new Date(0);
+			if (now >= monAt) {
+				await this.monsterMovementTick(now);
+				await this.monsterAttackTick(now);
+				monAt = new Date(now.getTime() + this.monsterTickIntervalMs);
+				await this.ctx.storage.put('nextMonsterAlarmAt', monAt.toISOString());
+			}
+
+			// Resource degradation: run when due
+			const resIso = await this.ctx.storage.get<string>('nextResourceAlarmAt');
+			let resAt = resIso ? new Date(resIso) : new Date(0);
+			if (now >= resAt) {
+				await this.performResourceManagement();
+				const resIntervalMs = this.gameState.resourceConfig.degradationCheckInterval * 60 * 1000;
+				resAt = new Date(now.getTime() + resIntervalMs);
+				await this.ctx.storage.put('nextResourceAlarmAt', resAt.toISOString());
+			}
 		} catch (error) {
-			console.error('[GameDO] Error during scheduled management:', error);
+			console.error('[GameDO] Error during scheduled alarm processing:', error);
 		}
 
-		// Schedule next alarm
-		await this.scheduleResourceManagementAlarm();
+		// Schedule next alarm to the earliest due time
+		await this.scheduleNextAlarm();
 	}
 
 	/**
@@ -1949,7 +2018,12 @@ private async setStoredMonsters(list: Monster[]) {
 }
 
 async getMonsters(): Promise<Monster[]> {
-	return await this.getStoredMonsters();
+	const list = await this.getStoredMonsters();
+	const filtered = list.filter((m) => m.state !== 'dead');
+	if (filtered.length !== list.length) {
+		await this.setStoredMonsters(filtered);
+	}
+	return filtered;
 }
 
 private distanceToTown(x: number, y: number): number {
@@ -1968,7 +2042,9 @@ private async monsterMovementTick(now: Date): Promise<boolean> {
 		const lastIso = (await this.ctx.storage.get<string>('lastMonsterMoveAt')) || '';
 		const last = lastIso ? new Date(lastIso) : new Date(); // if missing, initialize with now
 		const minutes = (now.getTime() - last.getTime()) / 60000;
+		console.log(`[Monsters] Movement tick: now=${now.toISOString()} last=${last.toISOString()} Δmin=${minutes.toFixed(2)}`);
 		if (minutes <= 0) {
+			console.log('[Monsters] Movement: skipping (Δmin <= 0). Seeding lastMonsterMoveAt');
 			await this.ctx.storage.put('lastMonsterMoveAt', now.toISOString());
 			return false;
 		}
@@ -1979,9 +2055,12 @@ private async monsterMovementTick(now: Date): Promise<boolean> {
 		const beforeCount = monsters.length;
 		monsters = monsters.filter((m) => m.state !== 'dead');
 		if (monsters.length !== beforeCount) {
+			console.log(`[Monsters] Movement: pruned ${beforeCount - monsters.length} dead monster(s)`);
 			changed = true;
 		}
 		const arrivalThreshold = 20;
+		let moved = 0;
+		let arrived = 0;
 		for (const m of monsters) {
 			if (m.state !== 'traveling') continue;
 			const { x, y } = m.coordinates;
@@ -1995,6 +2074,7 @@ private async monsterMovementTick(now: Date): Promise<boolean> {
 				m.state = 'attacking';
 				m.etaToTown = now;
 				await this.addEvent({ type: 'monster_arrived', message: `Monster ${m.id} arrived at town`, data: { id: m.id } });
+				arrived++;
 				changed = true;
 			} else {
 				// Move closer along vector toward (0,0)
@@ -2003,6 +2083,7 @@ private async monsterMovementTick(now: Date): Promise<boolean> {
 				const nx = Math.round(x + ux * moveDist);
 				const ny = Math.round(y + uy * moveDist);
 				m.coordinates = { x: nx, y: ny };
+				moved++;
 				changed = true;
 			}
 		}
@@ -2010,6 +2091,9 @@ private async monsterMovementTick(now: Date): Promise<boolean> {
 			await this.setStoredMonsters(monsters);
 			await this.ctx.storage.put('lastMonsterMoveAt', now.toISOString());
 			await this.broadcastWorldStateUpdate();
+			console.log(`[Monsters] Movement: updated ${moved} moved, ${arrived} arrived, total=${monsters.length}`);
+		} else {
+			console.log('[Monsters] Movement: no changes');
 		}
 		return changed;
 	} catch (e) {
@@ -2024,7 +2108,9 @@ private async monsterAttackTick(now: Date): Promise<boolean> {
 		const last = lastIso ? new Date(lastIso) : new Date();
 		const seconds = Math.floor((now.getTime() - last.getTime()) / 1000);
 		const ticks = Math.floor(seconds / 20);
+		console.log(`[Monsters] Attack tick: now=${now.toISOString()} last=${last.toISOString()} Δsec=${seconds} ticks=${ticks}`);
 		if (ticks <= 0) {
+			console.log('[Monsters] Attack: skipping (ticks <= 0). Seeding lastMonsterAttackAt');
 			await this.ctx.storage.put('lastMonsterAttackAt', now.toISOString());
 			return false;
 		}
@@ -2036,10 +2122,12 @@ private async monsterAttackTick(now: Date): Promise<boolean> {
 		monsters = monsters.filter((m) => m.state !== 'dead');
 		if (monsters.length !== beforeCount) {
 			await this.setStoredMonsters(monsters);
+			console.log(`[Monsters] Attack: pruned ${beforeCount - monsters.length} dead monster(s)`);
 			changed = true;
 		}
 		const attackers = monsters.filter((m) => m.state === 'attacking');
 		if (attackers.length === 0) {
+			console.log('[Monsters] Attack: no attackers at town');
 			await this.ctx.storage.put('lastMonsterAttackAt', now.toISOString());
 			return false;
 		}
@@ -2050,6 +2138,7 @@ private async monsterAttackTick(now: Date): Promise<boolean> {
 		for (const m of attackers) {
 			const totalDamage = DAMAGE_PER_TICK * ticks;
 			const outcome = this.applyTownDamage(town, totalDamage);
+			console.log(`[Monsters] Attack: ${m.id} dealt ${totalDamage} (walls:${outcome.wallsDamage} other:${outcome.attrDamage} prosperity:${outcome.prosperityDamage})`);
 			if (outcome.changed) {
 				townChanged = true;
 				await this.addEvent({
@@ -2063,6 +2152,9 @@ private async monsterAttackTick(now: Date): Promise<boolean> {
 		if (townChanged) {
 			await this.setTownState(town);
 			await this.broadcastWorldStateUpdate();
+			console.log(`[Monsters] Attack: town state updated`);
+		} else {
+			console.log('[Monsters] Attack: no town changes');
 		}
 		await this.ctx.storage.put('lastMonsterAttackAt', now.toISOString());
 		return townChanged || changed;

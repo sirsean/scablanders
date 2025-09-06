@@ -267,7 +267,8 @@ class GameStateManager extends EventTarget {
 
 			if (update.monsters) {
 				console.log('[GameState] Updating monsters from WebSocket:', update.monsters);
-				this.setState({ monsters: update.monsters });
+				const filtered = (update.monsters || []).filter((m: any) => m && m.state !== 'dead');
+				this.setState({ monsters: filtered });
 			}
 
 			if (update.town) {
@@ -456,7 +457,7 @@ class GameStateManager extends EventTarget {
 			this.setState({
 				resourceNodes: data.resourceNodes || [],
 				activeMissions: data.activeMissions || [],
-				monsters: data.monsters || [],
+				monsters: (data.monsters || []).filter((m: any) => m && m.state !== 'dead'),
 				town: data.town || null,
 				worldMetrics: data.worldMetrics || null,
 				isLoadingWorld: false,

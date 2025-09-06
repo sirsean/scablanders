@@ -127,7 +127,7 @@ export class TownPanel {
       </div>
     `;
 
-const monsters = state.monsters || [];
+const monsters = (state.monsters || []).filter((m: any) => m && m.state !== 'dead');
     if (monsters.length === 0) {
       monstersEl.innerHTML = '<h4 style="margin:0 0 8px 0; color:#FFD700;">Monsters</h4><p>No active monsters.</p>';
     } else {
