@@ -58,20 +58,6 @@ export class TownPanel {
             }
           }
         }
-        if (target.matches('#town-contrib-custom-apply')) {
-          const input = document.getElementById('town-contrib-custom-amount') as HTMLInputElement | null;
-          const attrSel = document.getElementById('town-contrib-custom-attr') as HTMLSelectElement | null;
-          const amount = input ? parseInt(input.value, 10) || 0 : 0;
-          const attribute = (attrSel?.value || 'vehicle_market') as 'vehicle_market' | 'perimeter_walls';
-          if (amount > 0) {
-            (target as HTMLButtonElement).disabled = true;
-            try {
-              await gameState.contributeToTown(attribute, amount);
-            } finally {
-              (target as HTMLButtonElement).disabled = false;
-            }
-          }
-        }
       });
     }, 0);
 
@@ -177,14 +163,6 @@ const monsters = (state.monsters || []).filter((m: any) => m && m.state !== 'dea
       ${mkBtn(10)}
       ${mkBtn(100)}
       ${mkBtn(1000)}
-      <span style="margin-left:8px;">
-        <select id="town-contrib-custom-attr" style="background:#222; color:#fff; border:1px solid #666; padding:2px 6px;">
-          <option value="vehicle_market">Vehicle Market</option>
-          <option value="perimeter_walls">Perimeter Walls</option>
-        </select>
-        <input id="town-contrib-custom-amount" type="number" min="1" step="1" placeholder="Amount" style="width:100px; background:#222; color:#fff; border:1px solid #666; padding:2px 6px; margin-left:4px;" />
-        <button id="town-contrib-custom-apply" style="background:#4a7c59; border:1px solid #fff; color:#fff; padding:4px 10px; cursor:pointer; border-radius:4px; margin-left:4px;" ${disabled ? 'disabled' : ''}>Contribute</button>
-      </span>
     `;
   }
 
