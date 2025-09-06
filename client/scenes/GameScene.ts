@@ -34,6 +34,7 @@ export class GameScene extends Phaser.Scene {
 	private missionIndicatorGlows = new Map<string, Phaser.GameObjects.Graphics>();
 	private missionRoutes = new Map<string, Phaser.GameObjects.Graphics>();
 	private missionDrifters = new Map<string, Phaser.GameObjects.Container>();
+	private monsterIcons = new Map<string, Phaser.GameObjects.Container>();
 	private pendingTinyLoads = new Map<string, Promise<string>>();
 	private townMarker: Phaser.GameObjects.Container | null = null;
 	private missionRenderVersion = 0;
@@ -223,6 +224,11 @@ export class GameScene extends Phaser.Scene {
 			this.updateResourceNodes(state.resourceNodes);
 			// Use world missions for indicators
 			this.updateMissionIndicators(state.activeMissions || []);
+		}
+
+		// Update monsters
+		if (state.monsters) {
+			this.updateMonsters(state.monsters);
 		}
 
 		// Update mission routes and drifter positions
@@ -690,7 +696,7 @@ export class GameScene extends Phaser.Scene {
 		const playerAddressNow = gameState.getState().playerAddress;
 		// Create color-coded routes for all missions that should be visible
 		const routeMissions = missions
-			.filter((m) => !!m.targetNodeId)
+			.filter((m) => !!(m as any).targetNodeId || !!(m as any).targetMonsterId)
 			.map((m) => ({ mission: m, color: this.getMissionRenderColor(m, playerAddressNow) }))
 			.filter((e) => e.color !== null) as { mission: Mission; color: number }[];
 		console.log(`[GameScene] 🚀 Creating routes for ${routeMissions.length} missions (visible states)`);
@@ -716,14 +722,30 @@ export class GameScene extends Phaser.Scene {
 
 	private createMissionRoute(mission: Mission, color: number) {
 		const currentState = gameState.getState();
-		const targetNode = currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId);
-		if (!targetNode) {
-			console.warn(`[GameScene] ⚠️ Skipping route creation - target node ${mission.targetNodeId} not found for mission ${mission.id}`);
-			console.warn(`[GameScene]   - Available resource node IDs:`, currentState.resourceNodes?.map((n) => n.id) || []);
+		let nodeX: number | undefined, nodeY: number | undefined;
+
+		if (mission.targetNodeId) {
+			const targetNode = currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId);
+			if (!targetNode) {
+				console.warn(`[GameScene] ⚠️ Skipping route creation - target node ${mission.targetNodeId} not found for mission ${mission.id}`);
+				return;
+			}
+			({ x: nodeX, y: nodeY } = targetNode.coordinates);
+		} else if ((mission as any).targetMonsterId) {
+			const mid = (mission as any).targetMonsterId as string;
+			const monster = (currentState.monsters || []).find((m: any) => m.id === mid);
+			if (!monster) {
+				console.warn(`[GameScene] ⚠️ Skipping route creation - monster ${mid} not found for mission ${mission.id}`);
+				return;
+			}
+			nodeX = monster.coordinates.x;
+			nodeY = monster.coordinates.y;
+			// Override color for monster missions to a distinct purple
+			color = 0x9c27b0;
+		} else {
 			return;
 		}
 
-		const { x: nodeX, y: nodeY } = targetNode.coordinates;
 		const routeGraphics = this.add.graphics();
 
 		// Store route data for animation
@@ -736,26 +758,30 @@ export class GameScene extends Phaser.Scene {
 		routeGraphics.setData('animated', color !== COLOR_COMPLETED);
 
 		// Initial draw
-		this.drawDashedLine(routeGraphics, TOWN_X, TOWN_Y, nodeX, nodeY, color, 0);
+		this.drawDashedLine(routeGraphics, TOWN_X, TOWN_Y, nodeX!, nodeY!, color, 0);
 
 		this.missionRoutes.set(mission.id, routeGraphics);
 	}
 
 	private async createMissionDrifter(mission: Mission, renderVersion: number) {
 		const currentState = gameState.getState();
-		const targetNode = currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId);
-		if (!targetNode) {
-			console.warn(`[GameScene] ⚠️ Skipping drifter creation - target node ${mission.targetNodeId} not found for mission ${mission.id}`);
-			console.warn(`[GameScene]   - Available resource node IDs:`, currentState.resourceNodes?.map((n) => n.id) || []);
-			console.warn(`[GameScene]   - Looking for node ID: ${mission.targetNodeId}`);
-
-			// Check if we have the node in our rendered nodes map
-			const clientNode = this.resourceNodes.get(mission.targetNodeId);
-			if (clientNode) {
-				console.warn(`[GameScene]   - 😱 WEIRD: Node exists in client render map but not in gameState!`);
-			} else {
-				console.warn(`[GameScene]   - Node not in client render map either`);
+		let targetNode: ResourceNode | undefined;
+		let targetMonster: any | undefined;
+		if (mission.targetNodeId) {
+			targetNode = currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId);
+			if (!targetNode) {
+				console.warn(`[GameScene] ⚠️ Skipping drifter creation - target node ${mission.targetNodeId} not found for mission ${mission.id}`);
+				console.warn(`[GameScene]   - Available resource node IDs:`, currentState.resourceNodes?.map((n) => n.id) || []);
+				return;
 			}
+		} else if ((mission as any).targetMonsterId) {
+			const mid = (mission as any).targetMonsterId as string;
+			targetMonster = (currentState.monsters || []).find((m: any) => m.id === mid);
+			if (!targetMonster) {
+				console.warn(`[GameScene] ⚠️ Skipping drifter creation - monster ${mid} not found for mission ${mission.id}`);
+				return;
+			}
+		} else {
 			return;
 		}
 
@@ -868,32 +894,42 @@ export class GameScene extends Phaser.Scene {
 		}
 	}
 
-	private updateDrifterPosition(drifterContainer: Phaser.GameObjects.Container, mission: Mission, targetNode: ResourceNode) {
+	private updateDrifterPosition(drifterContainer: Phaser.GameObjects.Container, mission: Mission, targetNode?: ResourceNode, targetMonster?: any) {
 		try {
 			const now = new Date();
 			const startTime = mission.startTime instanceof Date ? mission.startTime : new Date(mission.startTime);
 			const endTime = mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime);
-
+			
 			// Validate dates
 			if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
 				console.warn('Invalid mission dates, hiding drifter container');
 				drifterContainer.setVisible(false);
 				return;
 			}
-
+			
 			const totalDuration = endTime.getTime() - startTime.getTime();
 			const elapsed = now.getTime() - startTime.getTime();
-
+			
 			// Prevent division by zero
 			if (totalDuration <= 0) {
 				console.warn('Invalid mission duration, hiding drifter container');
 				drifterContainer.setVisible(false);
 				return;
 			}
-
+			
 			const progress = Math.max(0, Math.min(1, elapsed / totalDuration));
-
-			const { x: nodeX, y: nodeY } = targetNode.coordinates;
+			
+			let nodeX: number | undefined, nodeY: number | undefined;
+			if (targetNode) {
+				({ x: nodeX, y: nodeY } = targetNode.coordinates);
+			} else if (targetMonster) {
+				nodeX = targetMonster.coordinates.x;
+				nodeY = targetMonster.coordinates.y;
+			} else {
+				console.warn('No target provided, hiding drifter container');
+				drifterContainer.setVisible(false);
+				return;
+			}
 
 			// Validate coordinates
 			if (typeof nodeX !== 'number' || typeof nodeY !== 'number' || isNaN(nodeX) || isNaN(nodeY)) {
@@ -1021,15 +1057,21 @@ export class GameScene extends Phaser.Scene {
 			const activeMissions = gameState.getState().playerMissions.filter((m) => m.status === 'active');
 			activeMissions.forEach((mission) => {
 				const drifterContainer = this.missionDrifters.get(mission.id);
+				if (!drifterContainer) return;
 				const currentState = gameState.getState();
-				const targetNode = currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId);
-				if (drifterContainer && targetNode) {
-					this.updateDrifterPosition(drifterContainer, mission, targetNode);
+				const targetNode = mission.targetNodeId
+					? currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId)
+					: undefined;
+				const mid = (mission as any).targetMonsterId as string | undefined;
+				const monster = mid ? (currentState.monsters || []).find((mm: any) => mm.id === mid) : undefined;
+				if (targetNode || monster) {
+					this.updateDrifterPosition(drifterContainer, mission, targetNode as any, monster as any);
 					// Update ring color live based on time
 					const ring = drifterContainer.getData('indicatorRing') as Phaser.GameObjects.Graphics | undefined;
 					if (ring) {
 						const playerAddr = gameState.getState().playerAddress;
-						const color = this.getMissionRenderColor(mission, playerAddr) ?? COLOR_SELF_ACTIVE;
+						let color = this.getMissionRenderColor(mission, playerAddr) ?? COLOR_SELF_ACTIVE;
+						if (monster) color = 0x9c27b0;
 						ring.clear();
 						ring.lineStyle(2, color);
 						ring.strokeCircle(0, 0, 14);
@@ -1173,19 +1215,32 @@ export class GameScene extends Phaser.Scene {
 	private updatePlanningOverlay(state: GameState) {
 		try {
 			const selectedId = state.selectedResourceNode;
-			const isPlanning = !!selectedId && state.showMissionPanel;
-			if (!isPlanning) {
+			const selectedMonsterId = state.selectedTargetMonsterId;
+			const isPlanningNode = !!selectedId && state.showMissionPanel;
+			const isPlanningMonster = !!selectedMonsterId && state.showMissionPanel;
+			if (!isPlanningNode && !isPlanningMonster) {
 				this.clearPlanningOverlay();
 				return;
 			}
 
-			const targetNode = state.resourceNodes?.find((r) => r.id === selectedId);
-			if (!targetNode) {
-				this.clearPlanningOverlay();
-				return;
+			let nodeX: number | undefined, nodeY: number | undefined;
+			if (isPlanningNode) {
+				const targetNode = state.resourceNodes?.find((r) => r.id === selectedId);
+				if (!targetNode) {
+					this.clearPlanningOverlay();
+					return;
+				}
+				({ x: nodeX, y: nodeY } = targetNode.coordinates);
+			} else if (isPlanningMonster) {
+				const monster = (state.monsters || []).find((m) => m.id === selectedMonsterId);
+				if (!monster) {
+					this.clearPlanningOverlay();
+					return;
+				}
+				nodeX = monster.coordinates.x; nodeY = monster.coordinates.y;
 			}
 
-			const { x: nodeX, y: nodeY } = targetNode.coordinates;
+			const nodeXFinal = nodeX!; const nodeYFinal = nodeY!;
 
 			// Create graphics objects if needed
 			if (!this.planningRoute) {
@@ -1206,8 +1261,8 @@ export class GameScene extends Phaser.Scene {
 			const alpha = 1.0;
 			const dash = 10;
 			const gap = 6;
-			const dx = nodeX - TOWN_X;
-			const dy = nodeY - TOWN_Y;
+			const dx = nodeXFinal - TOWN_X;
+			const dy = nodeYFinal - TOWN_Y;
 			const dist = Math.sqrt(dx * dx + dy * dy);
 			const steps = Math.max(1, Math.floor(dist / (dash + gap)));
 			const ux = dx / dist;
@@ -1225,7 +1280,7 @@ export class GameScene extends Phaser.Scene {
 
 			// Orange highlight circle around the target node
 			this.planningCircle.lineStyle(3, color, 1);
-			this.planningCircle.strokeCircle(nodeX, nodeY, 28);
+			this.planningCircle.strokeCircle(nodeXFinal, nodeYFinal, 28);
 		} catch (e) {
 			console.error('Failed updating planning overlay', e);
 		}
@@ -1248,13 +1303,17 @@ export class GameScene extends Phaser.Scene {
 			return null;
 		}
 		const isSelf = this.isSelfMission(mission, playerAddress);
+		const isMonster = (mission as any).targetMonsterId ? true : false;
 		if (mission.status === 'active') {
 			// If this is the player's mission and it's reached its end time, show as green (ready to claim)
 			const endTs = mission.completionTime instanceof Date ? mission.completionTime.getTime() : new Date(mission.completionTime).getTime();
 			if (isSelf && !isNaN(endTs) && Date.now() >= endTs) {
 				return COLOR_COMPLETED; // ready to claim, awaiting collection
 			}
-			// Otherwise, show active colors (amber for self, red for others)
+			// Otherwise, show active colors
+			if (isMonster) {
+				return 0x9c27b0; // purple for monster missions
+			}
 			return isSelf ? COLOR_SELF_ACTIVE : COLOR_OTHER_ACTIVE;
 		}
 		return null;
@@ -1303,6 +1362,44 @@ export class GameScene extends Phaser.Scene {
 					route.destroy();
 					this.missionRoutes.delete(id);
 				}
+			}
+		}
+	}
+
+	private updateMonsters(monsters: any[]) {
+		// Remove stale monsters
+		const currentIds = new Set(monsters.map((m) => m.id));
+		for (const [id, cnt] of this.monsterIcons) {
+			if (!currentIds.has(id)) {
+				cnt.destroy(true);
+				this.monsterIcons.delete(id);
+			}
+		}
+
+		// Create/update
+		for (const m of monsters) {
+			let container = this.monsterIcons.get(m.id);
+			if (!container) {
+				container = this.add.container(m.coordinates.x, m.coordinates.y);
+				const circle = this.add.circle(0, 0, 10, 0xdc143c, 0.9);
+				circle.setStrokeStyle(2, 0x000000, 1);
+				const label = this.add.text(0, -18, `HP ${m.hp}/${m.maxHp}`, {
+					fontSize: '11px',
+					color: '#ffdddd',
+					fontFamily: 'Courier New',
+					align: 'center',
+					backgroundColor: 'rgba(0,0,0,0.6)',
+					padding: { x: 4, y: 2 },
+				})
+				.setOrigin(0.5);
+				container.add(circle);
+				container.add(label);
+				this.monsterIcons.set(m.id, container);
+			} else {
+				container.setPosition(m.coordinates.x, m.coordinates.y);
+				// Update label text
+				const lbl = container.list.find((go) => (go as any).style) as Phaser.GameObjects.Text | undefined;
+				if (lbl) lbl.setText(`HP ${m.hp}/${m.maxHp}`);
 			}
 		}
 	}

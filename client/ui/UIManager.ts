@@ -8,6 +8,7 @@ import { DrifterInfoPanel } from './DrifterInfoPanel';
 import { MissionPanel } from './MissionPanel';
 import { DriftersPanel } from './DriftersPanel';
 import { ProfilePanel } from './ProfilePanel';
+import { TownPanel } from './TownPanel';
 import { buildNotificationStyle } from './utils/notificationStyles';
 
 export class UIManager {
@@ -20,6 +21,7 @@ export class UIManager {
 	private marketPanel: HTMLElement | null = null;
 	private vehiclePanel: HTMLElement | null = null;
 	private logPanel: HTMLElement | null = null;
+	private townPanel: HTMLElement | null = null;
 	private drifterInfoPanel: HTMLElement | null = null;
 	private buttonUpdateInterval: number | null = null;
 
@@ -106,6 +108,7 @@ export class UIManager {
 		this.createMarketPanel();
 		this.createVehiclePanel();
 		this.createLogPanel();
+		this.createTownPanel();
 		this.createDrifterInfoPanel();
 	}
 
@@ -125,6 +128,7 @@ private createActionMenu() {
 
 		// Action buttons (vertical) - desired order top->bottom
 		const buttons: { id: string; label: string }[] = [
+			{ id: 'toggle-town', label: 'Town (T)' },
 			{ id: 'toggle-profile', label: 'Profile (P)' },
 			{ id: 'toggle-drifters', label: 'Drifters (D)' },
 			{ id: 'toggle-vehicles', label: 'Vehicles (V)' },
@@ -238,6 +242,12 @@ private createLogPanel() {
 		this.swallowPointerEvents(this.logPanel);
 }
 
+private createTownPanel() {
+		this.townPanel = TownPanel.createTownPanel();
+		document.body.appendChild(this.townPanel);
+		this.swallowPointerEvents(this.townPanel);
+}
+
 private createMissionTooltip() {
 		this.missionTooltipEl = document.createElement('div');
 		this.missionTooltipEl.id = 'mission-tooltip';
@@ -314,6 +324,9 @@ private createDrifterInfoPanel() {
 		document.getElementById('close-market-panel')?.addEventListener('click', () => {
 			gameState.toggleMarketPanel();
 		});
+		document.getElementById('close-town-panel')?.addEventListener('click', () => {
+			gameState.toggleTownPanel();
+		});
 		document.getElementById('close-log-panel')?.addEventListener('click', () => {
 			gameState.toggleLogPanel();
 		});
@@ -336,6 +349,9 @@ private createDrifterInfoPanel() {
 		document.getElementById('toggle-profile')?.addEventListener('click', () => {
 			gameState.toggleProfilePanel();
 		});
+		document.getElementById('toggle-town')?.addEventListener('click', () => {
+			gameState.toggleTownPanel();
+		});
 		document.getElementById('toggle-log')?.addEventListener('click', () => {
 			gameState.toggleLogPanel();
 		});
@@ -356,8 +372,11 @@ private createDrifterInfoPanel() {
 				if (gameState.getState().showDriftersPanel) {
 					gameState.toggleDriftersPanel();
 				}
-					if (gameState.getState().showProfilePanel) {
-						gameState.toggleProfilePanel();
+				if (gameState.getState().showProfilePanel) {
+					gameState.toggleProfilePanel();
+					}
+					if (gameState.getState().showTownPanel) {
+						gameState.toggleTownPanel();
 					}
 					break;
 				case 'a':
@@ -384,6 +403,10 @@ private createDrifterInfoPanel() {
 				case 'L':
 					gameState.toggleLogPanel();
 					break;
+				case 't':
+				case 'T':
+					gameState.toggleTownPanel();
+					break;
 			}
 		});
 	}
@@ -409,25 +432,41 @@ private createDrifterInfoPanel() {
 			}
 		}
 
-		if (this.activeMissionsPanel) {
-			this.activeMissionsPanel.style.display = state.showActiveMissionsPanel ? 'block' : 'none';
-			if (state.showActiveMissionsPanel) {
-				ActiveMissionsPanel.updateActiveMissionsPanel(
-					state.playerMissions,
-					state.ownedDrifters,
-					state.resourceNodes || [],
-					state.isLoadingPlayerMissions,
-				);
-			} else {
-				// Stop the live timer when panel is hidden
-				ActiveMissionsPanel.stopLiveTimer();
+			if (this.activeMissionsPanel) {
+				this.activeMissionsPanel.style.display = state.showActiveMissionsPanel ? 'block' : 'none';
+				if (state.showActiveMissionsPanel) {
+					// Merge player-specific missions with any missing ones from global list filtered by player
+					const fromPlayer = state.playerMissions || [];
+					const fromGlobal = (state.activeMissions || []).filter(
+						(m) => state.playerAddress && m.playerAddress?.toLowerCase() === state.playerAddress.toLowerCase(),
+					);
+					const mergedMap = new Map<string, any>();
+					for (const m of fromGlobal) mergedMap.set(m.id, m);
+					for (const m of fromPlayer) mergedMap.set(m.id, m); // prefer player version if duplicate
+					const missionsForPanel = Array.from(mergedMap.values());
+					ActiveMissionsPanel.updateActiveMissionsPanel(
+						missionsForPanel,
+						state.ownedDrifters,
+						state.resourceNodes || [],
+						state.isLoadingPlayerMissions,
+					);
+				} else {
+					// Stop the live timer when panel is hidden
+					ActiveMissionsPanel.stopLiveTimer();
+				}
 			}
-		}
 
 		if (this.marketPanel) {
 			this.marketPanel.style.display = state.showMarketPanel ? 'block' : 'none';
 			if (state.showMarketPanel) {
 				MarketPanel.updateMarketPanel(state.availableVehicles, state.isLoadingMarket);
+			}
+		}
+
+		if (this.townPanel) {
+			this.townPanel.style.display = state.showTownPanel ? 'block' : 'none';
+			if (state.showTownPanel) {
+				TownPanel.updateTownPanel(state);
 			}
 		}
 
@@ -616,6 +655,7 @@ private createDrifterInfoPanel() {
 			this.driftersPanel,
 			this.drifterInfoPanel,
 			this.marketPanel,
+			this.townPanel,
 			this.missionPanel,
 		];
 

@@ -115,7 +115,9 @@ export interface Mission {
 	playerAddress: string;
 	drifterIds: number[];
 	vehicleInstanceId: string | null;
-	targetNodeId: string;
+	// Targeting: either a resource node OR a monster (for combat missions)
+	targetNodeId?: string;
+	targetMonsterId?: string;
 	startTime: Date;
 	completionTime: Date;
 	status: 'active' | 'completed' | 'intercepted' | 'failed';
@@ -141,6 +143,33 @@ export interface ResourceNode {
 }
 
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+
+// Town & Monsters
+export type TownAttributeType = 'vehicle_market' | 'perimeter_walls';
+
+export interface TownAttributeState {
+	level: number;
+	progress: number; // Credits contributed toward next level
+	nextLevelCost: number; // Credits required for next level
+	hp?: number; // For attributes with HP (e.g., walls)
+	maxHp?: number; // For attributes with HP (e.g., walls)
+}
+
+export interface TownState {
+	prosperity: number;
+	attributes: Record<TownAttributeType, TownAttributeState>;
+}
+
+export interface Monster {
+	id: string;
+	coordinates: { x: number; y: number };
+	hp: number;
+	maxHp: number;
+	speed: number; // units per minute
+	state: 'traveling' | 'attacking' | 'dead';
+	spawnTime: Date;
+	etaToTown?: Date;
+}
 
 export interface BattleResult {
 	winner: 'defender' | 'attacker';
@@ -172,7 +201,13 @@ export type GameEventType =
 	| 'node_spawned'
 	| 'resource_depleted'
 	| 'node_removed'
-	| 'town_upgrade';
+	| 'town_upgrade'
+	| 'monster_spawned'
+	| 'monster_killed'
+	| 'monster_arrived'
+	| 'town_damaged'
+	| 'town_attribute_depleted'
+	| 'town_upgrade_completed';
 
 export interface GameEvent {
 	id: string;
@@ -316,6 +351,8 @@ export interface WorldStateUpdate extends WebSocketMessage {
 	data: {
 		resourceNodes: ResourceNode[];
 		missions: Mission[];
+		monsters: Monster[];
+		town: TownState;
 		worldMetrics: {
 			totalActiveMissions: number;
 			totalCompletedMissions: number;

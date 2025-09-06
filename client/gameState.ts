@@ -1,4 +1,4 @@
-import type { PlayerProfile, Mission, DrifterProfile, ResourceNode, Vehicle, GameEvent } from '@shared/models';
+import type { PlayerProfile, Mission, DrifterProfile, ResourceNode, Vehicle, GameEvent, TownState, Monster } from '@shared/models';
 import { auth } from './auth';
 import { webSocketManager } from './websocketManager';
 import type { PlayerStateUpdate, WorldStateUpdate } from '@shared/models';
@@ -13,9 +13,11 @@ export interface GameState {
 	ownedDrifters: DrifterProfile[];
 	playerMissions: Mission[]; // Player's specific missions
 
-	// World data
+// World data
 	resourceNodes: ResourceNode[];
 	activeMissions: Mission[]; // All active missions (for map display)
+	monsters: Monster[]; // Active monsters moving/attacking
+	town: TownState | null;
 	worldMetrics: {
 		totalActiveMissions: number;
 		totalCompletedMissions: number;
@@ -33,18 +35,20 @@ export interface GameState {
 	connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 	realTimeMode: boolean; // Whether updates come from WebSocket or polling
 
-	// UI state
+// UI state
 	selectedResourceNode: string | null;
 	selectedDrifterIds: number[];
 	selectedMissionType: string | null;
 	selectedVehicleInstanceId: string | null;
+	selectedTargetMonsterId: string | null;
 	drifterSortBy: 'combat' | 'scavenging' | 'tech' | 'speed';
 	showMissionPanel: boolean;
-	showMercenaryPanel: boolean;
+	showDriftersPanel: boolean;
 	showProfilePanel: boolean;
 	showActiveMissionsPanel: boolean;
 	showMarketPanel: boolean;
 	showVehiclePanel: boolean;
+	showTownPanel: boolean;
 	showLogPanel: boolean;
 	notifications: GameNotification[];
 	// Logs
@@ -75,6 +79,8 @@ class GameStateManager extends EventTarget {
 		playerMissions: [],
 		resourceNodes: [],
 		activeMissions: [],
+		monsters: [],
+		town: null,
 		worldMetrics: null,
 		availableVehicles: [],
 		wsConnected: false,
@@ -86,6 +92,7 @@ class GameStateManager extends EventTarget {
 		selectedDrifterIds: [],
 		selectedMissionType: null,
 		selectedVehicleInstanceId: null,
+		selectedTargetMonsterId: null,
 		drifterSortBy: 'combat',
 		showMissionPanel: false,
 		showDriftersPanel: false,
@@ -93,6 +100,7 @@ class GameStateManager extends EventTarget {
 		showActiveMissionsPanel: false,
 		showMarketPanel: false,
 		showVehiclePanel: false,
+		showTownPanel: false,
 		showLogPanel: false,
 		notifications: [],
 		eventLog: [],
@@ -255,6 +263,16 @@ class GameStateManager extends EventTarget {
 			if (update.resourceNodes) {
 				console.log('[GameState] Updating resource nodes from WebSocket:', update.resourceNodes);
 				this.setState({ resourceNodes: update.resourceNodes });
+			}
+
+			if (update.monsters) {
+				console.log('[GameState] Updating monsters from WebSocket:', update.monsters);
+				this.setState({ monsters: update.monsters });
+			}
+
+			if (update.town) {
+				console.log('[GameState] Updating town from WebSocket:', update.town);
+				this.setState({ town: update.town });
 			}
 
 			if (update.missions) {
@@ -438,6 +456,8 @@ class GameStateManager extends EventTarget {
 			this.setState({
 				resourceNodes: data.resourceNodes || [],
 				activeMissions: data.activeMissions || [],
+				monsters: data.monsters || [],
+				town: data.town || null,
 				worldMetrics: data.worldMetrics || null,
 				isLoadingWorld: false,
 			});
@@ -467,6 +487,30 @@ class GameStateManager extends EventTarget {
 	}
 
 	// Mission operations
+	async startMonsterCombatMission(drifterIds: number[], monsterId: string, vehicleInstanceId?: string | null) {
+		try {
+			const response = await this.apiCall('/missions/start', {
+				method: 'POST',
+				body: JSON.stringify({
+					drifterIds,
+					missionType: 'combat',
+					targetMonsterId: monsterId,
+					vehicleInstanceId: vehicleInstanceId ?? null,
+				}),
+			});
+			const result = await response.json();
+			if (result.success) {
+				this.addNotification({ type: 'mission', title: 'Combat Mission Started!', message: `Engaging monster with ${drifterIds.length} drifter(s)` });
+				await this.loadWorldState();
+				await this.loadPlayerProfile();
+				await this.loadPlayerMissions();
+			}
+			return result;
+		} catch (error: any) {
+			return { success: false, error: error.message };
+		}
+	}
+
 	async startMission(
 		drifterIds: number[],
 		targetId: string,
@@ -667,8 +711,12 @@ class GameStateManager extends EventTarget {
 		this.setState({ showMarketPanel: !this.state.showMarketPanel });
 	}
 
-	toggleVehiclePanel() {
+toggleVehiclePanel() {
 		this.setState({ showVehiclePanel: !this.state.showVehiclePanel });
+	}
+
+	toggleTownPanel() {
+		this.setState({ showTownPanel: !this.state.showTownPanel });
 	}
 
 	toggleLogPanel() {
@@ -707,6 +755,10 @@ class GameStateManager extends EventTarget {
 		this.setState({ selectedVehicleInstanceId: vehicleInstanceId });
 	}
 
+	setSelectedTargetMonster(monsterId: string | null) {
+		this.setState({ selectedTargetMonsterId: monsterId });
+	}
+
 	// Helper to check if a node is contested by active missions
 	isNodeContested(nodeId: string): boolean {
 		return this.state.activeMissions.some((mission) => mission.targetNodeId === nodeId && mission.status === 'active');
@@ -729,6 +781,29 @@ class GameStateManager extends EventTarget {
 			});
 		} catch {
 			this.setState({ isLoadingPlayerMissions: false });
+		}
+	}
+
+// Town API
+	async contributeToTown(attribute: 'vehicle_market' | 'perimeter_walls', amount: number) {
+		try {
+			const response = await this.apiCall('/town/contribute', {
+				method: 'POST',
+				body: JSON.stringify({ attribute, amount }),
+			});
+			const result = await response.json();
+			if (result.success) {
+				this.addNotification({ type: 'success', title: 'Contribution Applied', message: `Contributed ${amount} credits to ${attribute.replace('_',' ')}` });
+				await this.loadWorldState();
+				await this.loadPlayerProfile();
+				return result;
+			} else {
+				this.addNotification({ type: 'error', title: 'Contribution Failed', message: result.error || 'Failed to contribute.' });
+				return result;
+			}
+		} catch (e: any) {
+			this.addNotification({ type: 'error', title: 'Network Error', message: `Failed to contribute: ${e.message}` });
+			return { success: false, error: e.message };
 		}
 	}
 

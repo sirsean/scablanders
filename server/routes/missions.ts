@@ -6,22 +6,46 @@ const missions = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 // Apply auth middleware to all routes
 missions.use('*', authMiddleware);
 
-// POST /api/missions/start - Start a new mission
+// POST /api/missions/start - Start a new mission (resource or monster combat)
 missions.post('/start', requireAuth, async (c) => {
 	try {
 		const playerAddress = c.get('playerAddress')!;
 		const body = (await c.req.json()) as {
 			drifterIds: number[];
-			targetNodeId: string;
+			targetNodeId?: string;
+			targetMonsterId?: string;
 			missionType: 'scavenge' | 'strip_mine' | 'combat' | 'sabotage';
 			vehicleInstanceId?: string | null;
 		};
+
+		// Validate exclusivity of targets
+		if (body.targetMonsterId && body.targetNodeId) {
+			return c.json({ error: 'Specify only one of targetMonsterId or targetNodeId' }, 400);
+		}
 
 		// Get GameDO
 		const gameId = c.env.GAME_DO.idFromName('game');
 		const gameStub = c.env.GAME_DO.get(gameId);
 
-		// Start the mission through the GameDO
+		if (body.missionType === 'combat' && body.targetMonsterId) {
+			// Start monster combat mission
+			const result = await (gameStub as any).startMonsterCombatMission(
+				playerAddress,
+				body.drifterIds,
+				body.targetMonsterId,
+				body.vehicleInstanceId ?? null,
+			);
+			if (!result?.success) {
+				return c.json({ success: false, error: result?.error || 'Failed to start combat mission' }, 400);
+			}
+			return c.json({ success: true, missionId: result.missionId });
+		}
+
+		// Resource-based or other mission type with target node
+		if (!body.targetNodeId) {
+			return c.json({ error: 'targetNodeId is required for non-monster missions' }, 400);
+		}
+
 		const result = await gameStub.startMission(
 			playerAddress,
 			body.missionType,
@@ -34,10 +58,7 @@ missions.post('/start', requireAuth, async (c) => {
 			return c.json({ success: false, error: result.error }, 400);
 		}
 
-		return c.json({
-			success: true,
-			missionId: result.missionId,
-		});
+		return c.json({ success: true, missionId: result.missionId });
 	} catch (error) {
 		console.error('Start mission error:', error);
 		return c.json({ error: 'Failed to start mission' }, 500);

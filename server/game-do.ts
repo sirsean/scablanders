@@ -12,8 +12,11 @@ import type {
 	Rarity,
 	GameEvent,
 	DrifterProgress,
+	TownState,
+	TownAttributeType,
+	Monster,
 } from '@shared/models';
-import { calculateMissionDuration, calculateMissionRewards, type DrifterStats } from '../shared/mission-utils';
+import { calculateMissionDuration, calculateMissionRewards, type DrifterStats, BASE_SPEED } from '../shared/mission-utils';
 import { getDrifterStats } from './drifters';
 import { getVehicle } from './vehicles';
 interface WebSocketSession {
@@ -367,10 +370,13 @@ export class GameDO extends DurableObject {
 	/**
 	 * Send world state update to specific session
 	 */
-	private async sendWorldStateUpdate(sessionId: string) {
+private async sendWorldStateUpdate(sessionId: string) {
 		console.log(`[GameDO] send worldStateUpdate ${sessionId}`);
 		// Only send active nodes with yield > 0
 		const activeNodes = Array.from(this.gameState.resourceNodes.values()).filter((node) => node.isActive && node.currentYield > 0);
+
+		const town = await this.getTownState();
+		const monsters = await this.getMonsters();
 
 		const message: WorldStateUpdate = {
 			type: 'world_state',
@@ -378,6 +384,8 @@ export class GameDO extends DurableObject {
 			data: {
 				resourceNodes: activeNodes,
 				missions: Array.from(this.gameState.missions.values()),
+				monsters,
+				town,
 				worldMetrics: this.gameState.worldMetrics,
 			},
 		};
@@ -424,9 +432,12 @@ export class GameDO extends DurableObject {
 	/**
 	 * Broadcast world state to all authenticated sessions
 	 */
-	private async broadcastWorldStateUpdate() {
+private async broadcastWorldStateUpdate() {
 		// Only send active nodes with yield > 0
 		const activeNodes = Array.from(this.gameState.resourceNodes.values()).filter((node) => node.isActive && node.currentYield > 0);
+
+		const town = await this.getTownState();
+		const monsters = await this.getMonsters();
 
 		const message: WorldStateUpdate = {
 			type: 'world_state',
@@ -434,6 +445,8 @@ export class GameDO extends DurableObject {
 			data: {
 				resourceNodes: activeNodes,
 				missions: Array.from(this.gameState.missions.values()),
+				monsters,
+				town,
 				worldMetrics: this.gameState.worldMetrics,
 			},
 		};
@@ -634,9 +647,104 @@ export class GameDO extends DurableObject {
 		return { success: true, newBalance: player.balance };
 	}
 
-	// =============================================================================
-	// Mission Management
-	// =============================================================================
+// =============================================================================
+// Mission Management
+// =============================================================================
+
+/**
+ * Start a monster combat mission targeting a specific monster.
+ * Computes a simple duration based on distance and team speed, with a 2-minute engagement window.
+ */
+async startMonsterCombatMission(
+	playerAddress: string,
+	drifterIds: number[],
+	targetMonsterId: string,
+	vehicleInstanceId?: string | null,
+): Promise<{ success: boolean; missionId?: string; error?: string }> {
+	try {
+		if (!playerAddress || !Array.isArray(drifterIds) || drifterIds.length === 0 || !targetMonsterId) {
+			return { success: false, error: 'Invalid request' };
+		}
+
+		// Validate player
+		const player = await this.getProfile(playerAddress);
+		if (!player) return { success: false, error: 'Player not found' };
+
+		// Validate monster
+		const monsters = await this.getMonsters();
+		const monster = monsters.find((m) => m.id === targetMonsterId);
+		if (!monster) return { success: false, error: 'Monster not found' };
+		if (monster.state === 'dead') return { success: false, error: 'Monster already defeated' };
+
+		// Compute team speed
+		let teamSpeed = BASE_SPEED;
+		let vehicleData: any = undefined;
+		if (vehicleInstanceId) {
+			const vInst = player.vehicles?.find((v) => v.instanceId === vehicleInstanceId) || null;
+			if (!vInst) return { success: false, error: 'Vehicle not available' };
+			vehicleData = getVehicle(vInst.vehicleId);
+			teamSpeed = vehicleData?.speed || BASE_SPEED;
+		} else {
+			// derive from slowest drifter effective speed
+			const stats: DrifterStats[] = [];
+			for (const id of drifterIds) {
+				const base = await getDrifterStats(id, this.env);
+				const eff = this.getEffectiveDrifterStats(id, base);
+				stats.push(eff);
+			}
+			if (stats.length > 0) {
+				teamSpeed = Math.min(...stats.map((s) => s.speed)) || BASE_SPEED;
+			}
+		}
+
+		// Distance to monster
+		const dx = monster.coordinates.x;
+		const dy = monster.coordinates.y;
+		const distance = Math.sqrt(dx * dx + dy * dy);
+		const maxExpectedDistance = 2000;
+		const baseMinutes = 15;
+		const additionalMinutes = Math.min(1.0, distance / maxExpectedDistance) * 45;
+		let totalMinutes = baseMinutes + additionalMinutes;
+		const speedFactor = Math.min(BASE_SPEED / Math.max(1, teamSpeed), 5.0);
+		totalMinutes *= speedFactor;
+		// Engagement time 2 minutes, and assume symmetric return time equal to outbound
+		const outboundMs = Math.round(totalMinutes * 60 * 1000);
+		const engagementMs = 2 * 60 * 1000;
+		const returnMs = outboundMs; // simple symmetry
+		const now = new Date();
+		const completion = new Date(now.getTime() + outboundMs + engagementMs + returnMs);
+
+		// Create mission
+		const missionId = `mission-${crypto.randomUUID()}`;
+		const mission: Mission = {
+			id: missionId,
+			type: 'combat',
+			playerAddress,
+			drifterIds,
+			vehicleInstanceId: vehicleInstanceId || null,
+			targetMonsterId,
+			startTime: now,
+			completionTime: completion,
+			status: 'active',
+			rewards: { credits: 0, resources: {} },
+		};
+
+		this.gameState.missions.set(missionId, mission);
+		player.activeMissions = [...(player.activeMissions || []), missionId];
+
+		await this.saveGameState();
+		await this.broadcastWorldStateUpdate();
+		await this.broadcastMissionUpdate({ mission });
+		await this.broadcastPlayerStateUpdate(playerAddress);
+
+		await this.addEvent({ type: 'mission_started', missionId, playerAddress, message: `Combat mission started vs monster ${targetMonsterId}` });
+
+		return { success: true, missionId };
+	} catch (e) {
+		console.error('[GameDO] startMonsterCombatMission error', e);
+		return { success: false, error: 'Failed to start monster combat mission' };
+	}
+}
 
 	/**
 	 * Start a mission
@@ -842,54 +950,128 @@ export class GameDO extends DurableObject {
 		// Award rewards
 		player.balance += mission.rewards.credits;
 
-		// Deplete resources from target node
-		const node = this.gameState.resourceNodes.get(mission.targetNodeId);
-		if (node) {
-			console.log(`[GameDO] Depleting resources from node ${mission.targetNodeId} (${node.type})`);
-			console.log(`[GameDO] Node before depletion: currentYield=${node.currentYield}, depletion=${node.depletion}`);
+		// Branch handling based on target type
+		if ((mission as any).targetMonsterId) {
+			const targetMonsterId = (mission as any).targetMonsterId as string;
+			// Load monsters
+			const monsters = await this.getStoredMonsters();
+			const monster = monsters.find((m) => m.id === targetMonsterId);
+			if (!monster) {
+				console.error(`[GameDO] Target monster ${targetMonsterId} not found during mission completion`);
+			} else if (monster.state !== 'dead') {
+				// Compute team combat power
+				let totalCombat = 0;
+				for (const id of mission.drifterIds) {
+					const base = await getDrifterStats(id, this.env);
+					const eff = this.getEffectiveDrifterStats(id, base);
+					totalCombat += eff.combat || 0;
+				}
+				if (mission.vehicleInstanceId) {
+					const vInst = player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
+					if (vInst) {
+						const v = getVehicle(vInst.vehicleId);
+						totalCombat += (v?.combat || 0);
+					}
+				}
+				// Damage formula: base + linear scale by team combat, with small variance
+				const baseDamage = 120 + Math.round(totalCombat * 18);
+				const variance = 0.15; // ±15%
+				const dmg = Math.max(1, Math.round(baseDamage * (1 + (Math.random() * 2 - 1) * variance)));
+				const before = monster.hp;
+				monster.hp = Math.max(0, monster.hp - dmg);
+				const killed = monster.hp <= 0;
+				if (killed) {
+					monster.state = 'dead';
+					await this.addEvent({ type: 'monster_killed', message: `Monster ${monster.id} killed (damage ${dmg}, hp ${before}→0)`, data: { id: monster.id, damage: dmg } });
+				} else {
+					await this.addEvent({ type: 'town_damaged', message: `Monster ${monster.id} damaged for ${dmg} (hp ${before}→${monster.hp})`, data: { id: monster.id, damage: dmg } });
+				}
+				await this.setStoredMonsters(monsters);
 
-			// Calculate how much resource was extracted
-			const resourceType = node.type;
-			const extractedRequested = mission.rewards.resources[resourceType] ?? 0;
-			const extractedActual = Math.min(extractedRequested, node.currentYield);
-
-			console.log(`[GameDO] Extracting ${extractedActual} units (requested: ${extractedRequested}, available: ${node.currentYield})`);
-
-			// Apply depletion
-			node.currentYield -= extractedActual;
-			node.depletion += extractedActual;
-			node.lastHarvested = new Date();
-
-			// Mark as inactive if fully depleted
-			if (node.currentYield <= 0) {
-				node.currentYield = 0;
-				node.isActive = false;
-				console.log(`[GameDO] Node ${mission.targetNodeId} is now fully depleted and inactive`);
-
-				// Log resource depleted
-				await this.addEvent({
-					type: 'resource_depleted',
-					playerAddress: mission.playerAddress,
-					nodeId: mission.targetNodeId,
-					resourceType: resourceType,
-					rarity: node.rarity,
-					message: `${resourceType.toUpperCase()} (${node.rarity.toUpperCase()}) node depleted by ${mission.playerAddress.slice(0, 6)}…`,
-				});
-
-				// Add depletion notification to player
-				await this.addNotification(mission.playerAddress, {
-					id: crypto.randomUUID(),
-					type: 'resource_depleted',
-					title: 'Resource Depleted',
-					message: `The ${resourceType} node you were harvesting has been fully depleted.`,
-					timestamp: new Date(),
-					read: false,
-				});
+				// Award combat XP to participating drifters based on damage dealt
+				const xpPerDamage = 0.005; // 0.5% of damage
+				let xpGain = Math.max(1, Math.ceil(dmg * xpPerDamage));
+				if (killed) xpGain += 10; // bonus for kill
+				for (const drifterId of mission.drifterIds) {
+					const { leveled, levelsGained, newLevel } = this.applyXp(drifterId, xpGain);
+					if (leveled) {
+						await this.addEvent({
+							type: 'mission_complete',
+							playerAddress: mission.playerAddress,
+							missionId: mission.id,
+							message: `Drifter #${drifterId} leveled up ${levelsGained} level(s) to ${newLevel}`,
+						});
+						// Notify player's sessions
+						const notif: PendingNotification = {
+							id: crypto.randomUUID(),
+							type: 'drifter_level_up',
+							title: 'Drifter Level Up',
+							message: `Drifter #${drifterId} reached level ${newLevel}! +1 bonus point available.`,
+							timestamp: new Date(),
+							data: { tokenId: drifterId, level: newLevel },
+						};
+						for (const [sessionId, session] of this.webSocketSessions) {
+							if (
+								session.playerAddress === mission.playerAddress &&
+								session.authenticated &&
+								session.websocket.readyState === WebSocket.READY_STATE_OPEN
+							) {
+								this.sendNotificationToSession(sessionId, notif);
+							}
+						}
+					}
+				}
 			}
-
-			console.log(`[GameDO] Node after depletion: currentYield=${node.currentYield}, depletion=${node.depletion}`);
 		} else {
-			console.error(`[GameDO] Target node ${mission.targetNodeId} not found during mission completion`);
+			// Deplete resources from target node (resource missions)
+			const node = this.gameState.resourceNodes.get(mission.targetNodeId);
+			if (node) {
+				console.log(`[GameDO] Depleting resources from node ${mission.targetNodeId} (${node.type})`);
+				console.log(`[GameDO] Node before depletion: currentYield=${node.currentYield}, depletion=${node.depletion}`);
+
+				// Calculate how much resource was extracted
+				const resourceType = node.type;
+				const extractedRequested = mission.rewards.resources[resourceType] ?? 0;
+				const extractedActual = Math.min(extractedRequested, node.currentYield);
+
+				console.log(`[GameDO] Extracting ${extractedActual} units (requested: ${extractedRequested}, available: ${node.currentYield})`);
+
+				// Apply depletion
+				node.currentYield -= extractedActual;
+				node.depletion += extractedActual;
+				node.lastHarvested = new Date();
+
+				// Mark as inactive if fully depleted
+				if (node.currentYield <= 0) {
+					node.currentYield = 0;
+					node.isActive = false;
+					console.log(`[GameDO] Node ${mission.targetNodeId} is now fully depleted and inactive`);
+
+					// Log resource depleted
+					await this.addEvent({
+						type: 'resource_depleted',
+						playerAddress: mission.playerAddress,
+						nodeId: mission.targetNodeId,
+						resourceType: resourceType,
+						rarity: node.rarity,
+						message: `${resourceType.toUpperCase()} (${node.rarity.toUpperCase()}) node depleted by ${mission.playerAddress.slice(0, 6)}…`,
+					});
+
+					// Add depletion notification to player
+					await this.addNotification(mission.playerAddress, {
+						id: crypto.randomUUID(),
+						type: 'resource_depleted',
+						title: 'Resource Depleted',
+						message: `The ${resourceType} node you were harvesting has been fully depleted.`,
+						timestamp: new Date(),
+						read: false,
+					});
+				}
+
+				console.log(`[GameDO] Node after depletion: currentYield=${node.currentYield}, depletion=${node.depletion}`);
+			} else {
+				console.error(`[GameDO] Target node ${mission.targetNodeId} not found during mission completion`);
+			}
 		}
 
 		// Remove from active missions
@@ -906,16 +1088,18 @@ export class GameDO extends DurableObject {
 			type: 'mission_complete',
 			playerAddress: mission.playerAddress,
 			missionId: mission.id,
-			nodeId: mission.targetNodeId,
-			resourceType: (node?.type ?? undefined) as any,
-			rarity: (node?.rarity ?? undefined) as any,
+			nodeId: (mission as any).targetMonsterId ? undefined : mission.targetNodeId,
+			resourceType: undefined as any,
+			rarity: undefined as any,
 			drifterIds: mission.drifterIds,
 			vehicleName: mission.vehicleInstanceId
 				? player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId)
 					? getVehicle(player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId)!.vehicleId)?.name
 					: 'On Foot'
 				: 'On Foot',
-			message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} at ${(node?.type ?? '').toString().toUpperCase()} (${(node?.rarity ?? 'unknown').toString().toUpperCase()}) with drifters ${mission.drifterIds.map((id) => `#${id}`).join(', ')} ${
+			message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} ${
+				(mission as any).targetMonsterId ? `vs MONSTER ${(mission as any).targetMonsterId}` : `at ${(this.gameState.resourceNodes.get(mission.targetNodeId!)?.type ?? '').toString().toUpperCase()}`
+			} with drifters ${mission.drifterIds.map((id) => `#${id}`).join(', ')} ${
 				mission.vehicleInstanceId
 					? `in ${(() => {
 							const vi = player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
@@ -1197,16 +1381,21 @@ export class GameDO extends DurableObject {
 		await this.ctx.storage.setAlarm(nextAlarmTime);
 	}
 
-	/**
-	 * Handle alarm - resource management
+/**
+	 * Handle alarm - resource and monster management
 	 */
 	async alarm() {
-		console.log('[GameDO] Resource management alarm triggered');
+		console.log('[GameDO] Resource/Monster management alarm triggered');
 
 		try {
+			const now = new Date();
+			// Drive monster movement and attack ticks first
+			await this.monsterMovementTick(now);
+			await this.monsterAttackTick(now);
+			// Then resource management
 			await this.performResourceManagement();
 		} catch (error) {
-			console.error('[GameDO] Error during resource management:', error);
+			console.error('[GameDO] Error during scheduled management:', error);
 		}
 
 		// Schedule next alarm
@@ -1216,12 +1405,17 @@ export class GameDO extends DurableObject {
 	/**
 	 * Perform resource management: degradation, cleanup, and spawning
 	 */
-	private async performResourceManagement() {
+private async performResourceManagement() {
 		console.log('[GameDO] Starting resource degradation cycle');
 
 		const config = this.gameState.resourceConfig;
 		const now = new Date();
 		let changesMade = false;
+
+		// Prosperity multiplier influences spawn targets and new node yields
+		const town = await this.getTownState();
+		const prosperityMult = this.prosperityMultiplier(town.prosperity);
+		const cappedSpawnMult = Math.min(1.5, Math.max(1.0, prosperityMult));
 
 		// 1. Calculate hours elapsed since last update
 		const lastUpdate = this.gameState.worldMetrics.lastUpdate;
@@ -1292,11 +1486,12 @@ export class GameDO extends DurableObject {
 			`[GameDO] Current active node counts: ore=${nodeCountsByType.ore}, scrap=${nodeCountsByType.scrap}, organic=${nodeCountsByType.organic}, total=${totalActiveNodes}`,
 		);
 
-		// 5. Spawn replacement nodes to maintain target counts
+// 5. Spawn replacement nodes to maintain target counts (influenced by Prosperity)
 		const nodesToSpawn: { type: ResourceType; count: number }[] = [];
 
-		// Check each resource type against its target
-		for (const [type, targetCount] of Object.entries(config.targetNodesPerType) as [ResourceType, number][]) {
+		// Check each resource type against its effective target (apply prosperity multiplier)
+		for (const [type, targetCountBase] of Object.entries(config.targetNodesPerType) as [ResourceType, number][]) {
+			const targetCount = Math.max(1, Math.round(targetCountBase * cappedSpawnMult));
 			const currentCount = nodeCountsByType[type];
 			if (currentCount < targetCount) {
 				nodesToSpawn.push({ type, count: targetCount - currentCount });
@@ -1307,9 +1502,13 @@ export class GameDO extends DurableObject {
 		for (const { type, count } of nodesToSpawn) {
 			for (let i = 0; i < count; i++) {
 				const newNode = this.createRandomResourceNodeWithAntiOverlap(type);
+				// Scale new node yields by prosperity multiplier (cap 1.5x)
+				const yieldScale = cappedSpawnMult; // same cap applied
+				newNode.baseYield = Math.max(1, Math.round(newNode.baseYield * yieldScale));
+				newNode.currentYield = Math.max(1, Math.round(newNode.currentYield * yieldScale));
 				this.gameState.resourceNodes.set(newNode.id, newNode);
 				console.log(
-					`[GameDO] Spawned replacement ${type} node at (${newNode.coordinates.x}, ${newNode.coordinates.y}) with ${newNode.currentYield} yield`,
+					`[GameDO] Spawned replacement ${type} node at (${newNode.coordinates.x}, ${newNode.coordinates.y}) with ${newNode.currentYield} yield (m=${yieldScale.toFixed(2)})`,
 				);
 				await this.addEvent({
 					type: 'node_spawned',
@@ -1324,6 +1523,12 @@ export class GameDO extends DurableObject {
 
 		// 6. Update world metrics and save
 		this.gameState.worldMetrics.lastUpdate = now;
+
+		// 7. Attempt monster spawn based on cadence and cap (scaffold)
+		const maybeSpawned = await this.maybeSpawnMonster(now, town.prosperity);
+		if (maybeSpawned) {
+			changesMade = true;
+		}
 
 		if (changesMade) {
 			await this.saveGameState();
@@ -1581,9 +1786,402 @@ export class GameDO extends DurableObject {
 		return { success: true, progress: dp };
 	}
 
-	// =============================================================================
-	// Development/Testing
-	// =============================================================================
+// =============================================================================
+// Town & Monsters (initial scaffolding)
+// =============================================================================
+
+// --- Prosperity math ---
+private prosperityDeltaFromMission(creditsReward: number): number {
+	const c = Math.max(0, creditsReward || 0);
+	return 0.5 * Math.log(1 + c / 100);
+}
+
+private prosperityDeltaFromMonsterDamage(totalDamage: number): number {
+	const d = Math.max(0, totalDamage || 0);
+	return 1.0 * Math.log(1 + d / 100);
+}
+
+private prosperityMultiplier(P: number): number {
+	const p = Math.max(0, P || 0);
+	// 1 + 0.15 * log10(1+P), capped at 1.5
+	const mult = 1 + 0.15 * (Math.log10 ? Math.log10(1 + p) : Math.log(1 + p) / Math.LN10);
+	return Math.min(1.5, Math.max(1.0, mult));
+}
+
+// --- Town configuration defaults (tunable) ---
+private TOWN_COST_BASE = 1000; // credits
+private TOWN_COST_GROWTH = 2.0; // exponential growth per level
+private TOWN_MAX_LEVEL = 5;
+
+private wallMaxHpForLevel(level: number): number {
+	if (level <= 0) return 0;
+	return 1000 * level * level; // 1000 * level^2
+}
+
+private nextLevelCost(level: number): number {
+	// Cost to go from current level -> next level
+	// Example: level 0 -> 1: base * growth^0 = base
+	return Math.round(this.TOWN_COST_BASE * Math.pow(this.TOWN_COST_GROWTH, Math.max(0, level)));
+}
+
+private defaultTownState(): TownState {
+	const vmCost = this.nextLevelCost(0);
+	const wallCost = this.nextLevelCost(0);
+	return {
+		prosperity: 0,
+		attributes: {
+			vehicle_market: { level: 0, progress: 0, nextLevelCost: vmCost },
+			perimeter_walls: { level: 0, progress: 0, nextLevelCost: wallCost, hp: 0, maxHp: 0 },
+		},
+	};
+}
+
+private async setTownState(state: TownState) {
+	await this.ctx.storage.put('town', state);
+}
+
+async getTownState(): Promise<TownState> {
+	try {
+		const stored = await this.ctx.storage.get<TownState>('town');
+		if (stored) return stored;
+		const def = this.defaultTownState();
+		await this.setTownState(def);
+		return def;
+	} catch {
+		const def = this.defaultTownState();
+		await this.setTownState(def);
+		return def;
+	}
+}
+
+/**
+ * Contribute credits to a Town attribute. For walls, repairs HP first (1 credit = 1 HP).
+ * Any overflow contributes toward upgrade progress; level-ups apply as needed (with HP refill for walls).
+ */
+async contributeToTown(
+	playerAddress: string,
+	attribute: TownAttributeType,
+	amountCredits: number,
+): Promise<{ success: boolean; town?: TownState; newBalance?: number; error?: string }> {
+	try {
+		if (!playerAddress || amountCredits <= 0) {
+			return { success: false, error: 'Invalid request' };
+		}
+		// Validate player and funds
+		const player = this.gameState.players.get(playerAddress) || (await this.getProfile(playerAddress));
+		if (!player) {
+			return { success: false, error: 'Player not found' };
+		}
+		if (player.balance < amountCredits) {
+			return { success: false, error: 'Insufficient credits' };
+		}
+
+		// Load current town state
+		const town = await this.getTownState();
+		const attr = town.attributes[attribute];
+		if (!attr) {
+			return { success: false, error: 'Unknown attribute' };
+		}
+
+		let remaining = Math.floor(amountCredits);
+
+		// If attribute at max level, only allow walls repair; otherwise reject
+		if (attr.level >= this.TOWN_MAX_LEVEL) {
+			if (attribute === 'perimeter_walls') {
+				// repair-only path below
+			} else {
+				return { success: false, error: 'Attribute at max level' };
+			}
+		}
+
+		// Debit credits up-front
+		player.balance -= remaining;
+
+		// Walls: repair HP first (if applicable)
+		if (attribute === 'perimeter_walls') {
+			const hp = attr.hp ?? 0;
+			const maxHp = attr.maxHp ?? this.wallMaxHpForLevel(attr.level);
+			if (maxHp > 0 && hp < maxHp) {
+				const toRepair = Math.min(remaining, maxHp - hp);
+				attr.hp = hp + toRepair;
+				attr.maxHp = maxHp; // ensure persisted
+				remaining -= toRepair;
+			}
+		}
+
+		// Contribute remaining credits toward upgrade progress
+		if (remaining > 0) {
+			attr.progress = (attr.progress || 0) + remaining;
+
+			// Apply level-ups while progress covers cost and not at max
+			while (attr.level < this.TOWN_MAX_LEVEL && attr.progress >= attr.nextLevelCost) {
+				attr.progress -= attr.nextLevelCost;
+				attr.level += 1;
+				attr.nextLevelCost = this.nextLevelCost(attr.level);
+
+				if (attribute === 'perimeter_walls') {
+					// Recompute walls HP and refill to max on level-up
+					attr.maxHp = this.wallMaxHpForLevel(attr.level);
+					attr.hp = attr.maxHp;
+				}
+
+				// Emit event for town upgrade
+				await this.addEvent({
+					type: 'town_upgrade_completed',
+					message: `Town upgraded: ${attribute} → level ${attr.level}`,
+					data: { attribute, level: attr.level },
+				});
+			}
+		}
+
+		// Persist and broadcast
+		// Ensure walls have consistent maxHp when level 0 → allow 0
+		town.attributes[attribute] = attr;
+		await this.setTownState(town);
+		await this.saveGameState();
+		await this.broadcastWorldStateUpdate();
+		await this.broadcastPlayerStateUpdate(playerAddress);
+
+		return { success: true, town, newBalance: player.balance };
+	} catch (err) {
+		console.error('[GameDO] contributeToTown error:', err);
+		return { success: false, error: 'Contribution failed' };
+	}
+}
+
+private async getStoredMonsters(): Promise<Monster[]> {
+	const raw = await this.ctx.storage.get<Monster[]>('monsters');
+	return Array.isArray(raw) ? raw : [];
+}
+
+private async setStoredMonsters(list: Monster[]) {
+	await this.ctx.storage.put('monsters', list);
+}
+
+async getMonsters(): Promise<Monster[]> {
+	return await this.getStoredMonsters();
+}
+
+private distanceToTown(x: number, y: number): number {
+	return Math.sqrt(x * x + y * y);
+}
+
+private clampToTownThreshold(x: number, y: number, threshold: number): { x: number; y: number } {
+	const dist = this.distanceToTown(x, y);
+	if (dist <= threshold) return { x, y };
+	const scale = threshold / dist;
+	return { x: Math.round(x * scale), y: Math.round(y * scale) };
+}
+
+private async monsterMovementTick(now: Date): Promise<boolean> {
+	try {
+		const lastIso = (await this.ctx.storage.get<string>('lastMonsterMoveAt')) || '';
+		const last = lastIso ? new Date(lastIso) : new Date(); // if missing, initialize with now
+		const minutes = (now.getTime() - last.getTime()) / 60000;
+		if (minutes <= 0) {
+			await this.ctx.storage.put('lastMonsterMoveAt', now.toISOString());
+			return false;
+		}
+
+		let changed = false;
+		const monsters = await this.getStoredMonsters();
+		const arrivalThreshold = 20;
+		for (const m of monsters) {
+			if (m.state !== 'traveling') continue;
+			const { x, y } = m.coordinates;
+			const dist = this.distanceToTown(x, y);
+			const moveDist = m.speed * minutes; // units
+			if (moveDist <= 0) continue;
+			if (moveDist >= dist) {
+				// Arrived to threshold
+				const snapped = this.clampToTownThreshold(x, y, arrivalThreshold);
+				m.coordinates = snapped;
+				m.state = 'attacking';
+				m.etaToTown = now;
+				await this.addEvent({ type: 'monster_arrived', message: `Monster ${m.id} arrived at town`, data: { id: m.id } });
+				changed = true;
+			} else {
+				// Move closer along vector toward (0,0)
+				const ux = -x / dist;
+				const uy = -y / dist;
+				const nx = Math.round(x + ux * moveDist);
+				const ny = Math.round(y + uy * moveDist);
+				m.coordinates = { x: nx, y: ny };
+				changed = true;
+			}
+		}
+		if (changed) {
+			await this.setStoredMonsters(monsters);
+			await this.ctx.storage.put('lastMonsterMoveAt', now.toISOString());
+			await this.broadcastWorldStateUpdate();
+		}
+		return changed;
+	} catch (e) {
+		console.error('[GameDO] monsterMovementTick error', e);
+		return false;
+	}
+}
+
+private async monsterAttackTick(now: Date): Promise<boolean> {
+	try {
+		const lastIso = (await this.ctx.storage.get<string>('lastMonsterAttackAt')) || '';
+		const last = lastIso ? new Date(lastIso) : new Date();
+		const seconds = Math.floor((now.getTime() - last.getTime()) / 1000);
+		const ticks = Math.floor(seconds / 20);
+		if (ticks <= 0) {
+			await this.ctx.storage.put('lastMonsterAttackAt', now.toISOString());
+			return false;
+		}
+
+		let changed = false;
+		const monsters = await this.getStoredMonsters();
+		const attackers = monsters.filter((m) => m.state === 'attacking');
+		if (attackers.length === 0) {
+			await this.ctx.storage.put('lastMonsterAttackAt', now.toISOString());
+			return false;
+		}
+
+		const town = await this.getTownState();
+		const DAMAGE_PER_TICK = 50;
+		let townChanged = false;
+		for (const m of attackers) {
+			const totalDamage = DAMAGE_PER_TICK * ticks;
+			const outcome = this.applyTownDamage(town, totalDamage);
+			if (outcome.changed) {
+				townChanged = true;
+				await this.addEvent({
+					type: 'town_damaged',
+					message: `Town damaged by ${m.id} for ${totalDamage} (walls:${outcome.wallsDamage} other:${outcome.attrDamage} prosperity:${outcome.prosperityDamage})`,
+					data: { monsterId: m.id, ...outcome },
+				});
+			}
+		}
+
+		if (townChanged) {
+			await this.setTownState(town);
+			await this.broadcastWorldStateUpdate();
+		}
+		await this.ctx.storage.put('lastMonsterAttackAt', now.toISOString());
+		return townChanged || changed;
+	} catch (e) {
+		console.error('[GameDO] monsterAttackTick error', e);
+		return false;
+	}
+}
+
+private applyTownDamage(town: TownState, amount: number): { changed: boolean; wallsDamage: number; attrDamage: number; prosperityDamage: number } {
+	let remaining = Math.max(0, amount);
+	let changed = false;
+	let wallsDamage = 0;
+	let attrDamage = 0;
+	let prosperityDamage = 0;
+
+	// 1) Walls first
+	const walls = town.attributes['perimeter_walls'];
+	if (walls) {
+		const hp = walls.hp ?? 0;
+		if (hp > 0) {
+			const d = Math.min(remaining, hp);
+			walls.hp = hp - d;
+			remaining -= d;
+			wallsDamage += d;
+			changed = true;
+			if (walls.hp <= 0) {
+				// depleted
+				this.addEvent({ type: 'town_attribute_depleted', message: 'Perimeter walls depleted', data: { attribute: 'perimeter_walls' } });
+			}
+		}
+	}
+
+	// 2) Other attributes (currently vehicle_market) as conceptual HP buckets 500*level
+	if (remaining > 0) {
+		for (const key of Object.keys(town.attributes) as (keyof TownState['attributes'])[]) {
+			if (key === 'perimeter_walls') continue;
+			const attr = town.attributes[key];
+			if (attr.level <= 0) continue;
+			if (!attr.maxHp || attr.maxHp <= 0) {
+				attr.maxHp = 500 * attr.level;
+				attr.hp = attr.maxHp;
+			}
+			const aHp = attr.hp ?? 0;
+			if (aHp > 0 && remaining > 0) {
+				const d = Math.min(remaining, aHp);
+				attr.hp = aHp - d;
+				remaining -= d;
+				attrDamage += d;
+				changed = true;
+				if (attr.hp <= 0) {
+					this.addEvent({ type: 'town_attribute_depleted', message: `Town attribute depleted: ${key}`, data: { attribute: key } });
+				}
+			}
+			if (remaining <= 0) break;
+		}
+	}
+
+	// 3) Prosperity if still remaining
+	if (remaining > 0) {
+		const dP = 10 * Math.ceil(remaining / 50); // scale with remaining, keep base effect ~10 per tick
+		const before = town.prosperity;
+		town.prosperity = Math.max(0, before - dP);
+		prosperityDamage = before - town.prosperity;
+		if (prosperityDamage > 0) changed = true;
+	}
+
+	return { changed, wallsDamage, attrDamage, prosperityDamage };
+}
+
+private async maybeSpawnMonster(now: Date, prosperity: number): Promise<boolean> {
+	try {
+		const monsters = await this.getStoredMonsters();
+		if (monsters.length >= 3) return false;
+		const lastSpawnIso = (await this.ctx.storage.get<string>('lastMonsterSpawnAt')) || '';
+		const lastSpawn = lastSpawnIso ? new Date(lastSpawnIso) : new Date(0);
+		const minsSince = (now.getTime() - lastSpawn.getTime()) / 60000;
+		if (minsSince < 30) return false;
+
+		// Spawn at radius [2400, 3500]
+		const minR = 2400;
+		const maxR = 3500;
+		const theta = Math.random() * Math.PI * 2;
+		const r = minR + Math.random() * (maxR - minR);
+		const x = Math.round(r * Math.cos(theta));
+		const y = Math.round(r * Math.sin(theta));
+		const dist = this.distanceToTown(x, y);
+		const speed = 40; // units/min
+		const etaMins = dist / Math.max(1, speed);
+		const eta = new Date(now.getTime() + Math.round(etaMins * 60000));
+		const hp = Math.max(1, Math.round(2000 + 100 * Math.max(0, prosperity)));
+
+		const m: Monster = {
+			id: `monster-${crypto.randomUUID()}`,
+			coordinates: { x, y },
+			hp,
+			maxHp: hp,
+			speed,
+			state: 'traveling',
+			spawnTime: now,
+			etaToTown: eta,
+		};
+
+		monsters.push(m);
+		await this.setStoredMonsters(monsters);
+		await this.ctx.storage.put('lastMonsterSpawnAt', now.toISOString());
+
+		await this.addEvent({
+			type: 'monster_spawned',
+			message: `Monster spawned at (${x}, ${y}) with ${hp} HP`,
+			data: { id: m.id, x, y, hp },
+		});
+		return true;
+	} catch (e) {
+		console.error('[GameDO] maybeSpawnMonster error', e);
+		return false;
+	}
+}
+
+// =============================================================================
+// Development/Testing
+// =============================================================================
 
 	/**
 	 * Reset all game data

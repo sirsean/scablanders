@@ -13,13 +13,15 @@ world.get('/state', async (c) => {
 		const gameId = c.env.GAME_DO.idFromName('game');
 		const gameStub = c.env.GAME_DO.get(gameId);
 
-		const [resourceNodes, activeMissions, worldMetrics] = await Promise.all([
+const [resourceNodes, activeMissions, worldMetrics, town, monsters] = await Promise.all([
 			gameStub.getResourceNodes(),
 			gameStub.getActiveMissions(),
 			gameStub.getWorldMetrics(),
+			gameStub.getTownState(),
+			gameStub.getMonsters(),
 		]);
 
-		return c.json({ resourceNodes, activeMissions, worldMetrics });
+		return c.json({ resourceNodes, activeMissions, worldMetrics, town, monsters });
 	} catch (error) {
 		console.error('World state error:', error);
 		return c.json({ error: 'Failed to get world state' }, 500);
