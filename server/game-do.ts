@@ -725,8 +725,11 @@ export class GameDO extends DurableObject {
 				}
 			}
 
-			// Duration to monster using shared helper
-			const durationMs = calculateMonsterMissionDuration(monster.coordinates as any, dStats, vehicleData as any);
+			// Duration to monster using shared helper; if monster is attacking (at town), active defense is immediate
+			let durationMs = calculateMonsterMissionDuration(monster.coordinates as any, dStats, vehicleData as any);
+			if (monster.state === 'attacking') {
+				durationMs = 0;
+			}
 			const now = new Date();
 			const completion = new Date(now.getTime() + durationMs);
 
