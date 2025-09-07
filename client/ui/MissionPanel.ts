@@ -113,7 +113,7 @@ export class MissionPanel {
 			    <div style="flex:1; display:flex; flex-direction:column;">
 			      <div style="margin-bottom: 16px; border: 2px solid #444; border-radius: 8px; padding: 16px; background: rgba(255, 255, 255, 0.02);">
 			        <h4 style="color:#FFD700; margin:0 0 12px 0;">Combat Mission (Monster)</h4>
-			        <div>Monster: <b>${monster.id.slice(0, 8)}...</b></div>
+        <div>Monster: <b>${monster.kind}</b></div>
 			        <div>HP: <b style="color:#ff6666;">${monster.hp}</b> / <b>${monster.maxHp}</b></div>
 			        <div>Coords: (${monster.coordinates.x}, ${monster.coordinates.y})</div>
 			        <div>State: ${monster.state}</div>

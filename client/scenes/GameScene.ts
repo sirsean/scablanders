@@ -1469,7 +1469,7 @@ export class GameScene extends Phaser.Scene {
 				const circle = this.add.circle(0, 0, 10, 0xdc143c, 0.9);
 				circle.setStrokeStyle(2, 0x000000, 1);
 				const label = this.add
-					.text(0, -18, `HP ${m.hp}/${m.maxHp}`, {
+					.text(0, -24, `${m.kind}\nHP ${m.hp}/${m.maxHp}`, {
 						fontSize: '11px',
 						color: '#ffdddd',
 						fontFamily: 'Courier New',
@@ -1483,12 +1483,12 @@ export class GameScene extends Phaser.Scene {
 				this.monsterIcons.set(m.id, container);
 			} else {
 				container.setPosition(m.coordinates.x, m.coordinates.y);
-				// Update label text
-				const lbl = container.list.find((go) => (go as any).style) as Phaser.GameObjects.Text | undefined;
-				if (lbl) {
-					lbl.setText(`HP ${m.hp}/${m.maxHp}`);
+					// Update label text
+					const lbl = container.list.find((go) => (go as any).style) as Phaser.GameObjects.Text | undefined;
+					if (lbl) {
+						lbl.setText(`${m.kind}\nHP ${m.hp}/${m.maxHp}`);
+					}
 				}
 			}
 		}
 	}
-}

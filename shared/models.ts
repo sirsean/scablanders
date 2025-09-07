@@ -162,6 +162,7 @@ export interface TownState {
 
 export interface Monster {
 	id: string;
+	kind: MonsterKind;
 	coordinates: { x: number; y: number };
 	hp: number;
 	maxHp: number;

@@ -15,6 +15,7 @@ import type {
 	TownState,
 	TownAttributeType,
 	Monster,
+	MonsterKind,
 } from '@shared/models';
 import {
 	calculateMissionDuration,
@@ -1888,7 +1889,54 @@ export class GameDO extends DurableObject {
 	}
 
 	// =============================================================================
-	// Town & Monsters (initial scaffolding)
+// Town & Monsters (initial scaffolding)
+
+	// --- Monster archetypes and helpers ---
+	private readonly MONSTER_BANDS: { kind: MonsterKind; speed: [number, number]; hp: [number, number] }[] = [
+		{ kind: 'Skitterling', speed: [45, 50], hp: [400, 600] },
+		{ kind: 'Dust Stalker', speed: [35, 45], hp: [700, 1000] },
+		{ kind: 'Scrap Hound', speed: [28, 36], hp: [1000, 1400] },
+		{ kind: 'Sand Wraith', speed: [22, 30], hp: [1200, 1700] },
+		{ kind: 'Dune Behemoth', speed: [15, 22], hp: [1700, 2200] },
+		{ kind: 'Rust Colossus', speed: [10, 15], hp: [2200, 2500] },
+	];
+
+	private randInt(min: number, max: number): number {
+		return Math.floor(Math.random() * (max - min + 1)) + min;
+	}
+
+	private pickMonsterKindAndStats(): { kind: MonsterKind; speed: number; hp: number } {
+		const bands = this.MONSTER_BANDS;
+		const band = bands[this.randInt(0, bands.length - 1)];
+		return {
+			kind: band.kind,
+			speed: this.randInt(band.speed[0], band.speed[1]),
+			hp: this.randInt(band.hp[0], band.hp[1]),
+		};
+	}
+
+	private inferKindFromSpeed(speed: number): MonsterKind {
+		let best: { kind: MonsterKind; dist: number } | null = null;
+		for (const b of this.MONSTER_BANDS) {
+			const [min, max] = b.speed;
+			const dist = speed < min ? min - speed : speed > max ? speed - max : 0;
+			if (!best || dist < best.dist) {
+				best = { kind: b.kind, dist };
+			}
+		}
+		return best ? best.kind : 'Dust Stalker';
+	}
+
+	private ensureMonsterKinds(monsters: Monster[]): { updated: boolean; monsters: Monster[] } {
+		let updated = false;
+		for (const m of monsters as any[]) {
+			if (!(m as any).kind) {
+				(m as any).kind = this.inferKindFromSpeed(m.speed);
+				updated = true;
+			}
+		}
+		return { updated, monsters };
+	}
 	// =============================================================================
 
 	// --- Prosperity math ---
@@ -2065,11 +2113,13 @@ export class GameDO extends DurableObject {
 
 	async getMonsters(): Promise<Monster[]> {
 		const list = await this.getStoredMonsters();
-		const filtered = list.filter((m) => m.state !== 'dead');
-		if (filtered.length !== list.length) {
-			await this.setStoredMonsters(filtered);
+		let filtered = list.filter((m) => m.state !== 'dead');
+		// Ensure back-compat: populate kind for legacy monsters
+		const ensured = this.ensureMonsterKinds(filtered);
+		if (ensured.updated || filtered.length !== list.length) {
+			await this.setStoredMonsters(ensured.monsters);
 		}
-		return filtered;
+		return ensured.monsters;
 	}
 
 	private distanceToTown(x: number, y: number): number {
@@ -2392,13 +2442,16 @@ export class GameDO extends DurableObject {
 			const x = Math.round(r * Math.cos(theta));
 			const y = Math.round(r * Math.sin(theta));
 			const dist = this.distanceToTown(x, y);
-			const speed = 40; // units/min
+			// Roll kind, speed, and HP from bands (no prosperity effect)
+			const rolled = this.pickMonsterKindAndStats();
+			const speed = rolled.speed; // units/min
+			const hp = rolled.hp;
 			const etaMins = dist / Math.max(1, speed);
 			const eta = new Date(now.getTime() + Math.round(etaMins * 60000));
-			const hp = Math.max(1, Math.round(2000 + 100 * Math.max(0, prosperity)));
 
 			const m: Monster = {
 				id: `monster-${crypto.randomUUID()}`,
+				kind: rolled.kind,
 				coordinates: { x, y },
 				hp,
 				maxHp: hp,

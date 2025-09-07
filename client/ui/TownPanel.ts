@@ -152,7 +152,7 @@ export class TownPanel {
             <div style="border:1px solid #333; padding:8px; border-radius:6px; background: rgba(255,255,255,0.02); display:flex; flex-direction:column; gap:6px;">
               <div style="display:flex; align-items:center; gap:8px; justify-content:space-between;">
                 <div style="display:flex; align-items:center; gap:6px;">
-                  <b>${m.id.slice(0, 8)}...</b>
+                  <b>${m.kind}</b>
                   <span title="Active missions" style="background:#1e90ff; color:#fff; border-radius:10px; padding:1px 6px; font-size:12px; line-height:18px; display:inline-block;">${count}</span>
                 </div>
                 <div style="display:flex; gap:6px;">
