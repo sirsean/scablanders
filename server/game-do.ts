@@ -975,6 +975,7 @@ message: `Combat mission started vs ${monster.kind} (${targetMonsterId})`,
 		player.balance += mission.rewards.credits;
 
 		let totalCombatXpAwarded = 0; // for monster missions
+		let targetMonsterKind: string | undefined; // capture for completion log
 
 		// Branch handling based on target type
 		if ((mission as any).targetMonsterId) {
@@ -982,6 +983,9 @@ message: `Combat mission started vs ${monster.kind} (${targetMonsterId})`,
 			// Load monsters
 			let monsters = await this.getStoredMonsters();
 			const monster = monsters.find((m) => m.id === targetMonsterId);
+			if (monster) {
+				targetMonsterKind = monster.kind;
+			}
 			if (!monster) {
 				console.error(`[GameDO] Target monster ${targetMonsterId} not found during mission completion`);
 			} else if (monster.state !== 'dead') {
@@ -1130,30 +1134,18 @@ message: `${monster.kind} damaged for ${dmg} (hp ${before}→${monster.hp})`,
 					? getVehicle(player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId)!.vehicleId)?.name
 					: 'On Foot'
 				: 'On Foot',
-message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} ${(() => {
-				const mid = (mission as any).targetMonsterId as string | undefined;
-				if (mid) {
-					const monsList = this.ctx.storage ? undefined : undefined; // placeholder to satisfy TS formatting
-					return (() => {
-						// Best-effort: look up kind from stored monsters; fallback to generic label
-						// Note: synchronous string build; we won't await here
-						let kindLabel = 'MONSTER';
-						try {
-							// This is inside a template; we cannot await. We'll embed just the generic label; other events already include kind.
-							kindLabel = 'MONSTER';
-						} catch {}
-						return `vs ${kindLabel} ${mid}`;
-					})();
-				}
-				return `at ${(this.gameState.resourceNodes.get(mission.targetNodeId!)?.type ?? '').toString().toUpperCase()}`;
-			})()} with drifters ${mission.drifterIds.map((id) => `#${id}`).join(', ')} ${
+			message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} ${
+				(mission as any).targetMonsterId
+					? `vs ${targetMonsterKind ?? 'MONSTER'}`
+					: `at ${(this.gameState.resourceNodes.get(mission.targetNodeId!)?.type ?? '').toString().toUpperCase()}`
+			} with drifters ${mission.drifterIds.map((id) => `#${id}`).join(', ')} ${
 				mission.vehicleInstanceId
 					? `in ${(() => {
 							const vi = player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
 							return vi ? getVehicle(vi.vehicleId)?.name || 'On Foot' : 'On Foot';
 						})()}`
 					: 'on foot'
-			} ${(mission as any).targetMonsterId ? `(+${totalCombatXpAwarded} XP)` : `(+${mission.rewards.credits} cr)`}`
+			} ${(mission as any).targetMonsterId ? `(+${totalCombatXpAwarded} XP)` : `(+${mission.rewards.credits} cr)`}`,
 		});
 
 		// Award XP to participating drifters based on credits earned
