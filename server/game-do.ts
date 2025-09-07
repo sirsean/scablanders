@@ -1246,12 +1246,16 @@ message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpp
 		await this.broadcastPlayerStateUpdate(mission.playerAddress);
 		await this.broadcastWorldStateUpdate();
 
-		// Send mission completion notification to player's sessions
+// Send mission completion notification to player's sessions
+		const isMonsterMission = !!mission.targetMonsterId;
+		const notifMessage = isMonsterMission
+			? `Combat mission complete! Gained +${totalCombatXpAwarded} XP.`
+			: `Mission completed! Earned ${mission.rewards.credits} credits.`;
 		const notification: PendingNotification = {
 			id: crypto.randomUUID(),
 			type: 'mission_complete',
-			title: 'Mission Complete',
-			message: `Mission completed! Earned ${mission.rewards.credits} credits.`,
+			title: isMonsterMission ? 'Combat Mission Complete' : 'Mission Complete',
+			message: notifMessage,
 			timestamp: new Date(),
 		};
 
