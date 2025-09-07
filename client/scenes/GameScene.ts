@@ -40,7 +40,8 @@ export class GameScene extends Phaser.Scene {
 	private missionIndicators = new Map<string, Phaser.GameObjects.Graphics>();
 	private missionIndicatorGlows = new Map<string, Phaser.GameObjects.Graphics>();
 	private missionRoutes = new Map<string, Phaser.GameObjects.Graphics>();
-	private missionDrifters = new Map<string, Phaser.GameObjects.Container>();
+private missionDrifters = new Map<string, Phaser.GameObjects.Container>();
+	private battleMarkers = new Map<string, Phaser.GameObjects.Graphics>();
 	private monsterIcons = new Map<string, Phaser.GameObjects.Container>();
 	private pendingTinyLoads = new Map<string, Promise<string>>();
 	private townMarker: Phaser.GameObjects.Container | null = null;
@@ -274,8 +275,11 @@ export class GameScene extends Phaser.Scene {
 
 		// Update mission routes and drifter positions
 		if (state.activeMissions) {
-			this.updateMissionRoutes(state.activeMissions);
+this.updateMissionRoutes(state.activeMissions || []);
 		}
+
+		// Render battle markers (red X) for engaged monster missions until completion
+		this.updateBattleMarkers(state.activeMissions || []);
 
 		// Update mission planning overlay (dotted line and highlight) when planning
 		this.updatePlanningOverlay(state);
@@ -776,8 +780,8 @@ export class GameScene extends Phaser.Scene {
 				return;
 			}
 			({ x: nodeX, y: nodeY } = targetNode.coordinates);
-		} else if ((mission as any).targetMonsterId) {
-			const mid = (mission as any).targetMonsterId as string;
+} else if (mission.targetMonsterId) {
+const mid = mission.targetMonsterId as string;
 			const monster = (currentState.monsters || []).find((m: any) => m.id === mid);
 			if (!monster) {
 				console.warn(`[GameScene] ⚠️ Skipping route creation - monster ${mid} not found for mission ${mission.id}`);
@@ -820,8 +824,8 @@ export class GameScene extends Phaser.Scene {
 				console.warn(`[GameScene]   - Available resource node IDs:`, currentState.resourceNodes?.map((n) => n.id) || []);
 				return;
 			}
-		} else if ((mission as any).targetMonsterId) {
-			const mid = (mission as any).targetMonsterId as string;
+} else if (mission.targetMonsterId) {
+const mid = mission.targetMonsterId as string;
 			targetMonster = (currentState.monsters || []).find((m: any) => m.id === mid);
 			if (!targetMonster) {
 				console.warn(`[GameScene] ⚠️ Skipping drifter creation - monster ${mid} not found for mission ${mission.id}`);
@@ -1124,7 +1128,7 @@ export class GameScene extends Phaser.Scene {
 				const targetNode = mission.targetNodeId
 					? currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId)
 					: undefined;
-				const mid = (mission as any).targetMonsterId as string | undefined;
+const mid = mission.targetMonsterId as string | undefined;
 				const monster = mid ? (currentState.monsters || []).find((mm: any) => mm.id === mid) : undefined;
 				if (targetNode || monster) {
 					this.updateDrifterPosition(drifterContainer, mission, targetNode as any, monster as any);
@@ -1387,7 +1391,7 @@ export class GameScene extends Phaser.Scene {
 			return null;
 		}
 		const isSelf = this.isSelfMission(mission, playerAddress);
-		const isMonster = (mission as any).targetMonsterId ? true : false;
+const isMonster = !!mission.targetMonsterId;
 		if (mission.status === 'active') {
 			// If this is the player's mission and it's reached its end time, show as green (ready to claim)
 			const endTs = mission.completionTime instanceof Date ? mission.completionTime.getTime() : new Date(mission.completionTime).getTime();
@@ -1447,6 +1451,68 @@ export class GameScene extends Phaser.Scene {
 					this.missionRoutes.delete(id);
 				}
 			}
+		}
+	}
+
+private updateBattleMarkers(missions: Mission[]) {
+		try {
+			const stateNow = gameState.getState();
+			const playerAddr = stateNow.playerAddress?.toLowerCase() || '';
+			// Determine which missions should have a battle marker (self, engaged monster missions still active)
+			const shouldHave = new Set(
+				missions
+					.filter((m) => m.status === 'active' && !!m.targetMonsterId && !!m.engagementApplied && !!m.battleLocation)
+					.filter((m) => (m.playerAddress || '').toLowerCase() === playerAddr)
+					.map((m) => m.id),
+			);
+
+			// Remove markers that should no longer exist
+for (const [id, g] of this.battleMarkers) {
+				const still = shouldHave.has(id);
+				if (!still) {
+					try {
+						const tw = g.getData('pulseTween') as Phaser.Tweens.Tween | null;
+						if (tw) {
+							tw.stop();
+						}
+						g.destroy();
+					} catch {}
+					this.battleMarkers.delete(id);
+				}
+			}
+
+// Create or update markers
+			for (const m of missions) {
+				if (!shouldHave.has(m.id)) continue;
+				const loc = m.battleLocation!;
+				let g = this.battleMarkers.get(m.id);
+				if (!g) {
+					g = this.add.graphics();
+					g.setDepth(DEPTH_ROUTES + 10);
+					this.battleMarkers.set(m.id, g);
+				}
+				g.clear();
+				g.lineStyle(3, 0xff4444, 1);
+				// Draw X centered at battle location
+				const size = 10;
+				g.lineBetween(loc.x - size, loc.y - size, loc.x + size, loc.y + size);
+				g.lineBetween(loc.x - size, loc.y + size, loc.x + size, loc.y - size);
+
+				// Add or maintain pulse tween
+				let pulseTween = g.getData('pulseTween') as Phaser.Tweens.Tween | null;
+				if (!pulseTween) {
+					pulseTween = this.tweens.add({
+						targets: g,
+						alpha: { from: 1, to: 0.35 },
+						duration: 800,
+						yoyo: true,
+						repeat: -1,
+					});
+					g.setData('pulseTween', pulseTween);
+				}
+			}
+		} catch (e) {
+			console.error('[GameScene] Failed to update battle markers', e);
 		}
 	}
 

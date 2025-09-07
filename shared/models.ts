@@ -118,13 +118,27 @@ export interface Mission {
 	// Targeting: either a resource node OR a monster (for combat missions)
 	targetNodeId?: string;
 	targetMonsterId?: string;
+
+	// Timing
 	startTime: Date;
 	completionTime: Date;
+
+	// Status
 	status: 'active' | 'completed' | 'intercepted' | 'failed';
+
+	// Rewards (credits/resources). For monster missions, credits typically 0; XP granted separately
 	rewards: {
 		credits: number;
 		resources: { [resourceType: string]: number };
 	};
+
+	// Monster mission v2 (optional fields; ignored for resource missions)
+	engagementApplied?: boolean; // true once combat damage has been applied at engagement time
+	combatDamageDealt?: number; // amount of damage dealt to the monster at engagement
+	battleLocation?: Coordinates; // coordinates where engagement occurred (at monster position at that time)
+	timingVersion?: 'v1' | 'v2'; // for potential migrations; default inferred if missing
+	phase?: 'outbound' | 'engaged' | 'returning' | 'complete'; // optional phase tracker
+	engagesAt?: Date; // optional: planned engagement timestamp (may not be set)
 }
 
 export type MissionType = 'scavenge' | 'strip_mine' | 'combat' | 'sabotage';

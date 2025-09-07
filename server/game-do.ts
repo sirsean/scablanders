@@ -23,6 +23,7 @@ import {
 	type DrifterStats,
 	BASE_SPEED,
 	calculateMonsterMissionDuration,
+	calculateOneWayTravelDuration,
 	estimateMonsterDamage,
 } from '../shared/mission-utils';
 import { getDrifterStats } from './drifters';
@@ -977,57 +978,21 @@ message: `Combat mission started vs ${monster.kind} (${targetMonsterId})`,
 		let totalCombatXpAwarded = 0; // for monster missions
 		let targetMonsterKind: string | undefined; // capture for completion log
 
-		// Branch handling based on target type
-		if ((mission as any).targetMonsterId) {
-			const targetMonsterId = (mission as any).targetMonsterId as string;
-			// Load monsters
+// Branch handling based on target type
+if (mission.targetMonsterId) {
+const targetMonsterId = mission.targetMonsterId as string;
+			// Load monsters (read-only here unless we follow legacy path)
 			let monsters = await this.getStoredMonsters();
 			const monster = monsters.find((m) => m.id === targetMonsterId);
 			if (monster) {
 				targetMonsterKind = monster.kind;
 			}
-			if (!monster) {
-				console.error(`[GameDO] Target monster ${targetMonsterId} not found during mission completion`);
-			} else if (monster.state !== 'dead') {
-				// Compute team combat power and damage via shared helper
-				const dStats: DrifterStats[] = [];
-				for (const id of mission.drifterIds) {
-					const base = await getDrifterStats(id, this.env);
-					const eff = this.getEffectiveDrifterStats(id, base);
-					dStats.push({ combat: eff.combat, scavenging: eff.scavenging, tech: eff.tech, speed: eff.speed });
-				}
-				let vehicleDataForDmg: any = undefined;
-				if (mission.vehicleInstanceId) {
-					const vInst = player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
-					if (vInst) {
-						vehicleDataForDmg = getVehicle(vInst.vehicleId);
-					}
-				}
-				const est = estimateMonsterDamage(dStats, vehicleDataForDmg);
-				const variance = 0.15; // ±15% (keep same as client range)
-				const dmg = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
-				const before = monster.hp;
-				monster.hp = Math.max(0, monster.hp - dmg);
-				const killed = monster.hp <= 0;
-				if (killed) {
-					// Remove the monster entirely when killed
-					monsters = monsters.filter((mm) => mm.id !== monster.id);
-					await this.addEvent({
-						type: 'monster_killed',
-message: `${monster.kind} killed (damage ${dmg}, hp ${before}→0)`,
-						data: { id: monster.id, kind: monster.kind, damage: dmg },
-					});
-				} else {
-					await this.addEvent({
-						type: 'town_damaged',
-message: `${monster.kind} damaged for ${dmg} (hp ${before}→${monster.hp})`,
-						data: { id: monster.id, kind: monster.kind, damage: dmg },
-					});
-				}
-				await this.setStoredMonsters(monsters);
 
-				// Award combat XP at 25% of damage (per drifter)
-				let xpGain = Math.max(1, Math.floor(dmg * 0.25));
+const engaged = !!mission.engagementApplied;
+			if (engaged) {
+				// Damage was already applied at engagement time; award XP now based on stored damage
+				const dmgStored = Math.max(0, Number(mission.combatDamageDealt) || 0);
+				let xpGain = Math.max(1, Math.floor(dmgStored * 0.25));
 				totalCombatXpAwarded = xpGain * (mission.drifterIds?.length || 0);
 				for (const drifterId of mission.drifterIds) {
 					const { leveled, levelsGained, newLevel } = this.applyXp(drifterId, xpGain);
@@ -1054,6 +1019,80 @@ message: `${monster.kind} damaged for ${dmg} (hp ${before}→${monster.hp})`,
 								session.websocket.readyState === WebSocket.READY_STATE_OPEN
 							) {
 								this.sendNotificationToSession(sessionId, notif);
+							}
+						}
+					}
+				}
+			} else {
+				if (!monster) {
+					console.error(`[GameDO] Target monster ${targetMonsterId} not found during mission completion`);
+				} else if (monster.state !== 'dead') {
+					// Legacy fallback: apply damage at completion if engagement didn't happen (should be rare after v2)
+					const dStats: DrifterStats[] = [];
+					for (const id of mission.drifterIds) {
+						const base = await getDrifterStats(id, this.env);
+						const eff = this.getEffectiveDrifterStats(id, base);
+						dStats.push({ combat: eff.combat, scavenging: eff.scavenging, tech: eff.tech, speed: eff.speed });
+					}
+					let vehicleDataForDmg: any = undefined;
+					if (mission.vehicleInstanceId) {
+						const vInst = player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
+						if (vInst) {
+							vehicleDataForDmg = getVehicle(vInst.vehicleId);
+						}
+					}
+					const est = estimateMonsterDamage(dStats, vehicleDataForDmg);
+					const variance = 0.15; // ±15% (keep same as client range)
+					const dmg = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
+					const before = monster.hp;
+					monster.hp = Math.max(0, monster.hp - dmg);
+					const killed = monster.hp <= 0;
+					if (killed) {
+						// Remove the monster entirely when killed
+						monsters = monsters.filter((mm) => mm.id !== monster.id);
+						await this.addEvent({
+							type: 'monster_killed',
+message: `${monster.kind} killed (damage ${dmg}, hp ${before}→0)`,
+							data: { id: monster.id, kind: monster.kind, damage: dmg },
+						});
+					} else {
+						await this.addEvent({
+							type: 'town_damaged',
+message: `${monster.kind} damaged for ${dmg} (hp ${before}→${monster.hp})`,
+							data: { id: monster.id, kind: monster.kind, damage: dmg },
+						});
+					}
+					await this.setStoredMonsters(monsters);
+
+					// Award combat XP at 25% of damage (per drifter)
+					let xpGain = Math.max(1, Math.floor(dmg * 0.25));
+					totalCombatXpAwarded = xpGain * (mission.drifterIds?.length || 0);
+					for (const drifterId of mission.drifterIds) {
+						const { leveled, levelsGained, newLevel } = this.applyXp(drifterId, xpGain);
+						if (leveled) {
+							await this.addEvent({
+								type: 'mission_complete',
+								playerAddress: mission.playerAddress,
+								missionId: mission.id,
+								message: `Drifter #${drifterId} leveled up ${levelsGained} level(s) to ${newLevel}`,
+							});
+							// Notify player's sessions
+							const notif: PendingNotification = {
+								id: crypto.randomUUID(),
+								type: 'drifter_level_up',
+								title: 'Drifter Level Up',
+								message: `Drifter #${drifterId} reached level ${newLevel}! +1 bonus point available.`,
+								timestamp: new Date(),
+								data: { tokenId: drifterId, level: newLevel },
+							};
+							for (const [sessionId, session] of this.webSocketSessions) {
+								if (
+									session.playerAddress === mission.playerAddress &&
+									session.authenticated &&
+									session.websocket.readyState === WebSocket.READY_STATE_OPEN
+								) {
+									this.sendNotificationToSession(sessionId, notif);
+								}
 							}
 						}
 					}
@@ -1125,7 +1164,7 @@ message: `${monster.kind} damaged for ${dmg} (hp ${before}→${monster.hp})`,
 			type: 'mission_complete',
 			playerAddress: mission.playerAddress,
 			missionId: mission.id,
-			nodeId: (mission as any).targetMonsterId ? undefined : mission.targetNodeId,
+nodeId: mission.targetMonsterId ? undefined : mission.targetNodeId,
 			resourceType: undefined as any,
 			rarity: undefined as any,
 			drifterIds: mission.drifterIds,
@@ -1134,8 +1173,8 @@ message: `${monster.kind} damaged for ${dmg} (hp ${before}→${monster.hp})`,
 					? getVehicle(player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId)!.vehicleId)?.name
 					: 'On Foot'
 				: 'On Foot',
-			message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} ${
-				(mission as any).targetMonsterId
+message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} ${
+				mission.targetMonsterId
 					? `vs ${targetMonsterKind ?? 'MONSTER'}`
 					: `at ${(this.gameState.resourceNodes.get(mission.targetNodeId!)?.type ?? '').toString().toUpperCase()}`
 			} with drifters ${mission.drifterIds.map((id) => `#${id}`).join(', ')} ${
@@ -1145,7 +1184,7 @@ message: `${monster.kind} damaged for ${dmg} (hp ${before}→${monster.hp})`,
 							return vi ? getVehicle(vi.vehicleId)?.name || 'On Foot' : 'On Foot';
 						})()}`
 					: 'on foot'
-			} ${(mission as any).targetMonsterId ? `(+${totalCombatXpAwarded} XP)` : `(+${mission.rewards.credits} cr)`}`,
+			} ${mission.targetMonsterId ? `(+${totalCombatXpAwarded} XP)` : `(+${mission.rewards.credits} cr)`}`,
 		});
 
 		// Award XP to participating drifters based on credits earned
@@ -1486,9 +1525,11 @@ message: `${monster.kind} damaged for ${dmg} (hp ${before}→${monster.hp})`,
 			// Monster tick: run when due
 			const monIso = await this.ctx.storage.get<string>('nextMonsterAlarmAt');
 			let monAt = monIso ? new Date(monIso) : new Date(0);
-			if (now >= monAt) {
+if (now >= monAt) {
 				await this.monsterMovementTick(now);
 				await this.monsterAttackTick(now);
+				// Process any monster mission engagements that are due now
+				await this.processMonsterMissionEngagements(now);
 				monAt = new Date(now.getTime() + this.monsterTickIntervalMs);
 				await this.ctx.storage.put('nextMonsterAlarmAt', monAt.toISOString());
 			}
@@ -2142,7 +2183,110 @@ message: `${monster.kind} damaged for ${dmg} (hp ${before}→${monster.hp})`,
 		return { x: Math.round(x * scale), y: Math.round(y * scale) };
 	}
 
-	private async monsterMovementTick(now: Date): Promise<boolean> {
+private async processMonsterMissionEngagements(now: Date): Promise<boolean> {
+		try {
+			let changed = false;
+			// Work off stored monsters for HP mutations
+			let monsters = await this.getStoredMonsters();
+			const monstersById = new Map(monsters.map((m) => [m.id, m] as const));
+
+			for (const mission of this.gameState.missions.values()) {
+				const targetMonsterId = (mission as any).targetMonsterId as string | undefined;
+				if (!targetMonsterId) {
+					continue;
+				}
+				if (mission.status !== 'active') {
+					continue;
+				}
+if (mission.engagementApplied) {
+					continue; // already engaged; waiting to return
+				}
+
+				// Gather team stats (effective) and vehicle
+				const player = this.gameState.players.get(mission.playerAddress);
+				const dStats: DrifterStats[] = [];
+				for (const id of mission.drifterIds) {
+					const base = await getDrifterStats(id, this.env);
+					const eff = this.getEffectiveDrifterStats(id, base);
+					dStats.push({ combat: eff.combat, scavenging: eff.scavenging, tech: eff.tech, speed: eff.speed });
+				}
+				let vehicleData: any = undefined;
+				if (mission.vehicleInstanceId && player) {
+					const vInst = player.vehicles?.find((v) => v.instanceId === mission.vehicleInstanceId) || null;
+					if (vInst) {
+						vehicleData = getVehicle(vInst.vehicleId);
+					}
+				}
+
+				const monster = monstersById.get(targetMonsterId);
+				// Determine outbound time to current monster position (0 if attacking at town)
+				let outboundMs = 0;
+				if (monster && monster.state !== 'attacking') {
+					outboundMs = calculateOneWayTravelDuration(monster.coordinates as any, dStats, vehicleData as any);
+				}
+
+				const startTs = (mission.startTime instanceof Date ? mission.startTime : new Date(mission.startTime)).getTime();
+				if (!Number.isFinite(startTs)) {
+					continue;
+				}
+				const engageAt = startTs + outboundMs;
+				if (now.getTime() < engageAt) {
+					continue; // not yet time to engage
+				}
+
+				// Apply combat damage at engagement time
+				let dmgApplied = 0;
+				let battleCoords = { x: 0, y: 0 };
+				let killed = false;
+				let kind: any = undefined;
+				if (monster && monster.state !== 'dead') {
+					kind = (monster as any).kind;
+					battleCoords = { ...monster.coordinates };
+					const est = estimateMonsterDamage(dStats, vehicleData);
+					const variance = 0.15; // ±15%
+					dmgApplied = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
+					const before = monster.hp;
+					monster.hp = Math.max(0, (monster.hp || 0) - dmgApplied);
+					killed = monster.hp <= 0;
+					if (killed) {
+						monsters = monsters.filter((mm) => mm.id !== monster.id);
+						await this.addEvent({ type: 'monster_killed', message: `${kind} killed (damage ${dmgApplied}, hp ${before}→0)`, data: { id: monster.id, kind, damage: dmgApplied } });
+					} else {
+						await this.addEvent({ type: 'town_damaged', message: `${kind} damaged for ${dmgApplied} (hp ${before}→${monster.hp})`, data: { id: monster.id, kind, damage: dmgApplied } });
+					}
+					await this.setStoredMonsters(monsters);
+				} else {
+					// Monster not found or already dead: treat battle at town (instant return)
+					battleCoords = { x: 0, y: 0 };
+					dmgApplied = 0;
+				}
+
+				// Persist engagement state to mission and recompute return leg
+mission.engagementApplied = true;
+				mission.combatDamageDealt = dmgApplied;
+				mission.battleLocation = battleCoords;
+
+				const returnMs = calculateOneWayTravelDuration(battleCoords as any, dStats, vehicleData as any);
+				mission.completionTime = new Date(now.getTime() + returnMs);
+				changed = true;
+
+				// Broadcast mission update (and world after monster HP change)
+				await this.broadcastMissionUpdate({ mission });
+			}
+
+			if (changed) {
+				await this.saveGameState();
+				await this.broadcastWorldStateUpdate();
+			}
+
+			return changed;
+		} catch (e) {
+			console.error('[GameDO] processMonsterMissionEngagements error', e);
+			return false;
+		}
+	}
+
+private async monsterMovementTick(now: Date): Promise<boolean> {
 		try {
 			const lastIso = (await this.ctx.storage.get<string>('lastMonsterMoveAt')) || '';
 			const last = lastIso ? new Date(lastIso) : new Date(); // if missing, initialize with now
@@ -2208,7 +2352,11 @@ await this.addEvent({ type: 'monster_arrived', message: `${m.kind} arrived at to
 					if (!targetMonsterId) {
 						continue;
 					}
-					if (mission.status !== 'active') {
+if (mission.status !== 'active') {
+						continue;
+					}
+					// Do not adjust timing after engagement has already occurred
+					if ((mission as any).engagementApplied) {
 						continue;
 					}
 					const monsterNow = monsters.find((mm) => mm.id === targetMonsterId);

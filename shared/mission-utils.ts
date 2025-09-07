@@ -463,29 +463,50 @@ export function calculateLiveEstimates(
 }
 
 /** Monster mission helpers - used by both client and server to keep logic in sync */
-export function calculateMonsterMissionDuration(
+export function calculateOneWayTravelDuration(
 	coordinates: { x: number; y: number },
 	drifters: DrifterStats[] = [],
 	vehicle?: Vehicle,
 ): number {
-	const dx = coordinates.x;
-	const dy = coordinates.y;
+	// Distance from town to the given coordinates
+	const dx = coordinates.x - TOWN_COORDINATES.x;
+	const dy = coordinates.y - TOWN_COORDINATES.y;
 	const distance = Math.sqrt(dx * dx + dy * dy);
+
+	// If we're already at town, the one-way travel time is 0
+	if (distance <= 0) {
+		return 0;
+	}
+
+	// Base and distance-scaled minutes
 	const baseMinutes = 15;
 	const maxExpectedDistance = 2000;
 	const additionalMinutes = Math.min(1.0, distance / maxExpectedDistance) * 45;
 	let totalMinutes = baseMinutes + additionalMinutes;
+
+	// Determine team speed (vehicle preferred; otherwise slowest drifter)
 	let teamSpeed = BASE_SPEED;
 	if (vehicle) {
 		teamSpeed = vehicle.speed;
 	} else if (drifters.length > 0) {
 		teamSpeed = Math.min(...drifters.map((s) => s.speed)) || BASE_SPEED;
 	}
+
+	// Faster speed reduces time; cap slowdown factor
 	const speedFactor = Math.min(BASE_SPEED / Math.max(1, teamSpeed), MAX_SPEED_FACTOR);
 	totalMinutes *= speedFactor;
-	const outboundMs = Math.round(totalMinutes * 60 * 1000);
+
+	return Math.round(totalMinutes * 60 * 1000);
+}
+
+export function calculateMonsterMissionDuration(
+	coordinates: { x: number; y: number },
+	drifters: DrifterStats[] = [],
+	vehicle?: Vehicle,
+): number {
+	const outboundMs = calculateOneWayTravelDuration(coordinates, drifters, vehicle);
 	const engagementMs = 2 * 60 * 1000;
-	const returnMs = outboundMs;
+	const returnMs = outboundMs; // symmetric assumption for estimate
 	return outboundMs + engagementMs + returnMs;
 }
 

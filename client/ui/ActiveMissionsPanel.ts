@@ -1,6 +1,7 @@
 import type { Mission, DrifterProfile, ResourceNode } from '@shared/models';
 import { gameState } from '../gameState';
 import { getVehicleData } from '../utils/vehicleUtils';
+import { calculateOneWayTravelDuration, type DrifterStats } from '../../shared/mission-utils';
 
 export class ActiveMissionsPanel {
 	private static updateInterval: number | null = null;
@@ -153,7 +154,7 @@ export class ActiveMissionsPanel {
 		const targetResource = resources.find((r) => r.id === mission.targetNodeId);
 		const missionDrifters = ownedDrifters.filter((d) => mission.drifterIds.includes(d.tokenId));
 		const monsters = gameState.getState().monsters || [];
-		const targetMonster = (mission as any).targetMonsterId ? monsters.find((m) => m.id === (mission as any).targetMonsterId) : null;
+const targetMonster = mission.targetMonsterId ? monsters.find((m) => m.id === mission.targetMonsterId) : null;
 
 		// Determine vehicle name from player's profile if present
 		const profile = gameState.getState().profile;
@@ -168,9 +169,49 @@ export class ActiveMissionsPanel {
 			}
 		}
 
-		const now = new Date();
+const now = new Date();
 		const progress = this.calculateMissionProgress(mission.startTime, mission.completionTime, now);
 		const timeRemaining = this.formatTimeRemaining(mission.completionTime, now);
+
+		// Engagement countdown (for monster missions not yet engaged)
+		let engagementCountdownHtml = '';
+		if (mission.targetMonsterId && !mission.engagementApplied && targetMonster) {
+			// Build effective team stats
+			const profile = gameState.getState().profile;
+			const teamStats: DrifterStats[] = missionDrifters.map((d) => {
+				const dp = profile?.drifterProgress?.[String(d.tokenId)];
+				return {
+					combat: d.combat + (dp?.bonuses.combat || 0),
+					scavenging: d.scavenging + (dp?.bonuses.scavenging || 0),
+					tech: d.tech + (dp?.bonuses.tech || 0),
+					speed: d.speed + (dp?.bonuses.speed || 0),
+				};
+			});
+			// Vehicle (if any)
+			let selectedVehicle: any = undefined;
+			if (mission.vehicleInstanceId && profile) {
+				const vi = profile.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
+				if (vi) {
+					selectedVehicle = getVehicleData(vi.vehicleId);
+				}
+			}
+			if (targetMonster.state === 'attacking') {
+				engagementCountdownHtml = `<div style="margin-bottom: 8px;"><span style=\"color:#ccc;\">Engages in: </span><span style=\"color:#ffcc00; font-weight:bold;\">Now</span></div>`;
+			} else {
+				const outboundMs = calculateOneWayTravelDuration(targetMonster.coordinates as any, teamStats, selectedVehicle);
+				const startTimeMs = (mission.startTime instanceof Date ? mission.startTime : new Date(mission.startTime)).getTime();
+				if (Number.isFinite(startTimeMs)) {
+					const engageAt = startTimeMs + outboundMs;
+					const remainingMs = engageAt - now.getTime();
+					if (remainingMs > 0) {
+						const engagesIn = this.formatTimeRemaining(new Date(engageAt), now);
+						engagementCountdownHtml = `<div style=\"margin-bottom: 8px;\"><span style=\"color:#ccc;\">Engages in: </span><span style=\"color:#ffff66; font-weight:bold;\">${engagesIn}</span></div>`;
+					} else {
+						engagementCountdownHtml = `<div style=\"margin-bottom: 8px;\"><span style=\"color:#ccc;\">Engages in: </span><span style=\"color:#ffcc00; font-weight:bold;\">Now</span></div>`;
+					}
+				}
+			}
+		}
 
 		return `
       <div style="
@@ -196,26 +237,51 @@ export class ActiveMissionsPanel {
           <span style="color: #ccc;">Target: </span>
           <span style="color: ${targetMonster ? '#ff66ff' : '#00ff00'};">
             ${
-							targetMonster
-								? `${targetMonster.kind} (${targetMonster.coordinates.x}, ${targetMonster.coordinates.y})`
-								: targetResource
-									? `${targetResource.type.toUpperCase()} (${targetResource.rarity.toUpperCase()}) (${targetResource.coordinates.x}, ${targetResource.coordinates.y})`
-									: 'Unknown location'
-						}
+                      targetMonster
+                        ? `${targetMonster.kind} (${targetMonster.coordinates.x}, ${targetMonster.coordinates.y})`
+                        : targetResource
+                          ? `${targetResource.type.toUpperCase()} (${targetResource.rarity.toUpperCase()}) (${targetResource.coordinates.x}, ${targetResource.coordinates.y})`
+                          : 'Unknown location'
+                    }
           </span>
         </div>
+
+        ${mission.targetMonsterId
+          ? `
+        <div style=\"margin-bottom: 8px;\">
+          <span style=\"color: #ccc;\">Engagement: </span>
+          <span style=\"color: ${mission.engagementApplied ? '#66ff66' : '#ffcc00'}; font-weight: bold;\">${mission.engagementApplied ? 'Engaged' : 'Pending'}</span>
+          ${mission.engagementApplied && typeof mission.combatDamageDealt === 'number' ? `<span style=\"color:#aaa; margin-left:6px;\">• Damage dealt: <b style=\"color:#ff8888;\">${mission.combatDamageDealt}</b></span>` : ''}
+        </div>
+${!mission.engagementApplied ? engagementCountdownHtml : ''}
+${mission.battleLocation
+          ? `
+        <div style=\"margin-bottom: 8px; display:flex; align-items:center; gap:8px;\">
+          <span style=\"color:#ccc;\">Battle:</span>
+          <span style=\"color:#ff4444; font-weight:bold;\">X</span>
+          <span style=\"color:#aaa;\">(${mission.battleLocation.x}, ${mission.battleLocation.y})</span>
+          <button 
+            onclick=\"centerOnMap(${mission.battleLocation.x}, ${mission.battleLocation.y})\"
+            style=\"background:#333; border:1px solid #666; color:#fff; padding:2px 6px; cursor:pointer; border-radius:3px; font-size:11px;\"
+            title=\"Center map on battle location\"
+          >Center</button>
+        </div>
+        `
+          : ''}
+        `
+          : ''}
         
-        <div style="margin-bottom: 8px;">
+        <div style=\"margin-bottom: 8px;\">
           <span style="color: #ccc;">Drifters: </span>
           ${missionDrifters
-						.map(
-							(d) => `
+                        .map(
+                          (d) => `
             <span style="color: #00bfff; font-size: 12px; margin-right: 8px;">
               ${d.name} #${d.tokenId}
             </span>
           `,
-						)
-						.join('')}
+                        )
+                        .join('')}
         </div>
 
         <div style="margin-bottom: 8px;">
@@ -295,6 +361,16 @@ export class ActiveMissionsPanel {
 }
 
 // Global function for collecting missions
+(window as any).centerOnMap = (x: number, y: number) => {
+	try {
+		window.dispatchEvent(
+			new CustomEvent('map:center-on' as any, { detail: { x, y, smooth: true, duration: 800 } } as any),
+		);
+	} catch (e) {
+		console.warn('Failed to dispatch center-on event', e);
+	}
+};
+
 (window as any).collectMission = async (missionId: string) => {
 	try {
 		const response = await fetch('/api/missions/complete', {
