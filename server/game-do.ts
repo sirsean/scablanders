@@ -28,6 +28,7 @@ import {
 } from '../shared/mission-utils';
 import { getDrifterStats } from './drifters';
 import { getVehicle } from './vehicles';
+import { calculateProsperityGain, prosperityResourceBoostMultiplier } from '../shared/prosperity-utils';
 interface WebSocketSession {
 	websocket: WebSocket;
 	sessionId: string;
@@ -1145,6 +1146,45 @@ message: `${monster.kind} damaged for ${dmg} (hp ${before}→${monster.hp})`,
 				}
 
 				console.log(`[GameDO] Node after depletion: currentYield=${node.currentYield}, depletion=${node.depletion}`);
+
+				// Apply Prosperity gain for resource missions (scavenge > strip_mine)
+				try {
+					const mt = mission.type as MissionType;
+					const isResource = mt === 'scavenge' || mt === 'strip_mine';
+					const credits = Math.max(0, mission.rewards?.credits || 0);
+					if (isResource && credits > 0) {
+						const town = await this.getTownState();
+						const vmLevel = town.attributes['vehicle_market']?.level ?? 0;
+						const wallLevel = town.attributes['perimeter_walls']?.level ?? 0;
+						const { delta, base, missionTypeMult, upgradeMult } = calculateProsperityGain(credits, mt, vmLevel, wallLevel);
+						if (delta > 0) {
+							const before = town.prosperity || 0;
+							town.prosperity = Math.max(0, before + delta); // unbounded above
+							await this.setTownState(town);
+							await this.addEvent({
+								type: 'town_prosperity_changed',
+								message: `Town Prosperity +${delta.toFixed(2)} → ${Math.round(town.prosperity)}`,
+								data: {
+									missionId: mission.id,
+									missionType: mt,
+									credits,
+									delta: Number(delta.toFixed(3)),
+									oldProsperity: before,
+									newProsperity: town.prosperity,
+									base: Number(base.toFixed(3)),
+									multipliers: {
+										missionTypeMult,
+										upgradeMult,
+										vehicleMarketLevel: vmLevel,
+										perimeterWallsLevel: wallLevel,
+									},
+								},
+							});
+						}
+					}
+				} catch (e) {
+					console.warn('[GameDO] Failed to apply prosperity gain:', e);
+				}
 			} else {
 				console.error(`[GameDO] Target node ${mission.targetNodeId} not found during mission completion`);
 			}
@@ -1566,9 +1606,9 @@ if (now >= monAt) {
 		let changesMade = false;
 
 		// Prosperity multiplier influences spawn targets and new node yields
-		const town = await this.getTownState();
-		const prosperityMult = this.prosperityMultiplier(town.prosperity);
-		const cappedSpawnMult = Math.min(1.5, Math.max(1.0, prosperityMult));
+			const town = await this.getTownState();
+			const prosperityMult = prosperityResourceBoostMultiplier(town.prosperity);
+			const cappedSpawnMult = Math.min(1.5, Math.max(1.0, prosperityMult));
 
 		// 1. Calculate hours elapsed since last update
 		const lastUpdate = this.gameState.worldMetrics.lastUpdate;
@@ -1992,22 +2032,8 @@ if (now >= monAt) {
 	// =============================================================================
 
 	// --- Prosperity math ---
-	private prosperityDeltaFromMission(creditsReward: number): number {
-		const c = Math.max(0, creditsReward || 0);
-		return 0.5 * Math.log(1 + c / 100);
-	}
 
-	private prosperityDeltaFromMonsterDamage(totalDamage: number): number {
-		const d = Math.max(0, totalDamage || 0);
-		return 1.0 * Math.log(1 + d / 100);
-	}
 
-	private prosperityMultiplier(P: number): number {
-		const p = Math.max(0, P || 0);
-		// 1 + 0.15 * log10(1+P), capped at 1.5
-		const mult = 1 + 0.15 * (Math.log10 ? Math.log10(1 + p) : Math.log(1 + p) / Math.LN10);
-		return Math.min(1.5, Math.max(1.0, mult));
-	}
 
 	// --- Town configuration defaults (tunable) ---
 	private TOWN_COST_BASE = 1000; // credits

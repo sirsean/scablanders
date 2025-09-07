@@ -222,7 +222,8 @@ export type GameEventType =
 	| 'monster_arrived'
 	| 'town_damaged'
 	| 'town_attribute_depleted'
-	| 'town_upgrade_completed';
+	| 'town_upgrade_completed'
+	| 'town_prosperity_changed';
 
 export interface GameEvent {
 	id: string;
