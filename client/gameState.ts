@@ -13,7 +13,7 @@ export interface GameState {
 	ownedDrifters: DrifterProfile[];
 	playerMissions: Mission[]; // Player's specific missions
 
-// World data
+	// World data
 	resourceNodes: ResourceNode[];
 	activeMissions: Mission[]; // All active missions (for map display)
 	monsters: Monster[]; // Active monsters moving/attacking
@@ -35,7 +35,7 @@ export interface GameState {
 	connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 	realTimeMode: boolean; // Whether updates come from WebSocket or polling
 
-// UI state
+	// UI state
 	selectedResourceNode: string | null;
 	selectedDrifterIds: number[];
 	selectedMissionType: string | null;
@@ -212,7 +212,14 @@ class GameStateManager extends EventTarget {
 				// Subscribe to events once authenticated
 				if (authenticated) {
 					console.log('[GameState] WebSocket authenticated, subscribing to events');
-					webSocketManager.subscribe(['player_state', 'world_state', 'mission_update', 'event_log_append', 'event_log_snapshot', 'notification']);
+					webSocketManager.subscribe([
+						'player_state',
+						'world_state',
+						'mission_update',
+						'event_log_append',
+						'event_log_snapshot',
+						'notification',
+					]);
 					// Initial sync of event log
 					this.syncEventLog();
 				}
@@ -512,7 +519,11 @@ class GameStateManager extends EventTarget {
 			});
 			const result = await response.json();
 			if (result.success) {
-				this.addNotification({ type: 'mission', title: 'Combat Mission Started!', message: `Engaging monster with ${drifterIds.length} drifter(s)` });
+				this.addNotification({
+					type: 'mission',
+					title: 'Combat Mission Started!',
+					message: `Engaging monster with ${drifterIds.length} drifter(s)`,
+				});
 				await this.loadWorldState();
 				await this.loadPlayerProfile();
 				await this.loadPlayerMissions();
@@ -723,7 +734,7 @@ class GameStateManager extends EventTarget {
 		this.setState({ showMarketPanel: !this.state.showMarketPanel });
 	}
 
-toggleVehiclePanel() {
+	toggleVehiclePanel() {
 		this.setState({ showVehiclePanel: !this.state.showVehiclePanel });
 	}
 
@@ -802,7 +813,7 @@ toggleVehiclePanel() {
 		}
 	}
 
-// Town API
+	// Town API
 	async contributeToTown(attribute: 'vehicle_market' | 'perimeter_walls', amount: number) {
 		try {
 			const response = await this.apiCall('/town/contribute', {
@@ -811,7 +822,11 @@ toggleVehiclePanel() {
 			});
 			const result = await response.json();
 			if (result.success) {
-				this.addNotification({ type: 'success', title: 'Contribution Applied', message: `Contributed ${amount} credits to ${attribute.replace('_',' ')}` });
+				this.addNotification({
+					type: 'success',
+					title: 'Contribution Applied',
+					message: `Contributed ${amount} credits to ${attribute.replace('_', ' ')}`,
+				});
 				await this.loadWorldState();
 				await this.loadPlayerProfile();
 				return result;

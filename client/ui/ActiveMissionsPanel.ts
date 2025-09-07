@@ -196,26 +196,26 @@ export class ActiveMissionsPanel {
           <span style="color: #ccc;">Target: </span>
           <span style="color: ${targetMonster ? '#ff66ff' : '#00ff00'};">
             ${
-              targetMonster
-                ? `Monster (${targetMonster.coordinates.x}, ${targetMonster.coordinates.y})`
-                : targetResource
-                ? `${targetResource.type.toUpperCase()} (${targetResource.rarity.toUpperCase()}) (${targetResource.coordinates.x}, ${targetResource.coordinates.y})`
-                : 'Unknown location'
-            }
+							targetMonster
+								? `Monster (${targetMonster.coordinates.x}, ${targetMonster.coordinates.y})`
+								: targetResource
+									? `${targetResource.type.toUpperCase()} (${targetResource.rarity.toUpperCase()}) (${targetResource.coordinates.x}, ${targetResource.coordinates.y})`
+									: 'Unknown location'
+						}
           </span>
         </div>
         
         <div style="margin-bottom: 8px;">
           <span style="color: #ccc;">Drifters: </span>
           ${missionDrifters
-            .map(
-              (d) => `
+						.map(
+							(d) => `
             <span style="color: #00bfff; font-size: 12px; margin-right: 8px;">
               ${d.name} #${d.tokenId}
             </span>
           `,
-            )
-            .join('')}
+						)
+						.join('')}
         </div>
 
         <div style="margin-bottom: 8px;">
@@ -226,7 +226,7 @@ export class ActiveMissionsPanel {
         <div style="margin-bottom: 8px;">
           <div style="background: #333; height: 6px; border-radius: 3px; overflow: hidden;">
             <div style="
-              background: ${progress >= 100 ? '#00ff00' : (targetMonster ? '#9c27b0' : 'linear-gradient(90deg, #ff8800, #ffff00)')}; 
+              background: ${progress >= 100 ? '#00ff00' : targetMonster ? '#9c27b0' : 'linear-gradient(90deg, #ff8800, #ffff00)'}; 
               height: 100%; 
               width: ${Math.min(100, progress)}%;
               transition: width 0.5s ease;
@@ -238,8 +238,8 @@ export class ActiveMissionsPanel {
         </div>
         
         ${
-          progress >= 100
-            ? `
+					progress >= 100
+						? `
           <button 
             onclick="collectMission('${mission.id}')" 
             style="
@@ -256,8 +256,8 @@ export class ActiveMissionsPanel {
             Collect Rewards
           </button>
         `
-            : ''
-        }
+						: ''
+				}
       </div>
     `;
 	}

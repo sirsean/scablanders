@@ -60,9 +60,9 @@ export function calculateMissionDuration(
 	const baseDurationMinutes = 15;
 
 	// Distance factor: add time based on distance
-// For an arbitrarily large map, normalize using an expected gameplay radius (same order as server spawnRadius)
-// This keeps durations reasonable even as the world grows. Tune as needed.
-const maxExpectedDistance = 2000;
+	// For an arbitrarily large map, normalize using an expected gameplay radius (same order as server spawnRadius)
+	// This keeps durations reasonable even as the world grows. Tune as needed.
+	const maxExpectedDistance = 2000;
 	const normalizedDistance = Math.min(distance / maxExpectedDistance, 1.0);
 	const additionalMinutes = normalizedDistance * 45; // 0-45 additional minutes
 

@@ -50,18 +50,18 @@ export class LogPanel {
 		return `
       <div style="display:flex; flex-direction:column; gap:8px;">
         ${events
-          .map((ev) => {
-            const time = LogPanel.formatTime(ev.timestamp as any as Date);
-            const who = ev.playerAddress ? `<span style=\"color:#aaa\">${ev.playerAddress.slice(0, 6)}…</span> ` : '';
-            const style = buildEventBorderStyle((ev as any).type);
-            return `
+					.map((ev) => {
+						const time = LogPanel.formatTime(ev.timestamp as any as Date);
+						const who = ev.playerAddress ? `<span style=\"color:#aaa\">${ev.playerAddress.slice(0, 6)}…</span> ` : '';
+						const style = buildEventBorderStyle((ev as any).type);
+						return `
               <div style=\"${style}\">
                 <div style="font-size:11px;color:#bbb;">${time}</div>
                 <div style="font-size:13px;">${who}${ev.message}</div>
               </div>
             `;
-          })
-          .join('')}
+					})
+					.join('')}
       </div>
     `;
 	}

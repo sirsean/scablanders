@@ -16,7 +16,14 @@ import type {
 	TownAttributeType,
 	Monster,
 } from '@shared/models';
-import { calculateMissionDuration, calculateMissionRewards, type DrifterStats, BASE_SPEED, calculateMonsterMissionDuration, estimateMonsterDamage } from '../shared/mission-utils';
+import {
+	calculateMissionDuration,
+	calculateMissionRewards,
+	type DrifterStats,
+	BASE_SPEED,
+	calculateMonsterMissionDuration,
+	estimateMonsterDamage,
+} from '../shared/mission-utils';
 import { getDrifterStats } from './drifters';
 import { getVehicle } from './vehicles';
 interface WebSocketSession {
@@ -379,7 +386,7 @@ export class GameDO extends DurableObject {
 	/**
 	 * Send world state update to specific session
 	 */
-private async sendWorldStateUpdate(sessionId: string) {
+	private async sendWorldStateUpdate(sessionId: string) {
 		console.log(`[GameDO] send worldStateUpdate ${sessionId}`);
 		// Only send active nodes with yield > 0
 		const activeNodes = Array.from(this.gameState.resourceNodes.values()).filter((node) => node.isActive && node.currentYield > 0);
@@ -441,7 +448,7 @@ private async sendWorldStateUpdate(sessionId: string) {
 	/**
 	 * Broadcast world state to all authenticated sessions
 	 */
-private async broadcastWorldStateUpdate() {
+	private async broadcastWorldStateUpdate() {
 		// Only send active nodes with yield > 0
 		const activeNodes = Array.from(this.gameState.resourceNodes.values()).filter((node) => node.isActive && node.currentYield > 0);
 
@@ -656,103 +663,108 @@ private async broadcastWorldStateUpdate() {
 		return { success: true, newBalance: player.balance };
 	}
 
-// =============================================================================
-// Mission Management
-// =============================================================================
+	// =============================================================================
+	// Mission Management
+	// =============================================================================
 
-/**
- * Start a monster combat mission targeting a specific monster.
- * Computes a simple duration based on distance and team speed, with a 2-minute engagement window.
- */
-async startMonsterCombatMission(
-	playerAddress: string,
-	drifterIds: number[],
-	targetMonsterId: string,
-	vehicleInstanceId?: string | null,
-): Promise<{ success: boolean; missionId?: string; error?: string }> {
-	try {
-		await this.ensureAlarmsInitialized();
-		if (!playerAddress || !Array.isArray(drifterIds) || drifterIds.length === 0 || !targetMonsterId) {
-			return { success: false, error: 'Invalid request' };
-		}
-
-		// Validate player
-		const player = await this.getProfile(playerAddress);
-		if (!player) {
-			return { success: false, error: 'Player not found' };
-		}
-
-		// Validate monster
-		const monsters = await this.getMonsters();
-		const monster = monsters.find((m) => m.id === targetMonsterId);
-		if (!monster) {
-			return { success: false, error: 'Monster not found' };
-		}
-		if (monster.state === 'dead') {
-			return { success: false, error: 'Monster already defeated' };
-		}
-
-		// Build effective drifter stats and compute team speed
-		const dStats: DrifterStats[] = [];
-		for (const id of drifterIds) {
-			const base = await getDrifterStats(id, this.env);
-			const eff = this.getEffectiveDrifterStats(id, base);
-			dStats.push({ combat: eff.combat, scavenging: eff.scavenging, tech: eff.tech, speed: eff.speed });
-		}
-		let _teamSpeed = BASE_SPEED;
-		let vehicleData: any = undefined;
-		if (vehicleInstanceId) {
-			const vInst = player.vehicles?.find((v) => v.instanceId === vehicleInstanceId) || null;
-			if (!vInst) {
-				return { success: false, error: 'Vehicle not available' };
+	/**
+	 * Start a monster combat mission targeting a specific monster.
+	 * Computes a simple duration based on distance and team speed, with a 2-minute engagement window.
+	 */
+	async startMonsterCombatMission(
+		playerAddress: string,
+		drifterIds: number[],
+		targetMonsterId: string,
+		vehicleInstanceId?: string | null,
+	): Promise<{ success: boolean; missionId?: string; error?: string }> {
+		try {
+			await this.ensureAlarmsInitialized();
+			if (!playerAddress || !Array.isArray(drifterIds) || drifterIds.length === 0 || !targetMonsterId) {
+				return { success: false, error: 'Invalid request' };
 			}
-			vehicleData = getVehicle(vInst.vehicleId);
-			_teamSpeed = vehicleData?.speed || BASE_SPEED;
-			// Mark vehicle as on-mission immediately for combat missions too
-			vInst.status = 'on_mission';
-		} else {
-			// derive from slowest drifter effective speed
-			if (dStats.length > 0) {
-				_teamSpeed = Math.min(...dStats.map((s) => s.speed)) || BASE_SPEED;
+
+			// Validate player
+			const player = await this.getProfile(playerAddress);
+			if (!player) {
+				return { success: false, error: 'Player not found' };
 			}
+
+			// Validate monster
+			const monsters = await this.getMonsters();
+			const monster = monsters.find((m) => m.id === targetMonsterId);
+			if (!monster) {
+				return { success: false, error: 'Monster not found' };
+			}
+			if (monster.state === 'dead') {
+				return { success: false, error: 'Monster already defeated' };
+			}
+
+			// Build effective drifter stats and compute team speed
+			const dStats: DrifterStats[] = [];
+			for (const id of drifterIds) {
+				const base = await getDrifterStats(id, this.env);
+				const eff = this.getEffectiveDrifterStats(id, base);
+				dStats.push({ combat: eff.combat, scavenging: eff.scavenging, tech: eff.tech, speed: eff.speed });
+			}
+			let _teamSpeed = BASE_SPEED;
+			let vehicleData: any = undefined;
+			if (vehicleInstanceId) {
+				const vInst = player.vehicles?.find((v) => v.instanceId === vehicleInstanceId) || null;
+				if (!vInst) {
+					return { success: false, error: 'Vehicle not available' };
+				}
+				vehicleData = getVehicle(vInst.vehicleId);
+				_teamSpeed = vehicleData?.speed || BASE_SPEED;
+				// Mark vehicle as on-mission immediately for combat missions too
+				vInst.status = 'on_mission';
+			} else {
+				// derive from slowest drifter effective speed
+				if (dStats.length > 0) {
+					_teamSpeed = Math.min(...dStats.map((s) => s.speed)) || BASE_SPEED;
+				}
+			}
+
+			// Duration to monster using shared helper
+			const durationMs = calculateMonsterMissionDuration(monster.coordinates as any, dStats, vehicleData as any);
+			const now = new Date();
+			const completion = new Date(now.getTime() + durationMs);
+
+			// Create mission
+			const missionId = `mission-${crypto.randomUUID()}`;
+			const mission: Mission = {
+				id: missionId,
+				type: 'combat',
+				playerAddress,
+				drifterIds,
+				vehicleInstanceId: vehicleInstanceId || null,
+				targetMonsterId,
+				startTime: now,
+				completionTime: completion,
+				status: 'active',
+				rewards: { credits: 0, resources: {} },
+			};
+
+			this.gameState.missions.set(missionId, mission);
+			player.activeMissions = [...(player.activeMissions || []), missionId];
+
+			await this.saveGameState();
+			await this.broadcastWorldStateUpdate();
+			await this.broadcastMissionUpdate({ mission });
+			await this.broadcastPlayerStateUpdate(playerAddress);
+
+			await this.addEvent({
+				type: 'mission_started',
+				missionId,
+				playerAddress,
+				message: `Combat mission started vs monster ${targetMonsterId}`,
+			});
+
+			return { success: true, missionId };
+		} catch (e) {
+			console.error('[GameDO] startMonsterCombatMission error', e);
+			return { success: false, error: 'Failed to start monster combat mission' };
 		}
-
-		// Duration to monster using shared helper
-		const durationMs = calculateMonsterMissionDuration(monster.coordinates as any, dStats, vehicleData as any);
-		const now = new Date();
-		const completion = new Date(now.getTime() + durationMs);
-
-		// Create mission
-		const missionId = `mission-${crypto.randomUUID()}`;
-		const mission: Mission = {
-			id: missionId,
-			type: 'combat',
-			playerAddress,
-			drifterIds,
-			vehicleInstanceId: vehicleInstanceId || null,
-			targetMonsterId,
-			startTime: now,
-			completionTime: completion,
-			status: 'active',
-			rewards: { credits: 0, resources: {} },
-		};
-
-		this.gameState.missions.set(missionId, mission);
-		player.activeMissions = [...(player.activeMissions || []), missionId];
-
-		await this.saveGameState();
-		await this.broadcastWorldStateUpdate();
-		await this.broadcastMissionUpdate({ mission });
-		await this.broadcastPlayerStateUpdate(playerAddress);
-
-		await this.addEvent({ type: 'mission_started', missionId, playerAddress, message: `Combat mission started vs monster ${targetMonsterId}` });
-
-		return { success: true, missionId };
-	} catch (e) {
-		console.error('[GameDO] startMonsterCombatMission error', e);
-		return { success: false, error: 'Failed to start monster combat mission' };
 	}
-}
 
 	/**
 	 * Start a mission
@@ -992,9 +1004,17 @@ async startMonsterCombatMission(
 				if (killed) {
 					// Remove the monster entirely when killed
 					monsters = monsters.filter((mm) => mm.id !== monster.id);
-					await this.addEvent({ type: 'monster_killed', message: `Monster ${monster.id} killed (damage ${dmg}, hp ${before}→0)`, data: { id: monster.id, damage: dmg } });
+					await this.addEvent({
+						type: 'monster_killed',
+						message: `Monster ${monster.id} killed (damage ${dmg}, hp ${before}→0)`,
+						data: { id: monster.id, damage: dmg },
+					});
 				} else {
-					await this.addEvent({ type: 'town_damaged', message: `Monster ${monster.id} damaged for ${dmg} (hp ${before}→${monster.hp})`, data: { id: monster.id, damage: dmg } });
+					await this.addEvent({
+						type: 'town_damaged',
+						message: `Monster ${monster.id} damaged for ${dmg} (hp ${before}→${monster.hp})`,
+						data: { id: monster.id, damage: dmg },
+					});
 				}
 				await this.setStoredMonsters(monsters);
 
@@ -1107,7 +1127,9 @@ async startMonsterCombatMission(
 					: 'On Foot'
 				: 'On Foot',
 			message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} ${
-				(mission as any).targetMonsterId ? `vs MONSTER ${(mission as any).targetMonsterId}` : `at ${(this.gameState.resourceNodes.get(mission.targetNodeId!)?.type ?? '').toString().toUpperCase()}`
+				(mission as any).targetMonsterId
+					? `vs MONSTER ${(mission as any).targetMonsterId}`
+					: `at ${(this.gameState.resourceNodes.get(mission.targetNodeId!)?.type ?? '').toString().toUpperCase()}`
 			} with drifters ${mission.drifterIds.map((id) => `#${id}`).join(', ')} ${
 				mission.vehicleInstanceId
 					? `in ${(() => {
@@ -1115,7 +1137,7 @@ async startMonsterCombatMission(
 							return vi ? getVehicle(vi.vehicleId)?.name || 'On Foot' : 'On Foot';
 						})()}`
 					: 'on foot'
-			} ${ (mission as any).targetMonsterId ? `(+${totalCombatXpAwarded} XP)` : `(+${mission.rewards.credits} cr)` }`,
+			} ${(mission as any).targetMonsterId ? `(+${totalCombatXpAwarded} XP)` : `(+${mission.rewards.credits} cr)`}`,
 		});
 
 		// Award XP to participating drifters based on credits earned
@@ -1332,83 +1354,83 @@ async startMonsterCombatMission(
 	/**
 	 * Get all resource nodes
 	 */
-async getResourceNodes(): Promise<ResourceNode[]> {
+	async getResourceNodes(): Promise<ResourceNode[]> {
 		await this.ensureAlarmsInitialized();
 		return Array.from(this.gameState.resourceNodes.values());
-}
+	}
 
 	/**
 	 * Get world metrics
 	 */
-async getWorldMetrics() {
+	async getWorldMetrics() {
 		await this.ensureAlarmsInitialized();
 		return this.gameState.worldMetrics;
-}
+	}
 
 	/**
 	 * Get all active missions
 	 */
-async getActiveMissions(): Promise<Mission[]> {
+	async getActiveMissions(): Promise<Mission[]> {
 		await this.ensureAlarmsInitialized();
 		return Array.from(this.gameState.missions.values()).filter((m) => m.status === 'active');
-}
+	}
 
 	/**
 	 * Return a snapshot of the global event log (newest first)
 	 */
-async getEventLog(limit: number = 1000): Promise<GameEvent[]> {
+	async getEventLog(limit: number = 1000): Promise<GameEvent[]> {
 		await this.ensureAlarmsInitialized();
 		return this.gameState.eventLog.slice(-limit).reverse();
-}
+	}
 
-// =============================================================================
-// Resource Management and Regeneration
-// =============================================================================
+	// =============================================================================
+	// Resource Management and Regeneration
+	// =============================================================================
 
-/** Ensure alarm keys exist; if missing, initialize and schedule */
-private async ensureAlarmsInitialized() {
-	const [resIso, monIso] = await Promise.all([
-		this.ctx.storage.get<string>('nextResourceAlarmAt'),
-		this.ctx.storage.get<string>('nextMonsterAlarmAt'),
-	]);
-	let changed = false;
-	const now = Date.now();
-	if (!resIso) {
-		const resIntervalMs = this.gameState.resourceConfig.degradationCheckInterval * 60 * 1000;
-		await this.ctx.storage.put('nextResourceAlarmAt', new Date(now + resIntervalMs).toISOString());
-		changed = true;
+	/** Ensure alarm keys exist; if missing, initialize and schedule */
+	private async ensureAlarmsInitialized() {
+		const [resIso, monIso] = await Promise.all([
+			this.ctx.storage.get<string>('nextResourceAlarmAt'),
+			this.ctx.storage.get<string>('nextMonsterAlarmAt'),
+		]);
+		let changed = false;
+		const now = Date.now();
+		if (!resIso) {
+			const resIntervalMs = this.gameState.resourceConfig.degradationCheckInterval * 60 * 1000;
+			await this.ctx.storage.put('nextResourceAlarmAt', new Date(now + resIntervalMs).toISOString());
+			changed = true;
+		}
+		if (!monIso) {
+			await this.ctx.storage.put('nextMonsterAlarmAt', new Date(now + this.monsterTickIntervalMs).toISOString());
+			changed = true;
+		}
+		if (changed) {
+			console.log('[GameDO] Initialized missing alarm keys; scheduling next alarm');
+			await this.scheduleNextAlarm();
+		}
 	}
-	if (!monIso) {
-		await this.ctx.storage.put('nextMonsterAlarmAt', new Date(now + this.monsterTickIntervalMs).toISOString());
-		changed = true;
-	}
-	if (changed) {
-		console.log('[GameDO] Initialized missing alarm keys; scheduling next alarm');
-		await this.scheduleNextAlarm();
-	}
-}
 
 	/**
 	 * Initialize resource management: run immediately, then schedule recurring alarms
 	 */
-private monsterTickIntervalMs = 60 * 1000; // 1 minute monster tick frequency
+	private monsterTickIntervalMs = 60 * 1000; // 1 minute monster tick frequency
 
-private async initializeMonsterManagement() {
-	console.log('[GameDO] Initializing monster management');
-	try {
-		const nowDate = new Date();
-		await this.monsterMovementTick(nowDate);
-		await this.monsterAttackTick(nowDate);
-		console.log('[GameDO] Initial monster tick completed');
-	} catch (error) {
-		console.error('[GameDO] Error during initial monster tick:', error);
+	private async initializeMonsterManagement() {
+		console.log('[GameDO] Initializing monster management');
+		try {
+			const nowDate = new Date();
+			await this.monsterMovementTick(nowDate);
+			await this.monsterAttackTick(nowDate);
+			console.log('[GameDO] Initial monster tick completed');
+		} catch (error) {
+			console.error('[GameDO] Error during initial monster tick:', error);
+		}
+		const now = Date.now();
+		await this.ctx.storage.put('nextMonsterAlarmAt', new Date(now + this.monsterTickIntervalMs).toISOString());
+		await this.scheduleNextAlarm();
 	}
-	const now = Date.now();
-	await this.ctx.storage.put('nextMonsterAlarmAt', new Date(now + this.monsterTickIntervalMs).toISOString());
-	await this.scheduleNextAlarm();
-}
 
-private async initializeResourceManagement() {
+	private async initializeResourceManagement() {
 		console.log('[GameDO] Initializing resource management');
 
 		try {
@@ -1428,7 +1450,7 @@ private async initializeResourceManagement() {
 		await this.scheduleNextAlarm();
 	}
 
-/** Schedule the next alarm trigger based on the earliest of resource/monster needs */
+	/** Schedule the next alarm trigger based on the earliest of resource/monster needs */
 	private async scheduleNextAlarm() {
 		const [resIso, monIso] = await Promise.all([
 			this.ctx.storage.get<string>('nextResourceAlarmAt'),
@@ -1438,11 +1460,13 @@ private async initializeResourceManagement() {
 		const monAt = monIso ? new Date(monIso).getTime() : Date.now();
 		const nextMs = Math.min(resAt, monAt);
 		const next = new Date(Math.max(Date.now() + 1000, nextMs)); // at least 1s in future
-		console.log(`[GameDO] Scheduling next alarm for ${next.toISOString()} (res=${new Date(resAt).toISOString()} mon=${new Date(monAt).toISOString()})`);
+		console.log(
+			`[GameDO] Scheduling next alarm for ${next.toISOString()} (res=${new Date(resAt).toISOString()} mon=${new Date(monAt).toISOString()})`,
+		);
 		await this.ctx.storage.setAlarm(next);
 	}
 
-/**
+	/**
 	 * Handle alarm - run whichever systems are due and reschedule
 	 */
 	async alarm() {
@@ -1481,7 +1505,7 @@ private async initializeResourceManagement() {
 	/**
 	 * Perform resource management: degradation, cleanup, and spawning
 	 */
-private async performResourceManagement() {
+	private async performResourceManagement() {
 		console.log('[GameDO] Starting resource degradation cycle');
 
 		const config = this.gameState.resourceConfig;
@@ -1562,7 +1586,7 @@ private async performResourceManagement() {
 			`[GameDO] Current active node counts: ore=${nodeCountsByType.ore}, scrap=${nodeCountsByType.scrap}, organic=${nodeCountsByType.organic}, total=${totalActiveNodes}`,
 		);
 
-// 5. Spawn replacement nodes to maintain target counts (influenced by Prosperity)
+		// 5. Spawn replacement nodes to maintain target counts (influenced by Prosperity)
 		const nodesToSpawn: { type: ResourceType; count: number }[] = [];
 
 		// Check each resource type against its effective target (apply prosperity multiplier)
@@ -1674,7 +1698,8 @@ private async performResourceManagement() {
 			}
 		}
 
-		let x = 0, y = 0;
+		let x = 0,
+			y = 0;
 		let attempts = 0;
 		let positionIsValid = false;
 		let chosenRarity: Rarity = 'common';
@@ -1862,258 +1887,258 @@ private async performResourceManagement() {
 		return { success: true, progress: dp };
 	}
 
-// =============================================================================
-// Town & Monsters (initial scaffolding)
-// =============================================================================
+	// =============================================================================
+	// Town & Monsters (initial scaffolding)
+	// =============================================================================
 
-// --- Prosperity math ---
-private prosperityDeltaFromMission(creditsReward: number): number {
-	const c = Math.max(0, creditsReward || 0);
-	return 0.5 * Math.log(1 + c / 100);
-}
-
-private prosperityDeltaFromMonsterDamage(totalDamage: number): number {
-	const d = Math.max(0, totalDamage || 0);
-	return 1.0 * Math.log(1 + d / 100);
-}
-
-private prosperityMultiplier(P: number): number {
-	const p = Math.max(0, P || 0);
-	// 1 + 0.15 * log10(1+P), capped at 1.5
-	const mult = 1 + 0.15 * (Math.log10 ? Math.log10(1 + p) : Math.log(1 + p) / Math.LN10);
-	return Math.min(1.5, Math.max(1.0, mult));
-}
-
-// --- Town configuration defaults (tunable) ---
-private TOWN_COST_BASE = 1000; // credits
-private TOWN_COST_GROWTH = 2.0; // exponential growth per level
-private TOWN_MAX_LEVEL = 5;
-
-private wallMaxHpForLevel(level: number): number {
-	if (level <= 0) {
-		return 0;
+	// --- Prosperity math ---
+	private prosperityDeltaFromMission(creditsReward: number): number {
+		const c = Math.max(0, creditsReward || 0);
+		return 0.5 * Math.log(1 + c / 100);
 	}
-	return 1000 * level * level; // 1000 * level^2
-}
 
-private nextLevelCost(level: number): number {
-	// Cost to go from current level -> next level
-	// Example: level 0 -> 1: base * growth^0 = base
-	return Math.round(this.TOWN_COST_BASE * Math.pow(this.TOWN_COST_GROWTH, Math.max(0, level)));
-}
-
-private defaultTownState(): TownState {
-	const vmCost = this.nextLevelCost(0);
-	const wallCost = this.nextLevelCost(0);
-	return {
-		prosperity: 0,
-		attributes: {
-			vehicle_market: { level: 0, progress: 0, nextLevelCost: vmCost },
-			perimeter_walls: { level: 0, progress: 0, nextLevelCost: wallCost, hp: 0, maxHp: 0 },
-		},
-	};
-}
-
-private async setTownState(state: TownState) {
-	await this.ctx.storage.put('town', state);
-}
-
-async getTownState(): Promise<TownState> {
-	try {
-		const stored = await this.ctx.storage.get<TownState>('town');
-		if (stored) {
-			return stored;
-		}
-		const def = this.defaultTownState();
-		await this.setTownState(def);
-		return def;
-	} catch {
-		const def = this.defaultTownState();
-		await this.setTownState(def);
-		return def;
+	private prosperityDeltaFromMonsterDamage(totalDamage: number): number {
+		const d = Math.max(0, totalDamage || 0);
+		return 1.0 * Math.log(1 + d / 100);
 	}
-}
 
-/**
- * Contribute credits to a Town attribute. For walls, repairs HP first (1 credit = 1 HP).
- * Any overflow contributes toward upgrade progress; level-ups apply as needed (with HP refill for walls).
- */
-async contributeToTown(
-	playerAddress: string,
-	attribute: TownAttributeType,
-	amountCredits: number,
-): Promise<{ success: boolean; town?: TownState; newBalance?: number; error?: string }> {
-	try {
-		if (!playerAddress || amountCredits <= 0) {
-			return { success: false, error: 'Invalid request' };
-		}
-		// Validate player and funds
-		const player = this.gameState.players.get(playerAddress) || (await this.getProfile(playerAddress));
-		if (!player) {
-			return { success: false, error: 'Player not found' };
-		}
-		if (player.balance < amountCredits) {
-			return { success: false, error: 'Insufficient credits' };
-		}
+	private prosperityMultiplier(P: number): number {
+		const p = Math.max(0, P || 0);
+		// 1 + 0.15 * log10(1+P), capped at 1.5
+		const mult = 1 + 0.15 * (Math.log10 ? Math.log10(1 + p) : Math.log(1 + p) / Math.LN10);
+		return Math.min(1.5, Math.max(1.0, mult));
+	}
 
-		// Load current town state
-		const town = await this.getTownState();
-		const attr = town.attributes[attribute];
-		if (!attr) {
-			return { success: false, error: 'Unknown attribute' };
+	// --- Town configuration defaults (tunable) ---
+	private TOWN_COST_BASE = 1000; // credits
+	private TOWN_COST_GROWTH = 2.0; // exponential growth per level
+	private TOWN_MAX_LEVEL = 5;
+
+	private wallMaxHpForLevel(level: number): number {
+		if (level <= 0) {
+			return 0;
 		}
+		return 1000 * level * level; // 1000 * level^2
+	}
 
-		let remaining = Math.floor(amountCredits);
+	private nextLevelCost(level: number): number {
+		// Cost to go from current level -> next level
+		// Example: level 0 -> 1: base * growth^0 = base
+		return Math.round(this.TOWN_COST_BASE * Math.pow(this.TOWN_COST_GROWTH, Math.max(0, level)));
+	}
 
-		// If attribute at max level, only allow walls repair; otherwise reject
-		if (attr.level >= this.TOWN_MAX_LEVEL) {
-			if (attribute === 'perimeter_walls') {
-				// repair-only path below
-			} else {
-				return { success: false, error: 'Attribute at max level' };
+	private defaultTownState(): TownState {
+		const vmCost = this.nextLevelCost(0);
+		const wallCost = this.nextLevelCost(0);
+		return {
+			prosperity: 0,
+			attributes: {
+				vehicle_market: { level: 0, progress: 0, nextLevelCost: vmCost },
+				perimeter_walls: { level: 0, progress: 0, nextLevelCost: wallCost, hp: 0, maxHp: 0 },
+			},
+		};
+	}
+
+	private async setTownState(state: TownState) {
+		await this.ctx.storage.put('town', state);
+	}
+
+	async getTownState(): Promise<TownState> {
+		try {
+			const stored = await this.ctx.storage.get<TownState>('town');
+			if (stored) {
+				return stored;
 			}
+			const def = this.defaultTownState();
+			await this.setTownState(def);
+			return def;
+		} catch {
+			const def = this.defaultTownState();
+			await this.setTownState(def);
+			return def;
 		}
+	}
 
-		// Debit credits up-front
-		player.balance -= remaining;
-
-		// Walls: repair HP first (if applicable)
-		if (attribute === 'perimeter_walls') {
-			const hp = attr.hp ?? 0;
-			const maxHp = attr.maxHp ?? this.wallMaxHpForLevel(attr.level);
-			if (maxHp > 0 && hp < maxHp) {
-				const toRepair = Math.min(remaining, maxHp - hp);
-				attr.hp = hp + toRepair;
-				attr.maxHp = maxHp; // ensure persisted
-				remaining -= toRepair;
+	/**
+	 * Contribute credits to a Town attribute. For walls, repairs HP first (1 credit = 1 HP).
+	 * Any overflow contributes toward upgrade progress; level-ups apply as needed (with HP refill for walls).
+	 */
+	async contributeToTown(
+		playerAddress: string,
+		attribute: TownAttributeType,
+		amountCredits: number,
+	): Promise<{ success: boolean; town?: TownState; newBalance?: number; error?: string }> {
+		try {
+			if (!playerAddress || amountCredits <= 0) {
+				return { success: false, error: 'Invalid request' };
 			}
-		}
+			// Validate player and funds
+			const player = this.gameState.players.get(playerAddress) || (await this.getProfile(playerAddress));
+			if (!player) {
+				return { success: false, error: 'Player not found' };
+			}
+			if (player.balance < amountCredits) {
+				return { success: false, error: 'Insufficient credits' };
+			}
 
-		// Contribute remaining credits toward upgrade progress
-		if (remaining > 0) {
-			attr.progress = (attr.progress || 0) + remaining;
+			// Load current town state
+			const town = await this.getTownState();
+			const attr = town.attributes[attribute];
+			if (!attr) {
+				return { success: false, error: 'Unknown attribute' };
+			}
 
-			// Apply level-ups while progress covers cost and not at max
-			while (attr.level < this.TOWN_MAX_LEVEL && attr.progress >= attr.nextLevelCost) {
-				attr.progress -= attr.nextLevelCost;
-				attr.level += 1;
-				attr.nextLevelCost = this.nextLevelCost(attr.level);
+			let remaining = Math.floor(amountCredits);
 
+			// If attribute at max level, only allow walls repair; otherwise reject
+			if (attr.level >= this.TOWN_MAX_LEVEL) {
 				if (attribute === 'perimeter_walls') {
-					// Recompute walls HP and refill to max on level-up
-					attr.maxHp = this.wallMaxHpForLevel(attr.level);
-					attr.hp = attr.maxHp;
+					// repair-only path below
+				} else {
+					return { success: false, error: 'Attribute at max level' };
 				}
-
-				// Emit event for town upgrade
-				await this.addEvent({
-					type: 'town_upgrade_completed',
-					message: `Town upgraded: ${attribute} → level ${attr.level}`,
-					data: { attribute, level: attr.level },
-				});
 			}
-		}
 
-		// Persist and broadcast
-		// Ensure walls have consistent maxHp when level 0 → allow 0
-		town.attributes[attribute] = attr;
-		await this.setTownState(town);
-		await this.saveGameState();
-		await this.broadcastWorldStateUpdate();
-		await this.broadcastPlayerStateUpdate(playerAddress);
+			// Debit credits up-front
+			player.balance -= remaining;
 
-		return { success: true, town, newBalance: player.balance };
-	} catch (err) {
-		console.error('[GameDO] contributeToTown error:', err);
-		return { success: false, error: 'Contribution failed' };
-	}
-}
-
-private async getStoredMonsters(): Promise<Monster[]> {
-	const raw = await this.ctx.storage.get<Monster[]>('monsters');
-	return Array.isArray(raw) ? raw : [];
-}
-
-private async setStoredMonsters(list: Monster[]) {
-	await this.ctx.storage.put('monsters', list);
-}
-
-async getMonsters(): Promise<Monster[]> {
-	const list = await this.getStoredMonsters();
-	const filtered = list.filter((m) => m.state !== 'dead');
-	if (filtered.length !== list.length) {
-		await this.setStoredMonsters(filtered);
-	}
-	return filtered;
-}
-
-private distanceToTown(x: number, y: number): number {
-	return Math.sqrt(x * x + y * y);
-}
-
-private clampToTownThreshold(x: number, y: number, threshold: number): { x: number; y: number } {
-	const dist = this.distanceToTown(x, y);
-	if (dist <= threshold) {
-		return { x, y };
-	}
-	const scale = threshold / dist;
-	return { x: Math.round(x * scale), y: Math.round(y * scale) };
-}
-
-private async monsterMovementTick(now: Date): Promise<boolean> {
-	try {
-		const lastIso = (await this.ctx.storage.get<string>('lastMonsterMoveAt')) || '';
-		const last = lastIso ? new Date(lastIso) : new Date(); // if missing, initialize with now
-		const minutes = (now.getTime() - last.getTime()) / 60000;
-		console.log(`[Monsters] Movement tick: now=${now.toISOString()} last=${last.toISOString()} Δmin=${minutes.toFixed(2)}`);
-		if (minutes <= 0) {
-			console.log('[Monsters] Movement: skipping (Δmin <= 0). Seeding lastMonsterMoveAt');
-			await this.ctx.storage.put('lastMonsterMoveAt', now.toISOString());
-			return false;
-		}
-
-		let changed = false;
-		let monsters = await this.getStoredMonsters();
-		// Prune any dead monsters lingering in storage
-		const beforeCount = monsters.length;
-		monsters = monsters.filter((m) => m.state !== 'dead');
-		if (monsters.length !== beforeCount) {
-			console.log(`[Monsters] Movement: pruned ${beforeCount - monsters.length} dead monster(s)`);
-			changed = true;
-		}
-		const arrivalThreshold = 20;
-		let moved = 0;
-		let arrived = 0;
-		for (const m of monsters) {
-			if (m.state !== 'traveling') {
-				continue;
+			// Walls: repair HP first (if applicable)
+			if (attribute === 'perimeter_walls') {
+				const hp = attr.hp ?? 0;
+				const maxHp = attr.maxHp ?? this.wallMaxHpForLevel(attr.level);
+				if (maxHp > 0 && hp < maxHp) {
+					const toRepair = Math.min(remaining, maxHp - hp);
+					attr.hp = hp + toRepair;
+					attr.maxHp = maxHp; // ensure persisted
+					remaining -= toRepair;
+				}
 			}
-			const { x, y } = m.coordinates;
-			const dist = this.distanceToTown(x, y);
-			const moveDist = m.speed * minutes; // units
-			if (moveDist <= 0) {
-				continue;
+
+			// Contribute remaining credits toward upgrade progress
+			if (remaining > 0) {
+				attr.progress = (attr.progress || 0) + remaining;
+
+				// Apply level-ups while progress covers cost and not at max
+				while (attr.level < this.TOWN_MAX_LEVEL && attr.progress >= attr.nextLevelCost) {
+					attr.progress -= attr.nextLevelCost;
+					attr.level += 1;
+					attr.nextLevelCost = this.nextLevelCost(attr.level);
+
+					if (attribute === 'perimeter_walls') {
+						// Recompute walls HP and refill to max on level-up
+						attr.maxHp = this.wallMaxHpForLevel(attr.level);
+						attr.hp = attr.maxHp;
+					}
+
+					// Emit event for town upgrade
+					await this.addEvent({
+						type: 'town_upgrade_completed',
+						message: `Town upgraded: ${attribute} → level ${attr.level}`,
+						data: { attribute, level: attr.level },
+					});
+				}
 			}
-			if (moveDist >= dist) {
-				// Arrived to threshold
-				const snapped = this.clampToTownThreshold(x, y, arrivalThreshold);
-				m.coordinates = snapped;
-				m.state = 'attacking';
-				m.etaToTown = now;
-				await this.addEvent({ type: 'monster_arrived', message: `Monster ${m.id} arrived at town`, data: { id: m.id } });
-				arrived++;
+
+			// Persist and broadcast
+			// Ensure walls have consistent maxHp when level 0 → allow 0
+			town.attributes[attribute] = attr;
+			await this.setTownState(town);
+			await this.saveGameState();
+			await this.broadcastWorldStateUpdate();
+			await this.broadcastPlayerStateUpdate(playerAddress);
+
+			return { success: true, town, newBalance: player.balance };
+		} catch (err) {
+			console.error('[GameDO] contributeToTown error:', err);
+			return { success: false, error: 'Contribution failed' };
+		}
+	}
+
+	private async getStoredMonsters(): Promise<Monster[]> {
+		const raw = await this.ctx.storage.get<Monster[]>('monsters');
+		return Array.isArray(raw) ? raw : [];
+	}
+
+	private async setStoredMonsters(list: Monster[]) {
+		await this.ctx.storage.put('monsters', list);
+	}
+
+	async getMonsters(): Promise<Monster[]> {
+		const list = await this.getStoredMonsters();
+		const filtered = list.filter((m) => m.state !== 'dead');
+		if (filtered.length !== list.length) {
+			await this.setStoredMonsters(filtered);
+		}
+		return filtered;
+	}
+
+	private distanceToTown(x: number, y: number): number {
+		return Math.sqrt(x * x + y * y);
+	}
+
+	private clampToTownThreshold(x: number, y: number, threshold: number): { x: number; y: number } {
+		const dist = this.distanceToTown(x, y);
+		if (dist <= threshold) {
+			return { x, y };
+		}
+		const scale = threshold / dist;
+		return { x: Math.round(x * scale), y: Math.round(y * scale) };
+	}
+
+	private async monsterMovementTick(now: Date): Promise<boolean> {
+		try {
+			const lastIso = (await this.ctx.storage.get<string>('lastMonsterMoveAt')) || '';
+			const last = lastIso ? new Date(lastIso) : new Date(); // if missing, initialize with now
+			const minutes = (now.getTime() - last.getTime()) / 60000;
+			console.log(`[Monsters] Movement tick: now=${now.toISOString()} last=${last.toISOString()} Δmin=${minutes.toFixed(2)}`);
+			if (minutes <= 0) {
+				console.log('[Monsters] Movement: skipping (Δmin <= 0). Seeding lastMonsterMoveAt');
+				await this.ctx.storage.put('lastMonsterMoveAt', now.toISOString());
+				return false;
+			}
+
+			let changed = false;
+			let monsters = await this.getStoredMonsters();
+			// Prune any dead monsters lingering in storage
+			const beforeCount = monsters.length;
+			monsters = monsters.filter((m) => m.state !== 'dead');
+			if (monsters.length !== beforeCount) {
+				console.log(`[Monsters] Movement: pruned ${beforeCount - monsters.length} dead monster(s)`);
 				changed = true;
-			} else {
-				// Move closer along vector toward (0,0)
-				const ux = -x / dist;
-				const uy = -y / dist;
-				const nx = Math.round(x + ux * moveDist);
-				const ny = Math.round(y + uy * moveDist);
-				m.coordinates = { x: nx, y: ny };
-				moved++;
-				changed = true;
 			}
-		}
+			const arrivalThreshold = 20;
+			let moved = 0;
+			let arrived = 0;
+			for (const m of monsters) {
+				if (m.state !== 'traveling') {
+					continue;
+				}
+				const { x, y } = m.coordinates;
+				const dist = this.distanceToTown(x, y);
+				const moveDist = m.speed * minutes; // units
+				if (moveDist <= 0) {
+					continue;
+				}
+				if (moveDist >= dist) {
+					// Arrived to threshold
+					const snapped = this.clampToTownThreshold(x, y, arrivalThreshold);
+					m.coordinates = snapped;
+					m.state = 'attacking';
+					m.etaToTown = now;
+					await this.addEvent({ type: 'monster_arrived', message: `Monster ${m.id} arrived at town`, data: { id: m.id } });
+					arrived++;
+					changed = true;
+				} else {
+					// Move closer along vector toward (0,0)
+					const ux = -x / dist;
+					const uy = -y / dist;
+					const nx = Math.round(x + ux * moveDist);
+					const ny = Math.round(y + uy * moveDist);
+					m.coordinates = { x: nx, y: ny };
+					moved++;
+					changed = true;
+				}
+			}
 			if (changed) {
 				// Persist monster changes
 				await this.setStoredMonsters(monsters);
@@ -2155,7 +2180,9 @@ private async monsterMovementTick(now: Date): Promise<boolean> {
 						}
 						const newDuration = calculateMonsterMissionDuration(monsterNow.coordinates as any, dStats, vehicleData as any);
 						const startTs = (mission.startTime instanceof Date ? mission.startTime : new Date(mission.startTime)).getTime();
-						const currentPlannedEnd = (mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime)).getTime();
+						const currentPlannedEnd = (
+							mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime)
+						).getTime();
 						const newEnd = startTs + newDuration;
 						if (Number.isFinite(startTs) && Number.isFinite(currentPlannedEnd) && Number.isFinite(newEnd)) {
 							// Only shrink (never extend) by at least 1 second to avoid jitter
@@ -2184,217 +2211,222 @@ private async monsterMovementTick(now: Date): Promise<boolean> {
 			}
 			return changed;
 		} catch (e) {
-		console.error('[GameDO] monsterMovementTick error', e);
-		return false;
-	}
-}
-
-private async monsterAttackTick(now: Date): Promise<boolean> {
-	try {
-		const lastIso = (await this.ctx.storage.get<string>('lastMonsterAttackAt')) || '';
-		const last = lastIso ? new Date(lastIso) : new Date();
-		const seconds = Math.floor((now.getTime() - last.getTime()) / 1000);
-		const ticks = Math.floor(seconds / 20);
-		console.log(`[Monsters] Attack tick: now=${now.toISOString()} last=${last.toISOString()} Δsec=${seconds} ticks=${ticks}`);
-		if (ticks <= 0) {
-			console.log('[Monsters] Attack: skipping (ticks <= 0). Seeding lastMonsterAttackAt');
-			await this.ctx.storage.put('lastMonsterAttackAt', now.toISOString());
+			console.error('[GameDO] monsterMovementTick error', e);
 			return false;
 		}
+	}
 
+	private async monsterAttackTick(now: Date): Promise<boolean> {
+		try {
+			const lastIso = (await this.ctx.storage.get<string>('lastMonsterAttackAt')) || '';
+			const last = lastIso ? new Date(lastIso) : new Date();
+			const seconds = Math.floor((now.getTime() - last.getTime()) / 1000);
+			const ticks = Math.floor(seconds / 20);
+			console.log(`[Monsters] Attack tick: now=${now.toISOString()} last=${last.toISOString()} Δsec=${seconds} ticks=${ticks}`);
+			if (ticks <= 0) {
+				console.log('[Monsters] Attack: skipping (ticks <= 0). Seeding lastMonsterAttackAt');
+				await this.ctx.storage.put('lastMonsterAttackAt', now.toISOString());
+				return false;
+			}
+
+			let changed = false;
+			let monsters = await this.getStoredMonsters();
+			// Clean up any dead monsters
+			const beforeCount = monsters.length;
+			monsters = monsters.filter((m) => m.state !== 'dead');
+			if (monsters.length !== beforeCount) {
+				await this.setStoredMonsters(monsters);
+				console.log(`[Monsters] Attack: pruned ${beforeCount - monsters.length} dead monster(s)`);
+				changed = true;
+			}
+			const attackers = monsters.filter((m) => m.state === 'attacking');
+			if (attackers.length === 0) {
+				console.log('[Monsters] Attack: no attackers at town');
+				await this.ctx.storage.put('lastMonsterAttackAt', now.toISOString());
+				return false;
+			}
+
+			const town = await this.getTownState();
+			const DAMAGE_PER_TICK = 50;
+			let townChanged = false;
+			for (const m of attackers) {
+				const totalDamage = DAMAGE_PER_TICK * ticks;
+				const outcome = this.applyTownDamage(town, totalDamage);
+				console.log(
+					`[Monsters] Attack: ${m.id} dealt ${totalDamage} (walls:${outcome.wallsDamage} other:${outcome.attrDamage} prosperity:${outcome.prosperityDamage})`,
+				);
+				if (outcome.changed) {
+					townChanged = true;
+					await this.addEvent({
+						type: 'town_damaged',
+						message: `Town damaged by ${m.id} for ${totalDamage} (walls:${outcome.wallsDamage} other:${outcome.attrDamage} prosperity:${outcome.prosperityDamage})`,
+						data: { monsterId: m.id, ...outcome },
+					});
+				}
+				// Self-damage equal to damage dealt (monsters wear down while attacking)
+				const beforeHp = m.hp;
+				m.hp = Math.max(0, (m.hp || 0) - totalDamage);
+				if (m.hp !== beforeHp) {
+					changed = true;
+					console.log(`[Monsters] Attack: ${m.id} self-damaged ${beforeHp - m.hp}, hp ${beforeHp}→${m.hp}`);
+					if (m.hp <= 0) {
+						// Remove from list when defeated at the walls
+						monsters = monsters.filter((mm) => mm.id !== m.id);
+						await this.addEvent({ type: 'monster_killed', message: `Monster ${m.id} died while attacking the town`, data: { id: m.id } });
+					}
+				}
+			}
+
+			// Persist monster HP updates if any
+			if (changed) {
+				await this.setStoredMonsters(monsters);
+			}
+
+			if (townChanged || changed) {
+				if (townChanged) {
+					await this.setTownState(town);
+				}
+				await this.broadcastWorldStateUpdate();
+				console.log(`[Monsters] Attack: ${townChanged ? 'town state updated' : ''} ${changed ? 'monsters updated' : ''}`.trim());
+			} else {
+				console.log('[Monsters] Attack: no town changes');
+			}
+			await this.ctx.storage.put('lastMonsterAttackAt', now.toISOString());
+			return townChanged || changed;
+		} catch (e) {
+			console.error('[GameDO] monsterAttackTick error', e);
+			return false;
+		}
+	}
+
+	private applyTownDamage(
+		town: TownState,
+		amount: number,
+	): { changed: boolean; wallsDamage: number; attrDamage: number; prosperityDamage: number } {
+		let remaining = Math.max(0, amount);
 		let changed = false;
-		let monsters = await this.getStoredMonsters();
-		// Clean up any dead monsters
-		const beforeCount = monsters.length;
-		monsters = monsters.filter((m) => m.state !== 'dead');
-		if (monsters.length !== beforeCount) {
-			await this.setStoredMonsters(monsters);
-			console.log(`[Monsters] Attack: pruned ${beforeCount - monsters.length} dead monster(s)`);
-			changed = true;
-		}
-		const attackers = monsters.filter((m) => m.state === 'attacking');
-		if (attackers.length === 0) {
-			console.log('[Monsters] Attack: no attackers at town');
-			await this.ctx.storage.put('lastMonsterAttackAt', now.toISOString());
-			return false;
-		}
+		let wallsDamage = 0;
+		let attrDamage = 0;
+		let prosperityDamage = 0;
 
-		const town = await this.getTownState();
-		const DAMAGE_PER_TICK = 50;
-		let townChanged = false;
-		for (const m of attackers) {
-			const totalDamage = DAMAGE_PER_TICK * ticks;
-			const outcome = this.applyTownDamage(town, totalDamage);
-			console.log(`[Monsters] Attack: ${m.id} dealt ${totalDamage} (walls:${outcome.wallsDamage} other:${outcome.attrDamage} prosperity:${outcome.prosperityDamage})`);
-			if (outcome.changed) {
-				townChanged = true;
-				await this.addEvent({
-					type: 'town_damaged',
-					message: `Town damaged by ${m.id} for ${totalDamage} (walls:${outcome.wallsDamage} other:${outcome.attrDamage} prosperity:${outcome.prosperityDamage})`,
-					data: { monsterId: m.id, ...outcome },
-				});
-			}
-			// Self-damage equal to damage dealt (monsters wear down while attacking)
-			const beforeHp = m.hp;
-			m.hp = Math.max(0, (m.hp || 0) - totalDamage);
-			if (m.hp !== beforeHp) {
-				changed = true;
-				console.log(`[Monsters] Attack: ${m.id} self-damaged ${beforeHp - m.hp}, hp ${beforeHp}→${m.hp}`);
-				if (m.hp <= 0) {
-					// Remove from list when defeated at the walls
-					monsters = monsters.filter((mm) => mm.id !== m.id);
-					await this.addEvent({ type: 'monster_killed', message: `Monster ${m.id} died while attacking the town`, data: { id: m.id } });
-				}
-			}
-		}
-
-		// Persist monster HP updates if any
-		if (changed) {
-			await this.setStoredMonsters(monsters);
-		}
-
-		if (townChanged || changed) {
-			if (townChanged) {
-				await this.setTownState(town);
-			}
-			await this.broadcastWorldStateUpdate();
-			console.log(`[Monsters] Attack: ${townChanged ? 'town state updated' : ''} ${changed ? 'monsters updated' : ''}`.trim());
-		} else {
-			console.log('[Monsters] Attack: no town changes');
-		}
-		await this.ctx.storage.put('lastMonsterAttackAt', now.toISOString());
-		return townChanged || changed;
-	} catch (e) {
-		console.error('[GameDO] monsterAttackTick error', e);
-		return false;
-	}
-}
-
-private applyTownDamage(town: TownState, amount: number): { changed: boolean; wallsDamage: number; attrDamage: number; prosperityDamage: number } {
-	let remaining = Math.max(0, amount);
-	let changed = false;
-	let wallsDamage = 0;
-	let attrDamage = 0;
-	let prosperityDamage = 0;
-
-	// 1) Walls first
-	const walls = town.attributes['perimeter_walls'];
-	if (walls) {
-		const hp = walls.hp ?? 0;
-		if (hp > 0) {
-			const d = Math.min(remaining, hp);
-			walls.hp = hp - d;
-			remaining -= d;
-			wallsDamage += d;
-			changed = true;
-			if (walls.hp <= 0) {
-				// depleted
-				this.addEvent({ type: 'town_attribute_depleted', message: 'Perimeter walls depleted', data: { attribute: 'perimeter_walls' } });
-			}
-		}
-	}
-
-	// 2) Other attributes (currently vehicle_market) as conceptual HP buckets 500*level
-	if (remaining > 0) {
-		for (const key of Object.keys(town.attributes) as (keyof TownState['attributes'])[]) {
-			if (key === 'perimeter_walls') {
-				continue;
-			}
-			const attr = town.attributes[key];
-			if (attr.level <= 0) {
-				continue;
-			}
-			if (!attr.maxHp || attr.maxHp <= 0) {
-				attr.maxHp = 500 * attr.level;
-				attr.hp = attr.maxHp;
-			}
-			const aHp = attr.hp ?? 0;
-			if (aHp > 0 && remaining > 0) {
-				const d = Math.min(remaining, aHp);
-				attr.hp = aHp - d;
+		// 1) Walls first
+		const walls = town.attributes['perimeter_walls'];
+		if (walls) {
+			const hp = walls.hp ?? 0;
+			if (hp > 0) {
+				const d = Math.min(remaining, hp);
+				walls.hp = hp - d;
 				remaining -= d;
-				attrDamage += d;
+				wallsDamage += d;
 				changed = true;
-				if (attr.hp <= 0) {
-					this.addEvent({ type: 'town_attribute_depleted', message: `Town attribute depleted: ${key}`, data: { attribute: key } });
+				if (walls.hp <= 0) {
+					// depleted
+					this.addEvent({ type: 'town_attribute_depleted', message: 'Perimeter walls depleted', data: { attribute: 'perimeter_walls' } });
 				}
 			}
-			if (remaining <= 0) {
-				break;
+		}
+
+		// 2) Other attributes (currently vehicle_market) as conceptual HP buckets 500*level
+		if (remaining > 0) {
+			for (const key of Object.keys(town.attributes) as (keyof TownState['attributes'])[]) {
+				if (key === 'perimeter_walls') {
+					continue;
+				}
+				const attr = town.attributes[key];
+				if (attr.level <= 0) {
+					continue;
+				}
+				if (!attr.maxHp || attr.maxHp <= 0) {
+					attr.maxHp = 500 * attr.level;
+					attr.hp = attr.maxHp;
+				}
+				const aHp = attr.hp ?? 0;
+				if (aHp > 0 && remaining > 0) {
+					const d = Math.min(remaining, aHp);
+					attr.hp = aHp - d;
+					remaining -= d;
+					attrDamage += d;
+					changed = true;
+					if (attr.hp <= 0) {
+						this.addEvent({ type: 'town_attribute_depleted', message: `Town attribute depleted: ${key}`, data: { attribute: key } });
+					}
+				}
+				if (remaining <= 0) {
+					break;
+				}
 			}
 		}
-	}
 
-	// 3) Prosperity if still remaining
-	if (remaining > 0) {
-		const dP = 10 * Math.ceil(remaining / 50); // scale with remaining, keep base effect ~10 per tick
-		const before = town.prosperity;
-		town.prosperity = Math.max(0, before - dP);
-		prosperityDamage = before - town.prosperity;
-		if (prosperityDamage > 0) {
-			changed = true;
+		// 3) Prosperity if still remaining
+		if (remaining > 0) {
+			const dP = 10 * Math.ceil(remaining / 50); // scale with remaining, keep base effect ~10 per tick
+			const before = town.prosperity;
+			town.prosperity = Math.max(0, before - dP);
+			prosperityDamage = before - town.prosperity;
+			if (prosperityDamage > 0) {
+				changed = true;
+			}
 		}
+
+		return { changed, wallsDamage, attrDamage, prosperityDamage };
 	}
 
-	return { changed, wallsDamage, attrDamage, prosperityDamage };
-}
+	private async maybeSpawnMonster(now: Date, prosperity: number): Promise<boolean> {
+		try {
+			const monsters = await this.getStoredMonsters();
+			if (monsters.length >= 3) {
+				return false;
+			}
+			const lastSpawnIso = (await this.ctx.storage.get<string>('lastMonsterSpawnAt')) || '';
+			const lastSpawn = lastSpawnIso ? new Date(lastSpawnIso) : new Date(0);
+			const minsSince = (now.getTime() - lastSpawn.getTime()) / 60000;
+			if (minsSince < 30) {
+				return false;
+			}
 
-private async maybeSpawnMonster(now: Date, prosperity: number): Promise<boolean> {
-	try {
-		const monsters = await this.getStoredMonsters();
-		if (monsters.length >= 3) {
+			// Spawn at radius [2400, 3500]
+			const minR = 2400;
+			const maxR = 3500;
+			const theta = Math.random() * Math.PI * 2;
+			const r = minR + Math.random() * (maxR - minR);
+			const x = Math.round(r * Math.cos(theta));
+			const y = Math.round(r * Math.sin(theta));
+			const dist = this.distanceToTown(x, y);
+			const speed = 40; // units/min
+			const etaMins = dist / Math.max(1, speed);
+			const eta = new Date(now.getTime() + Math.round(etaMins * 60000));
+			const hp = Math.max(1, Math.round(2000 + 100 * Math.max(0, prosperity)));
+
+			const m: Monster = {
+				id: `monster-${crypto.randomUUID()}`,
+				coordinates: { x, y },
+				hp,
+				maxHp: hp,
+				speed,
+				state: 'traveling',
+				spawnTime: now,
+				etaToTown: eta,
+			};
+
+			monsters.push(m);
+			await this.setStoredMonsters(monsters);
+			await this.ctx.storage.put('lastMonsterSpawnAt', now.toISOString());
+
+			await this.addEvent({
+				type: 'monster_spawned',
+				message: `Monster spawned at (${x}, ${y}) with ${hp} HP`,
+				data: { id: m.id, x, y, hp },
+			});
+			return true;
+		} catch (e) {
+			console.error('[GameDO] maybeSpawnMonster error', e);
 			return false;
 		}
-		const lastSpawnIso = (await this.ctx.storage.get<string>('lastMonsterSpawnAt')) || '';
-		const lastSpawn = lastSpawnIso ? new Date(lastSpawnIso) : new Date(0);
-		const minsSince = (now.getTime() - lastSpawn.getTime()) / 60000;
-		if (minsSince < 30) {
-			return false;
-		}
-
-		// Spawn at radius [2400, 3500]
-		const minR = 2400;
-		const maxR = 3500;
-		const theta = Math.random() * Math.PI * 2;
-		const r = minR + Math.random() * (maxR - minR);
-		const x = Math.round(r * Math.cos(theta));
-		const y = Math.round(r * Math.sin(theta));
-		const dist = this.distanceToTown(x, y);
-		const speed = 40; // units/min
-		const etaMins = dist / Math.max(1, speed);
-		const eta = new Date(now.getTime() + Math.round(etaMins * 60000));
-		const hp = Math.max(1, Math.round(2000 + 100 * Math.max(0, prosperity)));
-
-		const m: Monster = {
-			id: `monster-${crypto.randomUUID()}`,
-			coordinates: { x, y },
-			hp,
-			maxHp: hp,
-			speed,
-			state: 'traveling',
-			spawnTime: now,
-			etaToTown: eta,
-		};
-
-		monsters.push(m);
-		await this.setStoredMonsters(monsters);
-		await this.ctx.storage.put('lastMonsterSpawnAt', now.toISOString());
-
-		await this.addEvent({
-			type: 'monster_spawned',
-			message: `Monster spawned at (${x}, ${y}) with ${hp} HP`,
-			data: { id: m.id, x, y, hp },
-		});
-		return true;
-	} catch (e) {
-		console.error('[GameDO] maybeSpawnMonster error', e);
-		return false;
 	}
-}
 
-// =============================================================================
-// Development/Testing
-// =============================================================================
+	// =============================================================================
+	// Development/Testing
+	// =============================================================================
 
 	/**
 	 * Reset all game data

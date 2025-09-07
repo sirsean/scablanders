@@ -6,40 +6,36 @@ import { getVehicleData } from '../../utils/vehicleUtils';
 export type DriftersListMode = 'browse' | 'select';
 
 export interface DriftersListOptions {
-  idPrefix: string; // unique prefix to avoid DOM id collisions
-  mode: DriftersListMode;
-  drifters: DrifterProfile[];
-  state: GameState;
+	idPrefix: string; // unique prefix to avoid DOM id collisions
+	mode: DriftersListMode;
+	drifters: DrifterProfile[];
+	state: GameState;
 }
 
 const SORTABLE_STATS = ['combat', 'scavenging', 'tech', 'speed'] as const;
 export type SortableStat = (typeof SORTABLE_STATS)[number];
 
 function isSortableStat(x: string): x is SortableStat {
-  return (SORTABLE_STATS as readonly string[]).includes(x);
+	return (SORTABLE_STATS as readonly string[]).includes(x);
 }
 
-function getEffectiveStat(
-  drifter: DrifterProfile,
-  stat: SortableStat,
-  state: GameState
-): number {
-  const dp = state.profile?.drifterProgress?.[String(drifter.tokenId)];
-  const bonus = dp?.bonuses?.[stat] || 0;
-  return (drifter as any)[stat] + bonus;
+function getEffectiveStat(drifter: DrifterProfile, stat: SortableStat, state: GameState): number {
+	const dp = state.profile?.drifterProgress?.[String(drifter.tokenId)];
+	const bonus = dp?.bonuses?.[stat] || 0;
+	return (drifter as any)[stat] + bonus;
 }
 
 export class DrifterListRow {
-  static render(
-    drifter: DrifterProfile,
-    opts: {
-      isSelected: boolean;
-      isBusy: boolean;
-      mode: DriftersListMode;
-    }
-  ): string {
-    const { isSelected, isBusy, mode } = opts;
-    const checkbox = `
+	static render(
+		drifter: DrifterProfile,
+		opts: {
+			isSelected: boolean;
+			isBusy: boolean;
+			mode: DriftersListMode;
+		},
+	): string {
+		const { isSelected, isBusy, mode } = opts;
+		const checkbox = `
       <div style="
         width: 18px;
         height: 18px;
@@ -53,21 +49,21 @@ export class DrifterListRow {
         ${isSelected ? '<span style=\"color: #000; font-size: 12px; font-weight: bold;\">✓</span>' : ''}
       </div>`;
 
-    // Effective stats for display (include bonuses)
-    const state = gameState.getState();
-    const dp = state.profile?.drifterProgress?.[String(drifter.tokenId)];
-    const unspent = dp?.unspentPoints || 0;
-    const hasUnspent = unspent > 0;
-    const eff = {
-      combat: getEffectiveStat(drifter, 'combat', state),
-      scavenging: getEffectiveStat(drifter, 'scavenging', state),
-      tech: getEffectiveStat(drifter, 'tech', state),
-      speed: getEffectiveStat(drifter, 'speed', state),
-    };
+		// Effective stats for display (include bonuses)
+		const state = gameState.getState();
+		const dp = state.profile?.drifterProgress?.[String(drifter.tokenId)];
+		const unspent = dp?.unspentPoints || 0;
+		const hasUnspent = unspent > 0;
+		const eff = {
+			combat: getEffectiveStat(drifter, 'combat', state),
+			scavenging: getEffectiveStat(drifter, 'scavenging', state),
+			tech: getEffectiveStat(drifter, 'tech', state),
+			speed: getEffectiveStat(drifter, 'speed', state),
+		};
 
-    const gridTemplateCols = mode === 'select' ? '28px 80px repeat(4, 1fr)' : '80px repeat(4, 1fr)';
+		const gridTemplateCols = mode === 'select' ? '28px 80px repeat(4, 1fr)' : '80px repeat(4, 1fr)';
 
-    return `
+		return `
       <div class="drifter-option" data-id="${drifter.tokenId}" data-busy="${isBusy}" style="
         display: grid;
         grid-template-columns: ${gridTemplateCols};
@@ -99,130 +95,136 @@ export class DrifterListRow {
         <div style="color: #ffff66; text-align: center; font-size: 16px; font-weight: 600;">${eff.speed}</div>
       </div>
     `;
-  }
+	}
 }
 
 export class DriftersList {
-  static render(opts: DriftersListOptions): string {
-    const { idPrefix, mode, drifters, state } = opts;
+	static render(opts: DriftersListOptions): string {
+		const { idPrefix, mode, drifters, state } = opts;
 
-    // Compute busy set from active missions (merge playerMissions with global filtered list)
-    const selfAddr = state.playerAddress?.toLowerCase() || '';
-    const fromPlayer = state.playerMissions || [];
-    const fromGlobal = (state.activeMissions || []).filter((m) => m.playerAddress?.toLowerCase() === selfAddr);
-    const mergedMap = new Map<string, any>();
-    for (const m of fromGlobal) {
-      mergedMap.set(m.id, m);
-    }
-    for (const m of fromPlayer) {
-      mergedMap.set(m.id, m);
-    }
-    const busyDrifterIds = new Set(
-      Array.from(mergedMap.values()).filter((m: any) => m.status === 'active').flatMap((m: any) => m.drifterIds)
-    );
+		// Compute busy set from active missions (merge playerMissions with global filtered list)
+		const selfAddr = state.playerAddress?.toLowerCase() || '';
+		const fromPlayer = state.playerMissions || [];
+		const fromGlobal = (state.activeMissions || []).filter((m) => m.playerAddress?.toLowerCase() === selfAddr);
+		const mergedMap = new Map<string, any>();
+		for (const m of fromGlobal) {
+			mergedMap.set(m.id, m);
+		}
+		for (const m of fromPlayer) {
+			mergedMap.set(m.id, m);
+		}
+		const busyDrifterIds = new Set(
+			Array.from(mergedMap.values())
+				.filter((m: any) => m.status === 'active')
+				.flatMap((m: any) => m.drifterIds),
+		);
 
-    // Selected and capacity (mission-select mode)
-    const selectedIds = state.selectedDrifterIds || [];
-    const selectedVehicleInstance = state.profile?.vehicles.find((v) => v.instanceId === state.selectedVehicleInstanceId);
-    const selectedVehicle = selectedVehicleInstance ? getVehicleData(selectedVehicleInstance.vehicleId) : undefined;
-    const maxDrifters = selectedVehicle?.maxDrifters || 0;
-    const atCapacity = mode === 'select' && selectedVehicle && selectedIds.length >= maxDrifters;
+		// Selected and capacity (mission-select mode)
+		const selectedIds = state.selectedDrifterIds || [];
+		const selectedVehicleInstance = state.profile?.vehicles.find((v) => v.instanceId === state.selectedVehicleInstanceId);
+		const selectedVehicle = selectedVehicleInstance ? getVehicleData(selectedVehicleInstance.vehicleId) : undefined;
+		const maxDrifters = selectedVehicle?.maxDrifters || 0;
+		const atCapacity = mode === 'select' && selectedVehicle && selectedIds.length >= maxDrifters;
 
-    // Active sort metric
-    const activeSort: SortableStat = isSortableStat(state.drifterSortBy) ? (state.drifterSortBy as SortableStat) : 'combat';
+		// Active sort metric
+		const activeSort: SortableStat = isSortableStat(state.drifterSortBy) ? (state.drifterSortBy as SortableStat) : 'combat';
 
-    // Sort drifters: available first then by chosen attribute (effective stat, desc)
-    const sortedDrifters = [...drifters].sort((a, b) => {
-      const aBusy = busyDrifterIds.has(a.tokenId);
-      const bBusy = busyDrifterIds.has(b.tokenId);
-      if (aBusy && !bBusy) {
-        return 1;
-      }
-      if (!aBusy && bBusy) {
-        return -1;
-      }
-      const av = getEffectiveStat(a, activeSort, state);
-      const bv = getEffectiveStat(b, activeSort, state);
-      if (bv !== av) {
-        return bv - av;
-      }
-      // tie-breaker by token id asc
-      return a.tokenId - b.tokenId;
-    });
+		// Sort drifters: available first then by chosen attribute (effective stat, desc)
+		const sortedDrifters = [...drifters].sort((a, b) => {
+			const aBusy = busyDrifterIds.has(a.tokenId);
+			const bBusy = busyDrifterIds.has(b.tokenId);
+			if (aBusy && !bBusy) {
+				return 1;
+			}
+			if (!aBusy && bBusy) {
+				return -1;
+			}
+			const av = getEffectiveStat(a, activeSort, state);
+			const bv = getEffectiveStat(b, activeSort, state);
+			if (bv !== av) {
+				return bv - av;
+			}
+			// tie-breaker by token id asc
+			return a.tokenId - b.tokenId;
+		});
 
-    const _headerRight = mode === 'select'
-      ? `<span style=\"font-size: 11px; color: ${atCapacity ? '#ff6b6b' : '#ccc'}; margin-left: auto;\">${selectedIds.length} / ${maxDrifters > 0 ? maxDrifters : '-'} Drifters Selected</span>`
-      : `<span style=\"font-size: 11px; color: #888;\">(Showing ${sortedDrifters.length}/${drifters.length})</span>`;
+		const _headerRight =
+			mode === 'select'
+				? `<span style=\"font-size: 11px; color: ${atCapacity ? '#ff6b6b' : '#ccc'}; margin-left: auto;\">${selectedIds.length} / ${maxDrifters > 0 ? maxDrifters : '-'} Drifters Selected</span>`
+				: `<span style=\"font-size: 11px; color: #888;\">(Showing ${sortedDrifters.length}/${drifters.length})</span>`;
 
-    const headerGridCols = mode === 'select' ? '28px 80px repeat(4, 1fr)' : '80px repeat(4, 1fr)';
-    const headerLeading = mode === 'select' ? '<div></div><div></div>' : '<div></div>';
+		const headerGridCols = mode === 'select' ? '28px 80px repeat(4, 1fr)' : '80px repeat(4, 1fr)';
+		const headerLeading = mode === 'select' ? '<div></div><div></div>' : '<div></div>';
 
-    const headerGrid = `
+		const headerGrid = `
       <div id="${idPrefix}-drifter-header" style="margin-bottom: 8px; display: grid; grid-template-columns: ${headerGridCols}; gap: 12px; align-items: center; padding-right: 16px;">
         ${headerLeading}
         ${SORTABLE_STATS.map((s) => {
-          const label = (s === 'combat') ? 'COMBAT' : (s === 'scavenging') ? 'SCAV' : (s === 'tech') ? 'TECH' : 'SPEED';
-          const active = s === activeSort;
-          const color = s === 'combat' ? '#ff6666' : s === 'scavenging' ? '#66ff66' : s === 'tech' ? '#6666ff' : '#ffff66';
-          return `<div id=\"${idPrefix}-sort-${s}\" data-sort=\"${s}\" role=\"button\" tabindex=\"0\" aria-pressed=\"${active ? 'true' : 'false'}\" style=\"\n            cursor: pointer;\n            text-align: center;\n            color: ${color};\n            font-size: 16px;\n            letter-spacing: 0.5px;\n            ${active ? 'font-weight: 800; text-decoration: underline;' : 'opacity: 0.9; font-weight: 600;'}\n          \">${label}</div>`;
-        }).join('')}
+					const label = s === 'combat' ? 'COMBAT' : s === 'scavenging' ? 'SCAV' : s === 'tech' ? 'TECH' : 'SPEED';
+					const active = s === activeSort;
+					const color = s === 'combat' ? '#ff6666' : s === 'scavenging' ? '#66ff66' : s === 'tech' ? '#6666ff' : '#ffff66';
+					return `<div id=\"${idPrefix}-sort-${s}\" data-sort=\"${s}\" role=\"button\" tabindex=\"0\" aria-pressed=\"${active ? 'true' : 'false'}\" style=\"\n            cursor: pointer;\n            text-align: center;\n            color: ${color};\n            font-size: 16px;\n            letter-spacing: 0.5px;\n            ${active ? 'font-weight: 800; text-decoration: underline;' : 'opacity: 0.9; font-weight: 600;'}\n          \">${label}</div>`;
+				}).join('')}
       </div>
     `;
 
-    return `
+		return `
       ${headerGrid}
       <div id="${idPrefix}-drifter-list-container" style="flex: 1; overflow-y: auto; margin-bottom: 12px; min-height: 0; max-height: 405px;">
-        ${sortedDrifters.map((d) => DrifterListRow.render(d, {
-          isSelected: selectedIds.includes(d.tokenId),
-          isBusy: busyDrifterIds.has(d.tokenId),
-          mode
-        })).join('')}
+        ${sortedDrifters
+					.map((d) =>
+						DrifterListRow.render(d, {
+							isSelected: selectedIds.includes(d.tokenId),
+							isBusy: busyDrifterIds.has(d.tokenId),
+							mode,
+						}),
+					)
+					.join('')}
       </div>
     `;
-  }
+	}
 
-  static attachHandlers(opts: DriftersListOptions & { idPrefix: string; onChanged?: () => void }): void {
-    const { idPrefix, mode, onChanged } = opts;
+	static attachHandlers(opts: DriftersListOptions & { idPrefix: string; onChanged?: () => void }): void {
+		const { idPrefix, mode, onChanged } = opts;
 
-    // Header sort clicks (single click)
-    SORTABLE_STATS.forEach((s) => {
-      const el = document.getElementById(`${idPrefix}-sort-${s}`);
-      if (el) {
-        const activate = () => {
-          gameState.setDrifterSortBy(s);
-          onChanged?.();
-        };
-        el.addEventListener('click', activate);
-        el.addEventListener('keydown', (e) => {
-          if ((e as KeyboardEvent).key === 'Enter' || (e as KeyboardEvent).key === ' ') {
-            e.preventDefault();
-            activate();
-          }
-        });
-      }
-    });
+		// Header sort clicks (single click)
+		SORTABLE_STATS.forEach((s) => {
+			const el = document.getElementById(`${idPrefix}-sort-${s}`);
+			if (el) {
+				const activate = () => {
+					gameState.setDrifterSortBy(s);
+					onChanged?.();
+				};
+				el.addEventListener('click', activate);
+				el.addEventListener('keydown', (e) => {
+					if ((e as KeyboardEvent).key === 'Enter' || (e as KeyboardEvent).key === ' ') {
+						e.preventDefault();
+						activate();
+					}
+				});
+			}
+		});
 
-    // Row click
-    document.querySelectorAll(`#${idPrefix}-drifter-list-container .drifter-option`).forEach((row) => {
-      row.addEventListener('click', (e) => {
-        e.preventDefault();
-        const el = row as HTMLElement;
-        const id = Number(el.getAttribute('data-id'));
-        const isBusy = el.getAttribute('data-busy') === 'true';
+		// Row click
+		document.querySelectorAll(`#${idPrefix}-drifter-list-container .drifter-option`).forEach((row) => {
+			row.addEventListener('click', (e) => {
+				e.preventDefault();
+				const el = row as HTMLElement;
+				const id = Number(el.getAttribute('data-id'));
+				const isBusy = el.getAttribute('data-busy') === 'true';
 
-        if (mode === 'browse') {
-          (window as any).openDrifterInfo?.(id);
-          return;
-        }
+				if (mode === 'browse') {
+					(window as any).openDrifterInfo?.(id);
+					return;
+				}
 
-        if (isBusy) {
-          return; // can't select busy drifters
-        }
-        gameState.toggleDrifterSelection(id);
-        // Allow caller to re-render panel to update UI, estimates, and buttons
-        onChanged?.();
-      });
-    });
-  }
+				if (isBusy) {
+					return; // can't select busy drifters
+				}
+				gameState.toggleDrifterSelection(id);
+				// Allow caller to re-render panel to update UI, estimates, and buttons
+				onChanged?.();
+			});
+		});
+	}
 }
-

@@ -56,8 +56,7 @@ export class MarketPanel {
 		}
 		const titleEl = document.getElementById('market-title');
 		if (titleEl) {
-			(titleEl as HTMLElement).textContent =
-				marketLevel != null ? `Vehicle Market (Level ${marketLevel})` : 'Vehicle Market (Loading...)';
+			(titleEl as HTMLElement).textContent = marketLevel != null ? `Vehicle Market (Level ${marketLevel})` : 'Vehicle Market (Loading...)';
 		}
 
 		if (isLoading) {

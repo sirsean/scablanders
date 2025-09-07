@@ -13,7 +13,7 @@ world.get('/state', async (c) => {
 		const gameId = c.env.GAME_DO.idFromName('game');
 		const gameStub = c.env.GAME_DO.get(gameId);
 
-const [resourceNodes, activeMissions, worldMetrics, town, monsters] = await Promise.all([
+		const [resourceNodes, activeMissions, worldMetrics, town, monsters] = await Promise.all([
 			gameStub.getResourceNodes(),
 			gameStub.getActiveMissions(),
 			gameStub.getWorldMetrics(),

@@ -135,7 +135,6 @@ export class GameScene extends Phaser.Scene {
 			}
 		});
 
-
 		// Listen for game state changes
 		gameState.onStateChange((state: GameState) => {
 			this.updateWorldDisplay(state);
@@ -158,7 +157,7 @@ export class GameScene extends Phaser.Scene {
 		this.cursorKeys = this.input.keyboard.createCursorKeys();
 
 		// Mouse wheel zoom
-this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz: number, _event: WheelEvent) => {
+		this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz: number, _event: WheelEvent) => {
 			const cam = this.cameras.main;
 			const factor = dy > 0 ? 0.9 : 1.1;
 			const next = Phaser.Math.Clamp(cam.zoom * factor, MIN_ZOOM, MAX_ZOOM);
@@ -173,7 +172,6 @@ this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz:
 		});
 	}
 
-
 	private buildMissionTooltipHtml(mission: Mission): string {
 		const currentState = gameState.getState();
 		const timeRemaining = this.formatTimeRemaining(mission.completionTime);
@@ -182,7 +180,11 @@ this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz:
 		if (drifterProfiles.length === 0) {
 			drifterNames = mission.drifterIds.map((id) => `#${id}`).join(', ');
 		} else if (drifterProfiles.length > 3) {
-			drifterNames = drifterProfiles.slice(0, 3).map((d) => d.name).join(', ') + `, +${drifterProfiles.length - 3} more`;
+			drifterNames =
+				drifterProfiles
+					.slice(0, 3)
+					.map((d) => d.name)
+					.join(', ') + `, +${drifterProfiles.length - 3} more`;
 		}
 		const targetNode = currentState.resourceNodes?.find((r) => r.id === mission.targetNodeId);
 		const targetName = targetNode ? `${targetNode.type.toUpperCase()} (${targetNode.rarity})` : 'Unknown Target';
@@ -190,10 +192,10 @@ this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz:
 		if (mission.vehicleInstanceId) {
 			const vehicleInstance = currentState.profile?.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
 			if (vehicleInstance) {
-					const vehicleData = getVehicleData(vehicleInstance.vehicleId);
-					if (vehicleData) {
-						vehicleName = vehicleData.name;
-					}
+				const vehicleData = getVehicleData(vehicleInstance.vehicleId);
+				if (vehicleData) {
+					vehicleName = vehicleData.name;
+				}
 			}
 		}
 		// Simple HTML formatting
@@ -208,7 +210,9 @@ this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz:
 
 	private hudShowMissionTooltip(pointer: Phaser.Input.Pointer, mission: Mission) {
 		const html = this.buildMissionTooltipHtml(mission);
-		window.dispatchEvent(new CustomEvent('hud:mission-tooltip', { detail: { visible: true, x: pointer.x, y: pointer.y, content: html } } as any));
+		window.dispatchEvent(
+			new CustomEvent('hud:mission-tooltip', { detail: { visible: true, x: pointer.x, y: pointer.y, content: html } } as any),
+		);
 	}
 	private hudUpdateMissionTooltip(pointer: Phaser.Input.Pointer) {
 		window.dispatchEvent(new CustomEvent('hud:mission-tooltip', { detail: { visible: true, x: pointer.x, y: pointer.y } } as any));
@@ -216,7 +220,6 @@ this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz:
 	private hudHideMissionTooltip() {
 		window.dispatchEvent(new CustomEvent('hud:mission-tooltip', { detail: { visible: false } } as any));
 	}
-
 
 	private formatTimeRemaining(completionTime: Date | string): string {
 		const endDate = completionTime instanceof Date ? completionTime : new Date(completionTime);
@@ -513,7 +516,9 @@ this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz:
 			indicator.destroy();
 			const glow = this.missionIndicatorGlows.get(missionId);
 			if (glow) {
-				try { glow.destroy(); } catch {}
+				try {
+					glow.destroy();
+				} catch {}
 				this.missionIndicatorGlows.delete(missionId);
 			}
 		});
@@ -936,31 +941,36 @@ this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz:
 		}
 	}
 
-	private updateDrifterPosition(drifterContainer: Phaser.GameObjects.Container, mission: Mission, targetNode?: ResourceNode, targetMonster?: any) {
+	private updateDrifterPosition(
+		drifterContainer: Phaser.GameObjects.Container,
+		mission: Mission,
+		targetNode?: ResourceNode,
+		targetMonster?: any,
+	) {
 		try {
 			const now = new Date();
 			const startTime = mission.startTime instanceof Date ? mission.startTime : new Date(mission.startTime);
 			const endTime = mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime);
-			
+
 			// Validate dates
 			if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
 				console.warn('Invalid mission dates, hiding drifter container');
 				drifterContainer.setVisible(false);
 				return;
 			}
-			
+
 			const totalDuration = endTime.getTime() - startTime.getTime();
 			const elapsed = now.getTime() - startTime.getTime();
-			
+
 			// Prevent division by zero
 			if (totalDuration <= 0) {
 				console.warn('Invalid mission duration, hiding drifter container');
 				drifterContainer.setVisible(false);
 				return;
 			}
-			
+
 			const progress = Math.max(0, Math.min(1, elapsed / totalDuration));
-			
+
 			let nodeX: number | undefined, nodeY: number | undefined;
 			if (targetNode) {
 				({ x: nodeX, y: nodeY } = targetNode.coordinates);
@@ -1079,7 +1089,7 @@ this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz:
 
 		// Keyboard panning (arrows or WASD); hold Shift to accelerate
 		const dt = delta / 1000;
-		const accel = (this.cursorKeys.shift?.isDown) ? 1200 : 600;
+		const accel = this.cursorKeys.shift?.isDown ? 1200 : 600;
 		let vx = 0;
 		let vy = 0;
 		if (this.cursorKeys.left?.isDown) {
@@ -1134,7 +1144,7 @@ this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz:
 			});
 		}
 
-	// Periodic cleanup check for orphaned containers (every 5 seconds)
+		// Periodic cleanup check for orphaned containers (every 5 seconds)
 		if (Math.floor(this.time.now / 5000) !== this.lastCleanupCheck) {
 			this.lastCleanupCheck = Math.floor(this.time.now / 5000);
 			this.checkForOrphanedContainers();
@@ -1211,7 +1221,7 @@ this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz:
 			this.bgTile.tilePositionY = cam.scrollY * cam.zoom;
 			this.bgTile.setTileScale(cam.zoom);
 		}
-}
+	}
 
 	private drawDashedLine(
 		route: Phaser.GameObjects.Graphics,
@@ -1309,10 +1319,12 @@ this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz:
 					this.clearPlanningOverlay();
 					return;
 				}
-				nodeX = monster.coordinates.x; nodeY = monster.coordinates.y;
+				nodeX = monster.coordinates.x;
+				nodeY = monster.coordinates.y;
 			}
 
-			const nodeXFinal = nodeX!; const nodeYFinal = nodeY!;
+			const nodeXFinal = nodeX!;
+			const nodeYFinal = nodeY!;
 
 			// Create graphics objects if needed
 			if (!this.planningRoute) {
@@ -1456,15 +1468,16 @@ this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz:
 				container.setDepth(DEPTH_MONSTERS);
 				const circle = this.add.circle(0, 0, 10, 0xdc143c, 0.9);
 				circle.setStrokeStyle(2, 0x000000, 1);
-				const label = this.add.text(0, -18, `HP ${m.hp}/${m.maxHp}`, {
-					fontSize: '11px',
-					color: '#ffdddd',
-					fontFamily: 'Courier New',
-					align: 'center',
-					backgroundColor: 'rgba(0,0,0,0.6)',
-					padding: { x: 4, y: 2 },
-				})
-				.setOrigin(0.5);
+				const label = this.add
+					.text(0, -18, `HP ${m.hp}/${m.maxHp}`, {
+						fontSize: '11px',
+						color: '#ffdddd',
+						fontFamily: 'Courier New',
+						align: 'center',
+						backgroundColor: 'rgba(0,0,0,0.6)',
+						padding: { x: 4, y: 2 },
+					})
+					.setOrigin(0.5);
 				container.add(circle);
 				container.add(label);
 				this.monsterIcons.set(m.id, container);

@@ -2,9 +2,9 @@ import type { GameState } from '../gameState';
 import { DriftersList } from './components/DriftersList';
 
 export class DriftersPanel {
-  static createDriftersPanel(): HTMLElement {
-    const panel = document.createElement('div');
-    panel.id = 'drifters-panel';
+	static createDriftersPanel(): HTMLElement {
+		const panel = document.createElement('div');
+		panel.id = 'drifters-panel';
 		panel.className = 'game-panel';
 		panel.style.cssText = `
       position: fixed;
@@ -38,17 +38,17 @@ export class DriftersPanel {
 		return panel;
 	}
 
-  static updateDriftersPanel(state: GameState) {
-    const content = document.getElementById('drifters-content');
+	static updateDriftersPanel(state: GameState) {
+		const content = document.getElementById('drifters-content');
 		if (!content) {
 			return;
 		}
 
-    // Preserve scroll position of the outer panel and inner list before re-render
-    const panelEl = document.getElementById('drifters-panel') as HTMLElement | null;
-    const prevPanelScrollTop = panelEl?.scrollTop ?? 0;
-    const listElBefore = document.getElementById('drifters-panel-drifter-list-container') as HTMLElement | null;
-    const prevListScrollTop = listElBefore?.scrollTop ?? 0;
+		// Preserve scroll position of the outer panel and inner list before re-render
+		const panelEl = document.getElementById('drifters-panel') as HTMLElement | null;
+		const prevPanelScrollTop = panelEl?.scrollTop ?? 0;
+		const listElBefore = document.getElementById('drifters-panel-drifter-list-container') as HTMLElement | null;
+		const prevListScrollTop = listElBefore?.scrollTop ?? 0;
 
 		if (state.isLoadingProfile) {
 			content.innerHTML = '<p>Loading drifters...</p>';
@@ -61,41 +61,41 @@ export class DriftersPanel {
 		}
 
 		content.innerHTML = DriftersList.render({
-      idPrefix: 'drifters-panel',
-      mode: 'browse',
-      drifters: state.ownedDrifters,
-      state,
-    });
+			idPrefix: 'drifters-panel',
+			mode: 'browse',
+			drifters: state.ownedDrifters,
+			state,
+		});
 
-    // Update summary counter in the header row
-    const summaryEl = document.getElementById('drifters-panel-summary');
-    if (summaryEl) {
-      const total = state.ownedDrifters.length;
-      summaryEl.textContent = `(Showing ${total}/${total})`;
-    }
+		// Update summary counter in the header row
+		const summaryEl = document.getElementById('drifters-panel-summary');
+		if (summaryEl) {
+			const total = state.ownedDrifters.length;
+			summaryEl.textContent = `(Showing ${total}/${total})`;
+		}
 
-    // Attach row click handlers (open drifter info in browse mode)
-    DriftersList.attachHandlers({
-      idPrefix: 'drifters-panel',
-      mode: 'browse',
-      drifters: state.ownedDrifters,
-      state,
-    });
+		// Attach row click handlers (open drifter info in browse mode)
+		DriftersList.attachHandlers({
+			idPrefix: 'drifters-panel',
+			mode: 'browse',
+			drifters: state.ownedDrifters,
+			state,
+		});
 
-    // Restore scroll positions after re-render (multi-frame to avoid race with layout/image loads)
-    const restoreScroll = (tries: number) => {
-      const listElAfter = document.getElementById('drifters-panel-drifter-list-container') as HTMLElement | null;
-      if (listElAfter != null) {
-        listElAfter.scrollTop = prevListScrollTop;
-      }
-      const panelElAfter = document.getElementById('drifters-panel') as HTMLElement | null;
-      if (panelElAfter != null) {
-        panelElAfter.scrollTop = prevPanelScrollTop;
-      }
-      if (tries > 1) {
-        requestAnimationFrame(() => restoreScroll(tries - 1));
-      }
-    };
-    requestAnimationFrame(() => restoreScroll(3));
+		// Restore scroll positions after re-render (multi-frame to avoid race with layout/image loads)
+		const restoreScroll = (tries: number) => {
+			const listElAfter = document.getElementById('drifters-panel-drifter-list-container') as HTMLElement | null;
+			if (listElAfter != null) {
+				listElAfter.scrollTop = prevListScrollTop;
+			}
+			const panelElAfter = document.getElementById('drifters-panel') as HTMLElement | null;
+			if (panelElAfter != null) {
+				panelElAfter.scrollTop = prevPanelScrollTop;
+			}
+			if (tries > 1) {
+				requestAnimationFrame(() => restoreScroll(tries - 1));
+			}
+		};
+		requestAnimationFrame(() => restoreScroll(3));
 	}
 }

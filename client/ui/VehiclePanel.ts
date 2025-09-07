@@ -107,8 +107,8 @@ export class VehiclePanel {
 		content.innerHTML = `
 	      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px;">
 	        ${Object.entries(vehiclesByType)
-					.map(([vehicleId, instances]) => this.renderVehicleCard(vehicleId, instances, activeVehicleIds))
-					.join('')}
+						.map(([vehicleId, instances]) => this.renderVehicleCard(vehicleId, instances, activeVehicleIds))
+						.join('')}
 	      </div>
 	    `;
 

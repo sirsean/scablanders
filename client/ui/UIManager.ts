@@ -114,7 +114,7 @@ export class UIManager {
 		this.createDrifterInfoPanel();
 	}
 
-private createActionMenu() {
+	private createActionMenu() {
 		const menu = document.createElement('div');
 		menu.id = 'action-menu';
 		menu.style.cssText = `
@@ -183,7 +183,7 @@ private createActionMenu() {
 		this.swallowPointerEvents(menu);
 	}
 
-private createNotificationContainer() {
+	private createNotificationContainer() {
 		this.notificationContainer = document.createElement('div');
 		this.notificationContainer.id = 'notifications';
 		this.notificationContainer.style.cssText = `
@@ -202,55 +202,55 @@ private createNotificationContainer() {
 		this.swallowPointerEvents(this.notificationContainer);
 	}
 
-private createMissionPanel() {
+	private createMissionPanel() {
 		this.missionPanel = MissionPanel.createMissionPanel();
 		document.body.appendChild(this.missionPanel);
 		this.swallowPointerEvents(this.missionPanel);
-}
+	}
 
-private createDriftersPanel() {
+	private createDriftersPanel() {
 		this.driftersPanel = DriftersPanel.createDriftersPanel();
 		document.body.appendChild(this.driftersPanel);
 		this.swallowPointerEvents(this.driftersPanel);
-}
+	}
 
-private createProfilePanel() {
+	private createProfilePanel() {
 		this.profilePanel = ProfilePanel.createProfilePanel();
 		document.body.appendChild(this.profilePanel);
 		this.swallowPointerEvents(this.profilePanel);
-}
+	}
 
-private createActiveMissionsPanel() {
+	private createActiveMissionsPanel() {
 		this.activeMissionsPanel = ActiveMissionsPanel.createActiveMissionsPanel();
 		document.body.appendChild(this.activeMissionsPanel);
 		this.swallowPointerEvents(this.activeMissionsPanel);
-}
+	}
 
-private createMarketPanel() {
+	private createMarketPanel() {
 		this.marketPanel = MarketPanel.createMarketPanel();
 		document.body.appendChild(this.marketPanel);
 		this.swallowPointerEvents(this.marketPanel);
-}
+	}
 
-private createVehiclePanel() {
+	private createVehiclePanel() {
 		this.vehiclePanel = VehiclePanel.createVehiclePanel();
 		document.body.appendChild(this.vehiclePanel);
 		this.swallowPointerEvents(this.vehiclePanel);
-}
+	}
 
-private createLogPanel() {
+	private createLogPanel() {
 		this.logPanel = LogPanel.createLogPanel();
 		document.body.appendChild(this.logPanel);
 		this.swallowPointerEvents(this.logPanel);
-}
+	}
 
-private createTownPanel() {
+	private createTownPanel() {
 		this.townPanel = TownPanel.createTownPanel();
 		document.body.appendChild(this.townPanel);
 		this.swallowPointerEvents(this.townPanel);
-}
+	}
 
-private createMissionTooltip() {
+	private createMissionTooltip() {
 		this.missionTooltipEl = document.createElement('div');
 		this.missionTooltipEl.id = 'mission-tooltip';
 		this.missionTooltipEl.style.cssText = `
@@ -270,13 +270,13 @@ private createMissionTooltip() {
 		document.body.appendChild(this.missionTooltipEl);
 	}
 
-private createDrifterInfoPanel() {
+	private createDrifterInfoPanel() {
 		this.drifterInfoPanel = DrifterInfoPanel.createDrifterInfoPanel();
 		document.body.appendChild(this.drifterInfoPanel);
 		// Panel already stops 'click', add full pointer swallowing too
 		this.swallowPointerEvents(this.drifterInfoPanel);
 		(window as any).openDrifterInfo = (tokenId: number) => DrifterInfoPanel.open(tokenId);
-}
+	}
 
 	private setupEventListeners() {
 		// HUD mission tooltip events from GameScene
@@ -377,11 +377,11 @@ private createDrifterInfoPanel() {
 					if (gameState.getState().showMissionPanel) {
 						gameState.toggleMissionPanel();
 					}
-				if (gameState.getState().showDriftersPanel) {
-					gameState.toggleDriftersPanel();
-				}
-				if (gameState.getState().showProfilePanel) {
-					gameState.toggleProfilePanel();
+					if (gameState.getState().showDriftersPanel) {
+						gameState.toggleDriftersPanel();
+					}
+					if (gameState.getState().showProfilePanel) {
+						gameState.toggleProfilePanel();
 					}
 					if (gameState.getState().showTownPanel) {
 						gameState.toggleTownPanel();
@@ -440,33 +440,33 @@ private createDrifterInfoPanel() {
 			}
 		}
 
-			if (this.activeMissionsPanel) {
-				this.activeMissionsPanel.style.display = state.showActiveMissionsPanel ? 'block' : 'none';
-				if (state.showActiveMissionsPanel) {
-					// Merge player-specific missions with any missing ones from global list filtered by player
-					const fromPlayer = state.playerMissions || [];
-					const fromGlobal = (state.activeMissions || []).filter(
-						(m) => state.playerAddress && m.playerAddress?.toLowerCase() === state.playerAddress.toLowerCase(),
-					);
-					const mergedMap = new Map<string, any>();
-					for (const m of fromGlobal) {
-						mergedMap.set(m.id, m);
-					}
-					for (const m of fromPlayer) {
-						mergedMap.set(m.id, m); // prefer player version if duplicate
-					}
-					const missionsForPanel = Array.from(mergedMap.values());
-					ActiveMissionsPanel.updateActiveMissionsPanel(
-						missionsForPanel,
-						state.ownedDrifters,
-						state.resourceNodes || [],
-						state.isLoadingPlayerMissions,
-					);
-				} else {
-					// Stop the live timer when panel is hidden
-					ActiveMissionsPanel.stopLiveTimer();
+		if (this.activeMissionsPanel) {
+			this.activeMissionsPanel.style.display = state.showActiveMissionsPanel ? 'block' : 'none';
+			if (state.showActiveMissionsPanel) {
+				// Merge player-specific missions with any missing ones from global list filtered by player
+				const fromPlayer = state.playerMissions || [];
+				const fromGlobal = (state.activeMissions || []).filter(
+					(m) => state.playerAddress && m.playerAddress?.toLowerCase() === state.playerAddress.toLowerCase(),
+				);
+				const mergedMap = new Map<string, any>();
+				for (const m of fromGlobal) {
+					mergedMap.set(m.id, m);
 				}
+				for (const m of fromPlayer) {
+					mergedMap.set(m.id, m); // prefer player version if duplicate
+				}
+				const missionsForPanel = Array.from(mergedMap.values());
+				ActiveMissionsPanel.updateActiveMissionsPanel(
+					missionsForPanel,
+					state.ownedDrifters,
+					state.resourceNodes || [],
+					state.isLoadingPlayerMissions,
+				);
+			} else {
+				// Stop the live timer when panel is hidden
+				ActiveMissionsPanel.stopLiveTimer();
 			}
+		}
 
 		if (this.marketPanel) {
 			this.marketPanel.style.display = state.showMarketPanel ? 'block' : 'none';
@@ -523,9 +523,9 @@ private createDrifterInfoPanel() {
 			.map(
 				(notif) => `
       <div class="notification notification-${notif.type}" style="${buildNotificationStyle(
-        notif.type,
-        'border-radius: 6px; padding: 12px; margin-bottom: 8px; pointer-events: auto; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.3);'
-      )}" onclick="gameState.removeNotification('${notif.id}')">
+				notif.type,
+				'border-radius: 6px; padding: 12px; margin-bottom: 8px; pointer-events: auto; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.3);',
+			)}" onclick="gameState.removeNotification('${notif.id}')">
         <div style="font-weight: bold; margin-bottom: 4px; color: #fff;">${notif.title}</div>
         <div style="font-size: 12px; color: #ddd;">${notif.message}</div>
         <div style="font-size: 10px; color: #bbb; margin-top: 4px;">${this.formatTime(notif.timestamp)}</div>
@@ -654,7 +654,6 @@ private createDrifterInfoPanel() {
 			return now >= completionTime;
 		}).length;
 	}
-
 
 	private layoutOpenPanels() {
 		const margin = 20;
