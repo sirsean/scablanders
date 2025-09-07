@@ -104,7 +104,7 @@ export class DrifterInfoPanel {
 		const xpNext = DrifterInfoPanel.xpToNext(lvl);
 		const pct = Math.max(0, Math.min(100, Math.floor((xp / xpNext) * 100)));
 
-		(DrifterInfoPanel.panelEl.querySelector('#drifter-info-title') as HTMLElement).textContent = `Drifter #${tokenId} - ${drifter.name}`;
+		(DrifterInfoPanel.panelEl.querySelector('#drifter-info-title') as HTMLElement).textContent = `Drifter #${tokenId}`;
 
 		content.innerHTML = `
       <div style="display:flex; gap:12px; align-items:center; margin-bottom:12px;">

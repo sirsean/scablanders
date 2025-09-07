@@ -177,16 +177,10 @@ private missionDrifters = new Map<string, Phaser.GameObjects.Container>();
 		const currentState = gameState.getState();
 		const timeRemaining = this.formatTimeRemaining(mission.completionTime);
 		const drifterProfiles = currentState.ownedDrifters.filter((d) => mission.drifterIds.includes(d.tokenId));
-		let drifterNames = drifterProfiles.map((d) => d.name).join(', ');
-		if (drifterProfiles.length === 0) {
-			drifterNames = mission.drifterIds.map((id) => `#${id}`).join(', ');
-		} else if (drifterProfiles.length > 3) {
-			drifterNames =
-				drifterProfiles
-					.slice(0, 3)
-					.map((d) => d.name)
-					.join(', ') + `, +${drifterProfiles.length - 3} more`;
-		}
+		const ids: number[] = (drifterProfiles.length > 0 ? drifterProfiles.map((d) => d.tokenId) : mission.drifterIds) || [];
+		const shown = ids.slice(0, 3).map((id) => `#${id}`);
+		const extra = ids.length - 3;
+		const driftersText = extra > 0 ? `${shown.join(', ')}, +${extra} more` : shown.join(', ');
 		const targetNode = currentState.resourceNodes?.find((r) => r.id === mission.targetNodeId);
 		const targetName = targetNode ? `${targetNode.type.toUpperCase()} (${targetNode.rarity})` : 'Unknown Target';
 		let vehicleName = 'On Foot';
@@ -205,7 +199,7 @@ private missionDrifters = new Map<string, Phaser.GameObjects.Container>();
 			`<div><strong>Target:</strong> ${targetName}</div>`,
 			`<div><strong>Vehicle:</strong> ${vehicleName}</div>`,
 			`<div><strong>Time Left:</strong> ${timeRemaining}</div>`,
-			`<div><strong>Drifters:</strong> ${drifterNames}</div>`,
+			`<div><strong>Drifters:</strong> ${driftersText}</div>`,
 		].join('');
 	}
 

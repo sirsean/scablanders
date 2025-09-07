@@ -271,13 +271,13 @@ ${mission.battleLocation
         `
           : ''}
         
-        <div style=\"margin-bottom: 8px;\">
+        <div style="margin-bottom: 8px;">
           <span style="color: #ccc;">Drifters: </span>
           ${missionDrifters
                         .map(
                           (d) => `
             <span style="color: #00bfff; font-size: 12px; margin-right: 8px;">
-              ${d.name} #${d.tokenId}
+              #${d.tokenId}
             </span>
           `,
                         )
