@@ -197,7 +197,7 @@ export class ActiveMissionsPanel {
           <span style="color: ${targetMonster ? '#ff66ff' : '#00ff00'};">
             ${
 							targetMonster
-								? `Monster (${targetMonster.coordinates.x}, ${targetMonster.coordinates.y})`
+								? `${targetMonster.kind} (${targetMonster.coordinates.x}, ${targetMonster.coordinates.y})`
 								: targetResource
 									? `${targetResource.type.toUpperCase()} (${targetResource.rarity.toUpperCase()}) (${targetResource.coordinates.x}, ${targetResource.coordinates.y})`
 									: 'Unknown location'

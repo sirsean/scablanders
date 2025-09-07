@@ -6975,7 +6975,7 @@ HP ${R.hp}/${R.maxHp}`,{fontSize:"11px",color:"#ffdddd",fontFamily:"Courier New"
         <div style="margin-bottom: 8px;">
           <span style="color: #ccc;">Target: </span>
           <span style="color: ${x?"#ff66ff":"#00ff00"};">
-            ${x?`Monster (${x.coordinates.x}, ${x.coordinates.y})`:L?`${L.type.toUpperCase()} (${L.rarity.toUpperCase()}) (${L.coordinates.x}, ${L.coordinates.y})`:"Unknown location"}
+            ${x?`${x.kind} (${x.coordinates.x}, ${x.coordinates.y})`:L?`${L.type.toUpperCase()} (${L.rarity.toUpperCase()}) (${L.coordinates.x}, ${L.coordinates.y})`:"Unknown location"}
           </span>
         </div>
         

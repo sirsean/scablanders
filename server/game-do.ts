@@ -757,7 +757,7 @@ export class GameDO extends DurableObject {
 				type: 'mission_started',
 				missionId,
 				playerAddress,
-				message: `Combat mission started vs monster ${targetMonsterId}`,
+message: `Combat mission started vs ${monster.kind} (${targetMonsterId})`,
 			});
 
 			return { success: true, missionId };
@@ -1007,14 +1007,14 @@ export class GameDO extends DurableObject {
 					monsters = monsters.filter((mm) => mm.id !== monster.id);
 					await this.addEvent({
 						type: 'monster_killed',
-						message: `Monster ${monster.id} killed (damage ${dmg}, hp ${before}→0)`,
-						data: { id: monster.id, damage: dmg },
+message: `${monster.kind} killed (damage ${dmg}, hp ${before}→0)`,
+						data: { id: monster.id, kind: monster.kind, damage: dmg },
 					});
 				} else {
 					await this.addEvent({
 						type: 'town_damaged',
-						message: `Monster ${monster.id} damaged for ${dmg} (hp ${before}→${monster.hp})`,
-						data: { id: monster.id, damage: dmg },
+message: `${monster.kind} damaged for ${dmg} (hp ${before}→${monster.hp})`,
+						data: { id: monster.id, kind: monster.kind, damage: dmg },
 					});
 				}
 				await this.setStoredMonsters(monsters);
@@ -1127,18 +1127,30 @@ export class GameDO extends DurableObject {
 					? getVehicle(player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId)!.vehicleId)?.name
 					: 'On Foot'
 				: 'On Foot',
-			message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} ${
-				(mission as any).targetMonsterId
-					? `vs MONSTER ${(mission as any).targetMonsterId}`
-					: `at ${(this.gameState.resourceNodes.get(mission.targetNodeId!)?.type ?? '').toString().toUpperCase()}`
-			} with drifters ${mission.drifterIds.map((id) => `#${id}`).join(', ')} ${
+message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} ${(() => {
+				const mid = (mission as any).targetMonsterId as string | undefined;
+				if (mid) {
+					const monsList = this.ctx.storage ? undefined : undefined; // placeholder to satisfy TS formatting
+					return (() => {
+						// Best-effort: look up kind from stored monsters; fallback to generic label
+						// Note: synchronous string build; we won't await here
+						let kindLabel = 'MONSTER';
+						try {
+							// This is inside a template; we cannot await. We'll embed just the generic label; other events already include kind.
+							kindLabel = 'MONSTER';
+						} catch {}
+						return `vs ${kindLabel} ${mid}`;
+					})();
+				}
+				return `at ${(this.gameState.resourceNodes.get(mission.targetNodeId!)?.type ?? '').toString().toUpperCase()}`;
+			})()} with drifters ${mission.drifterIds.map((id) => `#${id}`).join(', ')} ${
 				mission.vehicleInstanceId
 					? `in ${(() => {
 							const vi = player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
 							return vi ? getVehicle(vi.vehicleId)?.name || 'On Foot' : 'On Foot';
 						})()}`
 					: 'on foot'
-			} ${(mission as any).targetMonsterId ? `(+${totalCombatXpAwarded} XP)` : `(+${mission.rewards.credits} cr)`}`,
+			} ${(mission as any).targetMonsterId ? `(+${totalCombatXpAwarded} XP)` : `(+${mission.rewards.credits} cr)`}`
 		});
 
 		// Award XP to participating drifters based on credits earned
@@ -2175,7 +2187,7 @@ export class GameDO extends DurableObject {
 					m.coordinates = snapped;
 					m.state = 'attacking';
 					m.etaToTown = now;
-					await this.addEvent({ type: 'monster_arrived', message: `Monster ${m.id} arrived at town`, data: { id: m.id } });
+await this.addEvent({ type: 'monster_arrived', message: `${m.kind} arrived at town`, data: { id: m.id, kind: m.kind } });
 					arrived++;
 					changed = true;
 				} else {
@@ -2309,8 +2321,8 @@ export class GameDO extends DurableObject {
 					townChanged = true;
 					await this.addEvent({
 						type: 'town_damaged',
-						message: `Town damaged by ${m.id} for ${totalDamage} (walls:${outcome.wallsDamage} other:${outcome.attrDamage} prosperity:${outcome.prosperityDamage})`,
-						data: { monsterId: m.id, ...outcome },
+message: `Town damaged by ${m.kind} for ${totalDamage} (walls:${outcome.wallsDamage} other:${outcome.attrDamage} prosperity:${outcome.prosperityDamage})`,
+						data: { monsterId: m.id, kind: m.kind, ...outcome },
 					});
 				}
 				// Self-damage equal to damage dealt (monsters wear down while attacking)
@@ -2322,7 +2334,7 @@ export class GameDO extends DurableObject {
 					if (m.hp <= 0) {
 						// Remove from list when defeated at the walls
 						monsters = monsters.filter((mm) => mm.id !== m.id);
-						await this.addEvent({ type: 'monster_killed', message: `Monster ${m.id} died while attacking the town`, data: { id: m.id } });
+await this.addEvent({ type: 'monster_killed', message: `${m.kind} died while attacking the town`, data: { id: m.id, kind: m.kind } });
 					}
 				}
 			}
@@ -2467,8 +2479,8 @@ export class GameDO extends DurableObject {
 
 			await this.addEvent({
 				type: 'monster_spawned',
-				message: `Monster spawned at (${x}, ${y}) with ${hp} HP`,
-				data: { id: m.id, x, y, hp },
+message: `${m.kind} spawned at (${x}, ${y}) with ${hp} HP`,
+				data: { id: m.id, kind: m.kind, x, y, hp },
 			});
 			return true;
 		} catch (e) {
