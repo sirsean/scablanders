@@ -59,6 +59,25 @@ export class GameScene extends Phaser.Scene {
 	private cameraStart = { x: 0, y: 0 };
 	private cursorKeys!: Phaser.Types.Input.Keyboard.CursorKeys;
 
+	// Window event handler to center/pan the camera to a given world position
+	private onMapCenterOn = (ev: Event) => {
+		try {
+			const ce = ev as CustomEvent<{ x: number; y: number; smooth?: boolean; duration?: number }>;
+			const { x, y, smooth = true, duration = 600 } = (ce && ce.detail) || { x: 0, y: 0, smooth: true, duration: 600 };
+			const cam = this.cameras.main;
+			const worldX = typeof x === 'number' ? x : 0;
+			const worldY = typeof y === 'number' ? y : 0;
+			if (smooth && typeof (cam as any).pan === 'function') {
+				// Phaser Camera pan(x, y, duration, ease, force, callback, context)
+				(cam as any).pan(worldX, worldY, duration, 'Sine.easeInOut', true);
+			} else {
+				cam.centerOn(worldX, worldY);
+			}
+		} catch (e) {
+			console.warn('[GameScene] Failed to handle map:center-on', e);
+		}
+	};
+
 	constructor() {
 		super({ key: 'GameScene' });
 	}
@@ -124,6 +143,12 @@ export class GameScene extends Phaser.Scene {
 		// Resource nodes will be loaded from server via gameState
 
 		console.log('Game Scene initialized');
+
+		// Listen for external UI requests to center/pan the map
+		window.addEventListener('map:center-on' as any, this.onMapCenterOn as EventListener);
+		this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+			window.removeEventListener('map:center-on' as any, this.onMapCenterOn as EventListener);
+		});
 
 		// Keyboard controls (arrows) and Shift for faster pan
 		this.cursorKeys = this.input.keyboard.createCursorKeys();

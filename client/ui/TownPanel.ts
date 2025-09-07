@@ -28,7 +28,10 @@ export class TownPanel {
     panel.innerHTML = `
       <div style="display:flex; align-items:center; gap: 8px;">
         <h3 style="margin:0; color:#FFD700;">Town</h3>
-        <div style="margin-left:auto;"><button id="close-town-panel" style="background:none; border:1px solid #666; color:#fff; padding:4px 8px; cursor:pointer;">✕</button></div>
+        <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+          <button id="center-town-btn" style="background:none; border:1px solid #666; color:#fff; padding:4px 8px; cursor:pointer;">Center on Town</button>
+          <button id="close-town-panel" style="background:none; border:1px solid #666; color:#fff; padding:4px 8px; cursor:pointer;">✕</button>
+        </div>
       </div>
       <div id="town-summary" style="margin-top: 8px; border:1px solid #333; padding:12px; border-radius:6px; background: rgba(255,255,255,0.03);"></div>
 
@@ -45,7 +48,16 @@ export class TownPanel {
       panel.addEventListener('click', async (e) => {
         const target = e.target as HTMLElement;
         if (!target) return;
-        if (target.matches('.contrib-btn')) {
+        if (target.matches('#center-town-btn')) {
+          // Center the map on the town (0,0)
+          window.dispatchEvent(new CustomEvent('map:center-on' as any, { detail: { x: 0, y: 0, smooth: true, duration: 600 } }));
+        } else if (target.matches('.center-monster-btn')) {
+          const x = parseFloat(target.getAttribute('data-x') || 'NaN');
+          const y = parseFloat(target.getAttribute('data-y') || 'NaN');
+          if (!Number.isNaN(x) && !Number.isNaN(y)) {
+            window.dispatchEvent(new CustomEvent('map:center-on' as any, { detail: { x, y, smooth: true, duration: 600 } }));
+          }
+        } else if (target.matches('.contrib-btn')) {
           const attribute = target.getAttribute('data-attr') as 'vehicle_market' | 'perimeter_walls';
           const amountStr = target.getAttribute('data-amount') || '0';
           const amount = parseInt(amountStr, 10) || 0;
@@ -119,21 +131,33 @@ const monsters = (state.monsters || []).filter((m: any) => m && m.state !== 'dea
     if (monsters.length === 0) {
       monstersEl.innerHTML = '<h4 style="margin:0 0 8px 0; color:#FFD700;">Monsters</h4><p>No active monsters.</p>';
     } else {
+      const missionCounts = TownPanel.getActiveMissionCounts(state);
       monstersEl.innerHTML = `
         <h4 style="margin:0 0 8px 0; color:#FFD700;">Monsters</h4>
         <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px;">
           ${monsters.map(m => {
             const isTraveling = m.state === 'traveling';
             const etaText = (isTraveling && m.etaToTown) ? TownPanel.formatCountdown(m.etaToTown) : '';
+            const coords = (m.coordinates && typeof m.coordinates.x === 'number' && typeof m.coordinates.y === 'number') ? m.coordinates : null;
+            const count = missionCounts.get(m.id) || 0;
+            const centerBtn = coords
+              ? `<button class=\"center-monster-btn\" data-monster-id=\"${m.id}\" data-x=\"${coords.x}\" data-y=\"${coords.y}\" style=\"background:#444; border:1px solid #666; color:#fff; padding:4px 8px; cursor:pointer; border-radius:4px;\">Center</button>`
+              : `<button class=\"center-monster-btn\" data-monster-id=\"${m.id}\" disabled style=\"background:#222; border:1px solid #333; color:#777; padding:4px 8px; border-radius:4px; cursor:not-allowed;\">Center</button>`;
             return `
             <div style="border:1px solid #333; padding:8px; border-radius:6px; background: rgba(255,255,255,0.02); display:flex; flex-direction:column; gap:6px;">
               <div style="display:flex; align-items:center; gap:8px; justify-content:space-between;">
-                <div><b>${m.id.slice(0,8)}...</b></div>
-                <button class="target-monster-btn" data-monster-id="${m.id}" style="background:#8b0000; border:1px solid #fff; color:#fff; padding:4px 8px; cursor:pointer; border-radius:4px;">Target</button>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <b>${m.id.slice(0,8)}...</b>
+                  <span title="Active missions" style="background:#1e90ff; color:#fff; border-radius:10px; padding:1px 6px; font-size:12px; line-height:18px; display:inline-block;">${count}</span>
+                </div>
+                <div style="display:flex; gap:6px;">
+                  ${centerBtn}
+                  <button class="target-monster-btn" data-monster-id="${m.id}" style="background:#8b0000; border:1px solid #fff; color:#fff; padding:4px 8px; cursor:pointer; border-radius:4px;">Target</button>
+                </div>
               </div>
               <div>HP: <b>${m.hp}</b> / <b>${m.maxHp}</b></div>
               <div>State: <b>${m.state}</b></div>
-              ${isTraveling ? `<div>Coords: (${m.coordinates.x}, ${m.coordinates.y})</div>` : ''}
+              ${coords ? `<div>Coords: (${coords.x}, ${coords.y})</div>` : ''}
               ${etaText ? `<div>ETA: ${etaText}</div>` : ''}
             </div>`;
           }).join('')}
@@ -194,6 +218,23 @@ const monsters = (state.monsters || []).filter((m: any) => m && m.state !== 'dea
     if (h > 0) return `${h}h ${m}m ${s}s`;
     if (m > 0) return `${m}m ${s}s`;
     return `${s}s`;
+  }
+
+  private static getActiveMissionCounts(state: GameState): Map<string, number> {
+    const counts = new Map<string, number>();
+    const missions = (state.activeMissions || []) as any[];
+    const isActive = (m: any) => {
+      const status = (m?.status ?? m?.state ?? '').toLowerCase();
+      return !['completed', 'failed', 'canceled', 'cancelled', 'aborted', 'expired'].includes(status);
+    };
+    for (const m of missions) {
+      if (!m) continue;
+      if ((m.type === 'combat' || m.missionType === 'combat') && m.targetMonsterId && isActive(m)) {
+        const id = m.targetMonsterId as string;
+        counts.set(id, (counts.get(id) || 0) + 1);
+      }
+    }
+    return counts;
   }
 }
 
