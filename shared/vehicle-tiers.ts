@@ -10,7 +10,9 @@ export const VEHICLE_LEVEL_BY_ID: Record<string, number> = Object.entries(VEHICL
   (acc, [lvlStr, ids]) => {
     const lvl = Number(lvlStr);
     for (const id of ids) {
-      if (!(id in acc) || lvl < acc[id]) acc[id] = lvl;
+      if (!(id in acc) || lvl < acc[id]) {
+        acc[id] = lvl;
+      }
     }
     return acc;
   },

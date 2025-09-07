@@ -113,11 +113,15 @@ export class GameScene extends Phaser.Scene {
 			}
 		});
 		this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-			if (!this.isDragging) return;
+			if (!this.isDragging) {
+				return;
+			}
 			const cam = this.cameras.main;
 			const dx = pointer.x - this.dragStart.x;
 			const dy = pointer.y - this.dragStart.y;
-			if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this.dragMoved = true;
+			if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+				this.dragMoved = true;
+			}
 			cam.scrollX = this.cameraStart.x - dx / cam.zoom;
 			cam.scrollY = this.cameraStart.y - dy / cam.zoom;
 		});
@@ -154,7 +158,7 @@ export class GameScene extends Phaser.Scene {
 		this.cursorKeys = this.input.keyboard.createCursorKeys();
 
 		// Mouse wheel zoom
-		this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz: number, event: WheelEvent) => {
+this.input.on('wheel', (_pointer: any, _over: any, _dx: number, dy: number, _dz: number, _event: WheelEvent) => {
 			const cam = this.cameras.main;
 			const factor = dy > 0 ? 0.9 : 1.1;
 			const next = Phaser.Math.Clamp(cam.zoom * factor, MIN_ZOOM, MAX_ZOOM);
@@ -186,8 +190,10 @@ export class GameScene extends Phaser.Scene {
 		if (mission.vehicleInstanceId) {
 			const vehicleInstance = currentState.profile?.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
 			if (vehicleInstance) {
-				const vehicleData = getVehicleData(vehicleInstance.vehicleId);
-				if (vehicleData) vehicleName = vehicleData.name;
+					const vehicleData = getVehicleData(vehicleInstance.vehicleId);
+					if (vehicleData) {
+						vehicleName = vehicleData.name;
+					}
 			}
 		}
 		// Simple HTML formatting
@@ -1076,10 +1082,18 @@ export class GameScene extends Phaser.Scene {
 		const accel = (this.cursorKeys.shift?.isDown) ? 1200 : 600;
 		let vx = 0;
 		let vy = 0;
-		if (this.cursorKeys.left?.isDown) vx -= 1;
-		if (this.cursorKeys.right?.isDown) vx += 1;
-		if (this.cursorKeys.up?.isDown) vy -= 1;
-		if (this.cursorKeys.down?.isDown) vy += 1;
+		if (this.cursorKeys.left?.isDown) {
+			vx -= 1;
+		}
+		if (this.cursorKeys.right?.isDown) {
+			vx += 1;
+		}
+		if (this.cursorKeys.up?.isDown) {
+			vy -= 1;
+		}
+		if (this.cursorKeys.down?.isDown) {
+			vy += 1;
+		}
 		if (vx !== 0 || vy !== 0) {
 			const len = Math.hypot(vx, vy) || 1;
 			vx /= len;
@@ -1093,7 +1107,9 @@ export class GameScene extends Phaser.Scene {
 			const activeMissions = gameState.getState().playerMissions.filter((m) => m.status === 'active');
 			activeMissions.forEach((mission) => {
 				const drifterContainer = this.missionDrifters.get(mission.id);
-				if (!drifterContainer) return;
+				if (!drifterContainer) {
+					return;
+				}
 				const currentState = gameState.getState();
 				const targetNode = mission.targetNodeId
 					? currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId)
@@ -1107,7 +1123,9 @@ export class GameScene extends Phaser.Scene {
 					if (ring) {
 						const playerAddr = gameState.getState().playerAddress;
 						let color = this.getMissionRenderColor(mission, playerAddr) ?? COLOR_SELF_ACTIVE;
-						if (monster) color = 0x9c27b0;
+						if (monster) {
+							color = 0x9c27b0;
+						}
 						ring.clear();
 						ring.lineStyle(2, color);
 						ring.strokeCircle(0, 0, 14);
@@ -1130,7 +1148,9 @@ export class GameScene extends Phaser.Scene {
 		const playerAddr = gameState.getState().playerAddress;
 		this.missionRoutes.forEach((route, missionId) => {
 			const m = (gameState.getState().activeMissions || []).find((mm) => mm.id === missionId);
-			if (!m) return;
+			if (!m) {
+				return;
+			}
 			const newColor = this.getMissionRenderColor(m, playerAddr) ?? COLOR_SELF_ACTIVE;
 			const x1 = route.getData('x1') as number;
 			const y1 = route.getData('y1') as number;
@@ -1173,8 +1193,12 @@ export class GameScene extends Phaser.Scene {
 				}
 				const dir = prog <= 0.5 ? 1 : -1; // outward first half, inward second half
 				phase += dir * speed * dt;
-				if (phase >= cycle) phase -= cycle;
-				if (phase < 0) phase += cycle;
+				if (phase >= cycle) {
+					phase -= cycle;
+				}
+				if (phase < 0) {
+					phase += cycle;
+				}
 				route.setData('phase', phase);
 			}
 			route.clear();
@@ -1204,7 +1228,9 @@ export class GameScene extends Phaser.Scene {
 		const dx = x2 - x1;
 		const dy = y2 - y1;
 		const dist = Math.sqrt(dx * dx + dy * dy);
-		if (dist <= 0) return;
+		if (dist <= 0) {
+			return;
+		}
 		const ux = dx / dist;
 		const uy = dy / dist;
 		let traveled = phase % (dash + gap);
@@ -1230,8 +1256,12 @@ export class GameScene extends Phaser.Scene {
 		const fromPlayer = state.playerMissions || [];
 		const fromGlobal = (state.activeMissions || []).filter((m) => m.playerAddress?.toLowerCase() === self);
 		const idSet = new Set<string>();
-		for (const m of fromPlayer) idSet.add(m.id);
-		for (const m of fromGlobal) idSet.add(m.id);
+		for (const m of fromPlayer) {
+			idSet.add(m.id);
+		}
+		for (const m of fromGlobal) {
+			idSet.add(m.id);
+		}
 
 		// Check for containers whose missions no longer exist
 		this.missionDrifters.forEach((container, missionId) => {
@@ -1442,7 +1472,9 @@ export class GameScene extends Phaser.Scene {
 				container.setPosition(m.coordinates.x, m.coordinates.y);
 				// Update label text
 				const lbl = container.list.find((go) => (go as any).style) as Phaser.GameObjects.Text | undefined;
-				if (lbl) lbl.setText(`HP ${m.hp}/${m.maxHp}`);
+				if (lbl) {
+					lbl.setText(`HP ${m.hp}/${m.maxHp}`);
+				}
 			}
 		}
 	}

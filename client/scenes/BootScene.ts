@@ -106,7 +106,9 @@ export class BootScene extends Phaser.Scene {
 		c.width = size;
 		c.height = size;
 		const g = c.getContext('2d');
-		if (!g) return '';
+		if (!g) {
+			return '';
+		}
 		g.fillStyle = base;
 		g.fillRect(0, 0, size, size);
 		// Subtle dot grid

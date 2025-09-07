@@ -461,7 +461,9 @@ const newDrifterList = document.getElementById('mission-drifter-list-container')
 
 	private static setupMonsterStartButton() {
 		const btn = document.getElementById('start-monster-mission-btn') as HTMLButtonElement | null;
-		if (!btn) return;
+		if (!btn) {
+			return;
+		}
 		const state = gameState.getState();
 		const selectedIds = state.selectedDrifterIds || [];
 		const vehicleInstanceId = state.selectedVehicleInstanceId;
@@ -489,11 +491,15 @@ const newDrifterList = document.getElementById('mission-drifter-list-container')
 		btn.onclick = async () => {
 			const st = gameState.getState();
 			const mid = st.selectedTargetMonsterId;
-			if (!mid) return;
+			if (!mid) {
+				return;
+			}
 			// Re-check capacity at click time
 			const vInst = st.profile?.vehicles.find((v) => v.instanceId === st.selectedVehicleInstanceId);
 			const v = vInst ? getVehicleData(vInst.vehicleId) : undefined;
-			if (v && selectedIds.length > (v.maxDrifters ?? Infinity)) return;
+			if (v && selectedIds.length > (v.maxDrifters ?? Infinity)) {
+				return;
+			}
 			const res = await gameState.startMonsterCombatMission(selectedIds, mid, vehicleInstanceId);
 			if (res?.success) {
 				gameState.clearSelectedDrifters();

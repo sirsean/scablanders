@@ -33,7 +33,9 @@ export class UIManager {
 	 * the panel boundary.
 	 */
 	private swallowPointerEvents(el: HTMLElement | null) {
-		if (!el) return;
+		if (!el) {
+			return;
+		}
 		const stop = (e: Event) => {
 			// Do not preventDefault so scrolling and button behavior still work
 			e.stopPropagation();
@@ -280,7 +282,9 @@ private createDrifterInfoPanel() {
 		// HUD mission tooltip events from GameScene
 		window.addEventListener('hud:mission-tooltip' as any, (ev: any) => {
 			const detail = ev?.detail || {};
-			if (!this.missionTooltipEl) return;
+			if (!this.missionTooltipEl) {
+				return;
+			}
 			if (!detail.visible) {
 				this.missionTooltipEl.style.display = 'none';
 				return;
@@ -299,8 +303,12 @@ private createDrifterInfoPanel() {
 			const rect = el.getBoundingClientRect();
 			let x = detail.x + 16;
 			let y = detail.y + 16;
-			if (x + rect.width + padding > window.innerWidth) x = Math.max(padding, window.innerWidth - rect.width - padding);
-			if (y + rect.height + padding > window.innerHeight) y = Math.max(padding, window.innerHeight - rect.height - padding);
+			if (x + rect.width + padding > window.innerWidth) {
+				x = Math.max(padding, window.innerWidth - rect.width - padding);
+			}
+			if (y + rect.height + padding > window.innerHeight) {
+				y = Math.max(padding, window.innerHeight - rect.height - padding);
+			}
 			el.style.left = `${x}px`;
 			el.style.top = `${y}px`;
 		});
@@ -441,8 +449,12 @@ private createDrifterInfoPanel() {
 						(m) => state.playerAddress && m.playerAddress?.toLowerCase() === state.playerAddress.toLowerCase(),
 					);
 					const mergedMap = new Map<string, any>();
-					for (const m of fromGlobal) mergedMap.set(m.id, m);
-					for (const m of fromPlayer) mergedMap.set(m.id, m); // prefer player version if duplicate
+					for (const m of fromGlobal) {
+						mergedMap.set(m.id, m);
+					}
+					for (const m of fromPlayer) {
+						mergedMap.set(m.id, m); // prefer player version if duplicate
+					}
 					const missionsForPanel = Array.from(mergedMap.values());
 					ActiveMissionsPanel.updateActiveMissionsPanel(
 						missionsForPanel,

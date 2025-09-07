@@ -494,7 +494,9 @@ export function estimateMonsterDamage(
 	vehicle?: Vehicle,
 ): { base: number; min: number; max: number; teamCombat: number } {
 	let teamCombat = drifters.reduce((sum, s) => sum + (s.combat || 0), 0);
-	if (vehicle) teamCombat += (vehicle as any).combat || 0;
+	if (vehicle) {
+		teamCombat += (vehicle as any).combat || 0;
+	}
 	const base = 120 + Math.round(teamCombat * 18);
 	const min = Math.max(1, Math.floor(base * 0.85));
 	const max = Math.max(min, Math.ceil(base * 1.15));

@@ -47,7 +47,9 @@ export class TownPanel {
     setTimeout(() => {
       panel.addEventListener('click', async (e) => {
         const target = e.target as HTMLElement;
-        if (!target) return;
+        if (!target) {
+          return;
+        }
         if (target.matches('#center-town-btn')) {
           // Center the map on the town (0,0)
           window.dispatchEvent(new CustomEvent('map:center-on' as any, { detail: { x: 0, y: 0, smooth: true, duration: 600 } }));
@@ -83,7 +85,9 @@ export class TownPanel {
     const wallsEl = document.getElementById('town-walls');
     const monstersEl = document.getElementById('town-monsters');
 
-    if (!summary || !vmEl || !wallsEl || !monstersEl) return;
+    if (!summary || !vmEl || !wallsEl || !monstersEl) {
+      return;
+    }
 
     if (!town) {
       summary.innerHTML = '<p>Loading town...</p>';
@@ -169,7 +173,9 @@ const monsters = (state.monsters || []).filter((m: any) => m && m.state !== 'dea
         document.querySelectorAll('.target-monster-btn').forEach((btn) => {
           btn.addEventListener('click', () => {
             const id = (btn as HTMLElement).getAttribute('data-monster-id');
-            if (!id) return;
+            if (!id) {
+              return;
+            }
             gameState.setMissionType('combat');
             gameState.setSelectedTargetMonster(id);
             // Open mission panel for team/vehicle selection
@@ -197,7 +203,9 @@ const monsters = (state.monsters || []).filter((m: any) => m && m.state !== 'dea
     }
     TownPanel.liveTimer = setInterval(() => {
       const panel = document.getElementById('town-panel');
-      if (!panel || panel.style.display === 'none') return;
+      if (!panel || panel.style.display === 'none') {
+        return;
+      }
       TownPanel.updateTownPanel(getState());
     }, 1000) as any;
   }
@@ -215,8 +223,12 @@ const monsters = (state.monsters || []).filter((m: any) => m && m.state !== 'dea
     const h = Math.floor(diffSec / 3600);
     const m = Math.floor((diffSec % 3600) / 60);
     const s = diffSec % 60;
-    if (h > 0) return `${h}h ${m}m ${s}s`;
-    if (m > 0) return `${m}m ${s}s`;
+    if (h > 0) {
+      return `${h}h ${m}m ${s}s`;
+    }
+    if (m > 0) {
+      return `${m}m ${s}s`;
+    }
     return `${s}s`;
   }
 
@@ -228,7 +240,9 @@ const monsters = (state.monsters || []).filter((m: any) => m && m.state !== 'dea
       return !['completed', 'failed', 'canceled', 'cancelled', 'aborted', 'expired'].includes(status);
     };
     for (const m of missions) {
-      if (!m) continue;
+      if (!m) {
+        continue;
+      }
       if ((m.type === 'combat' || m.missionType === 'combat') && m.targetMonsterId && isActive(m)) {
         const id = m.targetMonsterId as string;
         counts.set(id, (counts.get(id) || 0) + 1);

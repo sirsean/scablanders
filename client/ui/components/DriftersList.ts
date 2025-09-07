@@ -111,8 +111,12 @@ export class DriftersList {
     const fromPlayer = state.playerMissions || [];
     const fromGlobal = (state.activeMissions || []).filter((m) => m.playerAddress?.toLowerCase() === selfAddr);
     const mergedMap = new Map<string, any>();
-    for (const m of fromGlobal) mergedMap.set(m.id, m);
-    for (const m of fromPlayer) mergedMap.set(m.id, m);
+    for (const m of fromGlobal) {
+      mergedMap.set(m.id, m);
+    }
+    for (const m of fromPlayer) {
+      mergedMap.set(m.id, m);
+    }
     const busyDrifterIds = new Set(
       Array.from(mergedMap.values()).filter((m: any) => m.status === 'active').flatMap((m: any) => m.drifterIds)
     );
@@ -146,9 +150,9 @@ export class DriftersList {
       return a.tokenId - b.tokenId;
     });
 
-    const headerRight = mode === 'select'
-      ? `<span style="font-size: 11px; color: ${atCapacity ? '#ff6b6b' : '#ccc'}; margin-left: auto;">${selectedIds.length} / ${maxDrifters > 0 ? maxDrifters : '-'} Drifters Selected</span>`
-      : `<span style="font-size: 11px; color: #888;">(Showing ${sortedDrifters.length}/${drifters.length})</span>`;
+    const _headerRight = mode === 'select'
+      ? `<span style=\"font-size: 11px; color: ${atCapacity ? '#ff6b6b' : '#ccc'}; margin-left: auto;\">${selectedIds.length} / ${maxDrifters > 0 ? maxDrifters : '-'} Drifters Selected</span>`
+      : `<span style=\"font-size: 11px; color: #888;\">(Showing ${sortedDrifters.length}/${drifters.length})</span>`;
 
     const headerGridCols = mode === 'select' ? '28px 80px repeat(4, 1fr)' : '80px repeat(4, 1fr)';
     const headerLeading = mode === 'select' ? '<div></div><div></div>' : '<div></div>';

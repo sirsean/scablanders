@@ -81,8 +81,12 @@ export class VehiclePanel {
 		const fromPlayer = state.playerMissions || [];
 		const fromGlobal = (state.activeMissions || []).filter((m) => m.playerAddress?.toLowerCase() === selfAddr);
 		const mergedMap = new Map<string, any>();
-		for (const m of fromGlobal) mergedMap.set(m.id, m);
-		for (const m of fromPlayer) mergedMap.set(m.id, m);
+		for (const m of fromGlobal) {
+			mergedMap.set(m.id, m);
+		}
+		for (const m of fromPlayer) {
+			mergedMap.set(m.id, m);
+		}
 		const activeVehicleIds = new Set<string>(
 			Array.from(mergedMap.values())
 				.filter((m: any) => m.status === 'active' && !!m.vehicleInstanceId)
