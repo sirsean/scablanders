@@ -129,7 +129,7 @@ export class MissionPanel {
 			        </div>
 			      </div>
 			      <div style="margin-top:auto;">
-			        <button id="start-monster-mission-btn" disabled style="width:100%; padding: 14px 24px; background:#666; border:1px solid #888; color:#fff; cursor:not-allowed; border-radius:6px; font-size:16px; font-weight:bold;">Select Drifter(s)</button>
+<button id="start-monster-mission-btn" disabled style="width:100%; padding: 14px 24px; border-radius:6px; font-size:16px; font-weight:bold;">Select Drifter(s)</button>
 			      </div>
 			    </div>
 			    <div style="flex:1; display:flex; flex-direction:column; height:100%;">
@@ -244,7 +244,7 @@ export class MissionPanel {
 
           <!-- Start Mission Button -->
           <div style="margin-top: auto;">
-            <button id="start-mission-btn" disabled style="width: 100%; padding: 14px 24px; background: #666; border: 1px solid #888; color: #fff; cursor: not-allowed; border-radius: 6px; font-size: 16px; font-weight: bold;">
+<button id="start-mission-btn" disabled style="width: 100%; padding: 14px 24px; border-radius: 6px; font-size: 16px; font-weight: bold;">
               Select Drifter & Mission Type
             </button>
           </div>
@@ -339,35 +339,25 @@ export class MissionPanel {
 
 		const selectedMissionType = state.selectedMissionType;
 
-		return `
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        return `
+      <div class="mission-type-grid">
         ${availableMissionTypes
-					.map((missionType) => {
-						const isSelected = selectedMissionType === missionType.type;
-						return `
+          .map((missionType) => {
+            const isSelected = selectedMissionType === missionType.type;
+            const disabledAttr = missionType.enabled ? '' : 'disabled';
+            const selectedAttr = isSelected ? 'data-selected="true"' : '';
+            return `
             <button
-              class=\"mission-type-btn\"
-              data-type=\"${missionType.type}\"
-              style=\"\
-                background: ${isSelected ? '#ffd700' : missionType.color};\
-                border: 2px solid ${isSelected ? '#ffff00' : missionType.borderColor};\
-                color: ${isSelected ? '#000' : '#fff'};\
-                padding: 8px;\
-                cursor: ${missionType.enabled ? 'pointer' : 'not-allowed'};\
-                border-radius: 4px;\
-                opacity: ${missionType.enabled ? (isSelected ? '1' : '0.7') : '0.6'};\
-                transform: ${isSelected ? 'scale(1.05)' : 'scale(1)'};\
-                box-shadow: ${isSelected ? '0 0 12px rgba(255, 215, 0, 0.6)' : 'none'};\
-                font-weight: ${isSelected ? 'bold' : 'normal'};\
-                transition: all 0.2s ease;\
-              \"\
-              ${!missionType.enabled ? 'disabled' : ''}
+              class="mission-type-btn"
+              data-type="${missionType.type}"
+              ${selectedAttr}
+              ${disabledAttr}
             >
               ${missionType.name}<br><small>${missionType.description}</small>
             </button>
           `;
-					})
-					.join('')}
+          })
+          .join('')}
       </div>
     `;
 	}
@@ -472,18 +462,12 @@ export class MissionPanel {
 
 		if (selectedIds.length === 0) {
 			btn.disabled = true;
-			btn.style.background = '#666';
-			btn.style.cursor = 'not-allowed';
 			btn.textContent = 'Select Drifter(s)';
 		} else if (selectedVehicle && selectedIds.length > maxDrifters) {
 			btn.disabled = true;
-			btn.style.background = '#666';
-			btn.style.cursor = 'not-allowed';
 			btn.textContent = `Too many drifters for ${selectedVehicle.name}`;
 		} else {
 			btn.disabled = false;
-			btn.style.background = '#2c5530';
-			btn.style.cursor = 'pointer';
 			btn.textContent = `Start COMBAT Mission (${selectedIds.length} Drifter${selectedIds.length > 1 ? 's' : ''})`;
 		}
 
@@ -526,14 +510,10 @@ export class MissionPanel {
 
 		if (selectedIds.length > 0 && missionType && selectedIds.length <= maxDrifters) {
 			button.disabled = false;
-			button.style.background = '#2c5530';
-			button.style.cursor = 'pointer';
 			const teamText = selectedIds.length === 1 ? '1 Drifter' : `${selectedIds.length} Drifters`;
 			button.textContent = `Start ${missionType.toUpperCase()} Mission (${teamText})`;
 		} else {
 			button.disabled = true;
-			button.style.background = '#666';
-			button.style.cursor = 'not-allowed';
 			if (selectedIds.length === 0) {
 				button.textContent = 'Select Drifters';
 			} else if (!missionType) {

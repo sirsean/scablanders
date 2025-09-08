@@ -608,29 +608,15 @@ export class UIManager {
 		const hasCompleted = this.hasCompletedMissions(state);
 		const completedCount = this.getCompletedMissionsCount(state);
 
-		if (hasCompleted) {
-			// Highlight the button when there are completed missions
-			button.style.background = 'linear-gradient(45deg, #FFD700, #FFA500)';
-			button.style.border = '2px solid #FFD700';
-			button.style.boxShadow = '0 0 15px rgba(255, 215, 0, 0.6)';
-			button.style.animation = 'pulse 2s infinite';
-			button.style.color = '#000';
-			button.style.fontWeight = 'bold';
+		// Toggle a CSS class instead of applying inline styles
+		button.classList.toggle('has-completed', hasCompleted);
 
-			// Update button text to show count (preserve shortcut key)
-			if (completedCount === 1) {
-				button.textContent = 'Active Missions (A) (1 Complete!)';
-			} else {
-				button.textContent = `Active Missions (A) (${completedCount} Complete!)`;
-			}
+		// Update button text to show count (preserve shortcut key)
+		if (hasCompleted) {
+			button.textContent = completedCount === 1
+				? 'Active Missions (A) (1 Complete!)'
+				: `Active Missions (A) (${completedCount} Complete!)`;
 		} else {
-			// Reset to normal styling
-			button.style.background = '#444';
-			button.style.border = '1px solid #666';
-			button.style.boxShadow = 'none';
-			button.style.animation = 'none';
-			button.style.color = '#fff';
-			button.style.fontWeight = 'normal';
 			button.textContent = 'Active Missions (A)';
 		}
 	}

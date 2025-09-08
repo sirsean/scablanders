@@ -29,8 +29,8 @@ export class LogPanel {
 
 		panel.innerHTML = `
       <div style="display: flex; align-items: center; margin-bottom: 12px;">
-        <h3 style="margin: 0; color: #FFD700;">Global Log</h3>
-        <button id="close-log-panel" style="background: none; border: 1px solid #666; color: #fff; padding: 4px 8px; cursor: pointer; margin-left: auto;">✕</button>
+        <h3 style="margin: 0;">Global Log</h3>
+        <button id="close-log-panel" style="margin-left: auto;">✕</button>
       </div>
       <div id="log-content">
         <p>Loading...</p>
@@ -45,23 +45,23 @@ export class LogPanel {
 
 	static renderLogItems(events: GameEvent[]): string {
 		if (!events || events.length === 0) {
-			return '<p style="color:#888;">No events yet.</p>';
+			return '<p class="muted">No events yet.</p>';
 		}
 		return `
-      <div style="display:flex; flex-direction:column; gap:8px;">
+      <div class="log-items" style="display:flex; flex-direction:column; gap:8px;">
         ${events
-					.map((ev) => {
-						const time = LogPanel.formatTime(ev.timestamp as any as Date);
-						const who = ev.playerAddress ? `<span style=\"color:#aaa\">${ev.playerAddress.slice(0, 6)}…</span> ` : '';
-						const style = buildEventBorderStyle((ev as any).type);
-						return `
+          .map((ev) => {
+            const time = LogPanel.formatTime(ev.timestamp as any as Date);
+            const who = ev.playerAddress ? `<span class=\"muted\">${ev.playerAddress.slice(0, 6)}…</span> ` : '';
+            const style = buildEventBorderStyle((ev as any).type);
+            return `
               <div style=\"${style}\">
-                <div style="font-size:11px;color:#bbb;">${time}</div>
-                <div style="font-size:13px;">${who}${ev.message}</div>
+                <div style=\"font-size:11px;\">${time}</div>
+                <div style=\"font-size:13px;\">${who}${ev.message}</div>
               </div>
             `;
-					})
-					.join('')}
+          })
+          .join('')}
       </div>
     `;
 	}

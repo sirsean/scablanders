@@ -43,8 +43,8 @@ export class ActiveMissionsPanel {
 
 		panel.innerHTML = `
       <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 16px;">
-        <h3 style="margin: 0; color: #FFD700;">Active Missions</h3>
-        <button id="close-active-missions-panel" style="background: none; border: 1px solid #666; color: #fff; padding: 4px 8px; cursor: pointer; margin-left: auto;">✕</button>
+        <h3 style="margin: 0;">Active Missions</h3>
+        <button id="close-active-missions-panel" style="margin-left: auto;">✕</button>
       </div>
       <div id="active-missions-content">
         <p>Loading active missions...</p>
@@ -132,9 +132,9 @@ export class ActiveMissionsPanel {
 
 		if (activeMissions.length === 0) {
 			content.innerHTML = `
-        <div style="text-align: center; color: #888; padding: 20px;">
-          <p>No active missions</p>
-          <p style="font-size: 14px;">Start a mission by selecting a resource node on the map!</p>
+        <div style="text-align: center; padding: 20px;">
+          <p class="muted">No active missions</p>
+          <p class="muted" style="font-size: 14px;">Start a mission by selecting a resource node on the map!</p>
         </div>
       `;
 			this.stopLiveTimer(); // No active missions, stop the timer
@@ -143,14 +143,14 @@ export class ActiveMissionsPanel {
 
 		content.innerHTML = `
       <div style="margin-bottom: 12px;">
-        <span style="color: #00ff00; font-weight: bold;">Active Missions: ${activeMissions.length}</span>
+        <span style="font-weight: bold;">Active Missions: ${activeMissions.length}</span>
       </div>
       
       ${activeMissions.map((mission) => this.renderMissionCard(mission, this.lastOwnedDrifters, this.lastResources)).join('')}
     `;
 	}
 
-	private static renderMissionCard(mission: Mission, ownedDrifters: DrifterProfile[], resources: ResourceNode[]): string {
+private static renderMissionCard(mission: Mission, ownedDrifters: DrifterProfile[], resources: ResourceNode[]): string {
 		const targetResource = resources.find((r) => r.id === mission.targetNodeId);
 		const missionDrifters = ownedDrifters.filter((d) => mission.drifterIds.includes(d.tokenId));
 		const monsters = gameState.getState().monsters || [];
@@ -177,9 +177,9 @@ export class ActiveMissionsPanel {
 		let engagementCountdownHtml = '';
 		if (mission.targetMonsterId && !mission.engagementApplied && targetMonster) {
 			// Build effective team stats
-			const profile = gameState.getState().profile;
+			const prof = gameState.getState().profile;
 			const teamStats: DrifterStats[] = missionDrifters.map((d) => {
-				const dp = profile?.drifterProgress?.[String(d.tokenId)];
+				const dp = prof?.drifterProgress?.[String(d.tokenId)];
 				return {
 					combat: d.combat + (dp?.bonuses.combat || 0),
 					scavenging: d.scavenging + (dp?.bonuses.scavenging || 0),
@@ -189,14 +189,14 @@ export class ActiveMissionsPanel {
 			});
 			// Vehicle (if any)
 			let selectedVehicle: any = undefined;
-			if (mission.vehicleInstanceId && profile) {
-				const vi = profile.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
+			if (mission.vehicleInstanceId && prof) {
+				const vi = prof.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
 				if (vi) {
 					selectedVehicle = getVehicleData(vi.vehicleId);
 				}
 			}
 			if (targetMonster.state === 'attacking') {
-				engagementCountdownHtml = `<div style="margin-bottom: 8px;"><span style=\"color:#ccc;\">Engages in: </span><span style=\"color:#ffcc00; font-weight:bold;\">Now</span></div>`;
+				engagementCountdownHtml = `<div class=\"crt-row\"><span class=\"label\">Engages in:</span> <span class=\"crt-status\" data-state=\"active\">Now</span></div>`;
 			} else {
 				const outboundMs = calculateOneWayTravelDuration(targetMonster.coordinates as any, teamStats, selectedVehicle);
 				const startTimeMs = (mission.startTime instanceof Date ? mission.startTime : new Date(mission.startTime)).getTime();
@@ -205,132 +205,90 @@ export class ActiveMissionsPanel {
 					const remainingMs = engageAt - now.getTime();
 					if (remainingMs > 0) {
 						const engagesIn = this.formatTimeRemaining(new Date(engageAt), now);
-						engagementCountdownHtml = `<div style=\"margin-bottom: 8px;\"><span style=\"color:#ccc;\">Engages in: </span><span style=\"color:#ffff66; font-weight:bold;\">${engagesIn}</span></div>`;
+						engagementCountdownHtml = `<div class=\"crt-row\"><span class=\"label\">Engages in:</span> <span class=\"crt-status\" data-state=\"active\">${engagesIn}</span></div>`;
 					} else {
-						engagementCountdownHtml = `<div style=\"margin-bottom: 8px;\"><span style=\"color:#ccc;\">Engages in: </span><span style=\"color:#ffcc00; font-weight:bold;\">Now</span></div>`;
+						engagementCountdownHtml = `<div class=\"crt-row\"><span class=\"label\">Engages in:</span> <span class=\"crt-status\" data-state=\"active\">Now</span></div>`;
 					}
 				}
 			}
 		}
 
+		const progressKind = progress >= 100 ? 'complete' : targetMonster ? 'combat' : 'resource';
+		const targetKind = targetMonster ? 'monster' : 'resource';
+
 		return `
-      <div style="
-        border: 1px solid #555; 
-        border-radius: 6px; 
-        padding: 12px; 
-        margin: 8px 0;
-        background: rgba(255, 255, 255, 0.02);
-      ">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <div class="crt-section mission-card">
+        <div class="mission-card__header" style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
           <div>
-            <strong style="color: #FFD700;">${mission.type.toUpperCase()} MISSION</strong>
-            <span style="color: #888; margin-left: 8px;">#${mission.id.slice(-6)}</span>
+            <strong class="crt-heading">${mission.type.toUpperCase()} MISSION</strong>
+            <span class="muted" style="margin-left: 8px;">#${mission.id.slice(-6)}</span>
           </div>
-          <div style="text-align: right;">
-            <div style="color: ${progress >= 100 ? '#00ff00' : '#ffff00'}; font-size: 12px;">
-              ${progress >= 100 ? 'COMPLETE!' : timeRemaining}
-            </div>
-          </div>
+          <div class="crt-status" data-state="${progress >= 100 ? 'complete' : 'active'}">${progress >= 100 ? 'COMPLETE!' : timeRemaining}</div>
         </div>
-        
-        <div style="margin-bottom: 8px;">
-          <span style="color: #ccc;">Target: </span>
-          <span style="color: ${targetMonster ? '#ff66ff' : '#00ff00'};">
+
+        <div class="mission-card__target" style="margin-bottom: 8px;">
+          <span class="label">Target: </span>
+          <span class="value" data-kind="${targetKind}">
             ${
-							targetMonster
-								? `${targetMonster.kind} (${targetMonster.coordinates.x}, ${targetMonster.coordinates.y})`
-								: targetResource
-									? `${targetResource.type.toUpperCase()} (${targetResource.rarity.toUpperCase()}) (${targetResource.coordinates.x}, ${targetResource.coordinates.y})`
-									: 'Unknown location'
-						}
+              targetMonster
+                ? `${targetMonster.kind} (${targetMonster.coordinates.x}, ${targetMonster.coordinates.y})`
+                : targetResource
+                  ? `${targetResource.type.toUpperCase()} (${targetResource.rarity.toUpperCase()}) (${targetResource.coordinates.x}, ${targetResource.coordinates.y})`
+                  : 'Unknown location'
+            }
           </span>
         </div>
 
         ${
-					mission.targetMonsterId
-						? `
-        <div style=\"margin-bottom: 8px;\">
-          <span style=\"color: #ccc;\">Engagement: </span>
-          <span style=\"color: ${mission.engagementApplied ? '#66ff66' : '#ffcc00'}; font-weight: bold;\">${mission.engagementApplied ? 'Engaged' : 'Pending'}</span>
-          ${mission.engagementApplied && typeof mission.combatDamageDealt === 'number' ? `<span style=\"color:#aaa; margin-left:6px;\">• Damage dealt: <b style=\"color:#ff8888;\">${mission.combatDamageDealt}</b></span>` : ''}
+          mission.targetMonsterId
+            ? `
+        <div class=\"mission-card__engagement\" style=\"margin-bottom: 8px;\">
+          <span class=\"label\">Engagement: </span>
+          <span class=\"crt-status\" data-state=\"${mission.engagementApplied ? 'complete' : 'active'}\">${mission.engagementApplied ? 'Engaged' : 'Pending'}</span>
+          ${mission.engagementApplied && typeof mission.combatDamageDealt === 'number' ? `<span class=\"muted\" style=\"margin-left:6px;\">• Damage dealt: <b>${mission.combatDamageDealt}</b></span>` : ''}
         </div>
 ${!mission.engagementApplied ? engagementCountdownHtml : ''}
 ${
-	mission.battleLocation
-		? `
-        <div style=\"margin-bottom: 8px; display:flex; align-items:center; gap:8px;\">
-          <span style=\"color:#ccc;\">Battle:</span>
-          <span style=\"color:#ff4444; font-weight:bold;\">X</span>
-          <span style=\"color:#aaa;\">(${mission.battleLocation.x}, ${mission.battleLocation.y})</span>
-          <button 
-            onclick=\"centerOnMap(${mission.battleLocation.x}, ${mission.battleLocation.y})\"
-            style=\"background:#333; border:1px solid #666; color:#fff; padding:2px 6px; cursor:pointer; border-radius:3px; font-size:11px;\"
-            title=\"Center map on battle location\"
-          >Center</button>
+  mission.battleLocation
+    ? `
+        <div class=\"mission-card__battle\" style=\"margin-bottom: 8px; display:flex; align-items:center; gap:8px;\">
+          <span class=\"label\">Battle:</span>
+          <span class=\"tag\">X</span>
+          <span class=\"muted\">(${mission.battleLocation.x}, ${mission.battleLocation.y})</span>
+          <button onclick=\"centerOnMap(${mission.battleLocation.x}, ${mission.battleLocation.y})\" title=\"Center map on battle location\">Center</button>
         </div>
         `
-		: ''
+    : ''
 }
         `
-						: ''
-				}
-        
-        <div style="margin-bottom: 8px;">
-          <span style="color: #ccc;">Drifters: </span>
-          ${missionDrifters
-						.map(
-							(d) => `
-            <span style="color: #00bfff; font-size: 12px; margin-right: 8px;">
-              #${d.tokenId}
-            </span>
-          `,
-						)
-						.join('')}
+            : ''
+        }
+
+        <div class="mission-card__team" style="margin-bottom: 8px;">
+          <span class="label">Drifters: </span>
+          ${missionDrifters.map((d) => `<span style=\"font-size: 12px; margin-right: 8px;\">#${d.tokenId}</span>`).join('')}
         </div>
 
-        <div style="margin-bottom: 8px;">
-          <span style="color: #ccc;">Vehicle: </span>
-          <span style="color: #ffa500; font-size: 12px;">${vehicleName}</span>
+        <div class="mission-card__vehicle" style="margin-bottom: 8px;">
+          <span class="label">Vehicle: </span>
+          <span class="value" data-kind="vehicle" style="font-size: 12px;">${vehicleName}</span>
         </div>
-        
-        <div style="margin-bottom: 8px;">
-          <div style="background: #333; height: 6px; border-radius: 3px; overflow: hidden;">
-            <div style="
-              background: ${progress >= 100 ? '#00ff00' : targetMonster ? '#9c27b0' : 'linear-gradient(90deg, #ff8800, #ffff00)'}; 
-              height: 100%; 
-              width: ${Math.min(100, progress)}%;
-              transition: width 0.5s ease;
-            "></div>
-          </div>
-          <div style="font-size: 10px; color: #aaa; text-align: center; margin-top: 2px;">
-            ${progress.toFixed(1)}% Complete
-          </div>
+
+        <div class="mission-card__progress" style="margin-bottom: 8px;">
+          <div class="crt-progress"><div class="crt-progress__bar" data-kind="${progressKind}" style="width: ${Math.min(100, progress)}%;"></div></div>
+          <div class="muted" style="font-size: 10px; text-align: center; margin-top: 2px;">${progress.toFixed(1)}% Complete</div>
         </div>
-        
+
         ${
-					progress >= 100
-						? `
-          <button 
-            onclick="collectMission('${mission.id}')" 
-            style="
-              width: 100%; 
-              padding: 6px; 
-              background: #2c5530; 
-              border: 1px solid #4a7c59; 
-              color: #fff; 
-              cursor: pointer; 
-              border-radius: 4px;
-              font-size: 12px;
-            "
-          >
-            Collect Rewards
-          </button>
+          progress >= 100
+            ? `
+          <button onclick="collectMission('${mission.id}')" style="width: 100%; padding: 6px; font-size: 12px;">Collect Rewards</button>
         `
-						: ''
-				}
+            : ''
+        }
       </div>
     `;
-	}
+}
 
 	private static calculateMissionProgress(startTime: Date | string, completionTime: Date | string, currentTime: Date): number {
 		const startDate = startTime instanceof Date ? startTime : new Date(startTime);

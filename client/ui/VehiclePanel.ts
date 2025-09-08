@@ -28,10 +28,10 @@ export class VehiclePanel {
 
 		panel.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 8px;">
-        <h3 style="margin: 0; color: #FFD700;">Your Vehicles</h3>
+        <h3 style="margin: 0;">Your Vehicles</h3>
         <div style="margin-left: auto; display: flex; gap: 8px;">
-          <button id="reconcile-vehicles-btn" style="background: #444; border: 1px solid #666; color: #fff; padding: 4px 10px; cursor: pointer; border-radius: 4px;">Reconcile</button>
-          <button id="close-vehicle-panel" style="background: none; border: 1px solid #666; color: #fff; padding: 4px 8px; cursor: pointer;">✕</button>
+          <button id="reconcile-vehicles-btn">Reconcile</button>
+          <button id="close-vehicle-panel">✕</button>
         </div>
       </div>
       <div id="vehicle-content">
@@ -141,16 +141,16 @@ export class VehiclePanel {
 		}
 
 		return `
-	      <div style="border: 1px solid #555; border-radius: 6px; padding: 12px; background: rgba(255, 255, 255, 0.02);">
-	        <h4 style="color: #FFD700; margin-top: 0;">${vehicleData.name} (${instances.length})</h4>
-	        <p style="font-size: 12px; color: #ccc;">${vehicleData.description}</p>
+      <div class="crt-section vehicle-card">
+        <h4 style="margin-top: 0;">${vehicleData.name} (${instances.length})</h4>
+        <p class="muted" style="font-size: 12px;">${vehicleData.description}</p>
 	        <div style="font-size: 12px; margin-top: 8px;">
-	          <p style="margin: 4px 0;">Speed: <span style="color: #00ff00;">${vehicleData.speed}</span></p>
-	          <p style="margin: 4px 0;">Combat Bonus: <span style="color: #ff6666;">${(vehicleData as any).combat ?? 0}</span></p>
-	          <p style="margin: 4px 0;">Scavenging Bonus: <span style="color: #66ff66;">${(vehicleData as any).scavenging ?? 0}</span></p>
-	          <p style="margin: 4px 0;">Tech Bonus: <span style="color: #6666ff;">${(vehicleData as any).tech ?? 0}</span></p>
-	          <p style="margin: 4px 0;">Max Drifters: <span style="color: #00ff00;">${vehicleData.maxDrifters}</span></p>
-	          <p style="margin: 4px 0;">Max Cargo: <span style="color: #00ff00;">${vehicleData.maxCargo}</span></p>
+          <p style="margin: 4px 0;">Speed: <span>${vehicleData.speed}</span></p>
+          <p style="margin: 4px 0;">Combat Bonus: <span>${(vehicleData as any).combat ?? 0}</span></p>
+          <p style="margin: 4px 0;">Scavenging Bonus: <span>${(vehicleData as any).scavenging ?? 0}</span></p>
+          <p style="margin: 4px 0;">Tech Bonus: <span>${(vehicleData as any).tech ?? 0}</span></p>
+          <p style="margin: 4px 0;">Max Drifters: <span>${vehicleData.maxDrifters}</span></p>
+          <p style="margin: 4px 0;">Max Cargo: <span>${vehicleData.maxCargo}</span></p>
 	        </div>
 			<div style="margin-top: 12px;">
 				${instances.map((instance) => this.renderVehicleInstance(instance, activeVehicleIds)).join('')}
@@ -164,16 +164,14 @@ export class VehiclePanel {
 		const isIdle = !isOnMission;
 		const selectedId = gameState.getState().selectedVehicleInstanceId;
 		const isSelected = selectedId === instance.instanceId;
-		const bg = isSelected ? '#2a3d55' : isIdle ? '#2c5530' : '#552c2c';
-		const border = isSelected ? '#4a6a8a' : isIdle ? '#4a7c59' : '#7c4a4a';
+		const state = isSelected ? 'selected' : isIdle ? 'idle' : 'on-mission';
 		const buttonLabel = isSelected ? 'Deselect' : isIdle ? 'Select' : 'On Mission';
 		const buttonDisabled = !isIdle; // prevent selecting while on a mission
-		const buttonBg = isSelected ? '#2f5d87' : isIdle ? '#4a7c59' : '#7c4a4a';
 		return `
-			<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; margin-top: 8px; background: ${bg}; border: 1px solid ${border}; border-radius: 4px; position: relative;">
-				<p style="margin: 0; font-size: 12px; color: #fff;">Instance: ${instance.instanceId.slice(0, 8)}...</p>
-${isSelected ? '<span style="position:absolute; top:-8px; left:-8px; background:#2f5d87; color:#fff; font-size:10px; padding:2px 6px; border-radius:4px; border:1px solid #4a6a8a;">SELECTED</span>' : ''}
-				<button class="select-vehicle-btn" data-id="${instance.instanceId}" style="padding: 4px 8px; background: ${buttonBg}; border: 1px solid #fff; color: #fff; cursor: ${buttonDisabled ? 'not-allowed' : 'pointer'}; border-radius: 4px;" ${buttonDisabled ? 'disabled' : ''}>
+			<div class="vehicle-instance" data-state="${state}">
+				<p style="margin: 0; font-size: 12px;">${instance.instanceId.slice(0, 8)}...</p>
+${isSelected ? '<span class="tag tag--selected">SELECTED</span>' : ''}
+				<button class="select-vehicle-btn" data-id="${instance.instanceId}" ${buttonDisabled ? 'disabled' : ''}>
 					${buttonLabel}
 				</button>
 			</div>

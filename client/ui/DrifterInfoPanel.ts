@@ -31,8 +31,8 @@ export class DrifterInfoPanel {
 
 		panel.innerHTML = `
       <div style="display:flex; align-items:center; gap:8px; margin-bottom: 12px;">
-        <h3 id="drifter-info-title" style="margin:0; color:#FFD700;">Drifter</h3>
-        <button id="close-drifter-info" style="margin-left:auto; background:none; border:1px solid #666; color:#fff; padding:4px 8px; cursor:pointer;">✕</button>
+        <h3 id="drifter-info-title" style="margin:0;">Drifter</h3>
+        <button id="close-drifter-info" style="margin-left:auto;">✕</button>
       </div>
       <div id="drifter-info-content">
         <p>Loading...</p>
@@ -110,50 +110,50 @@ export class DrifterInfoPanel {
       <div style="display:flex; gap:12px; align-items:center; margin-bottom:12px;">
         <img src="/images/drifters/thumbnails/${tokenId}.jpeg" alt="#${tokenId}" style="width:96px;height:96px;object-fit:cover;border-radius:6px;border:1px solid #333;" onerror="this.style.display='none'" />
         <div style="flex:1;">
-          <div style="font-size:14px;">Level: <span style="color:#ffd700; font-weight:bold;">${lvl}</span></div>
+          <div style="font-size:14px;">Level: <b>${lvl}</b></div>
           <div style="font-size:12px;">XP: ${xp} / ${xpNext}</div>
-          <div style="background:#333; height:8px; border-radius:4px; overflow:hidden; margin-top:4px;">
-            <div style="background:linear-gradient(90deg,#00c853,#aeea00); width:${pct}%; height:100%;"></div>
+          <div class="crt-progress" style="margin-top:4px; height:8px; border-radius:4px;">
+            <div class="crt-progress__bar" data-kind="xp" style="width:${pct}%;"></div>
           </div>
-          <div style="font-size:12px; color:#ccc; margin-top:6px;">Unspent Points: <strong style="color:#00ffcc;">${dp?.unspentPoints || 0}</strong></div>
+          <div class="muted" style="font-size:12px; margin-top:6px;">Unspent Points: <strong>${dp?.unspentPoints || 0}</strong></div>
         </div>
       </div>
 
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
-        <div style="border:1px solid #444; border-radius:6px; padding:8px;">
-          <div style="color:#aaa; font-weight:bold; margin-bottom:6px;">Base Stats</div>
-          <div style="font-size:12px; color:#ccc;">Combat: ${drifter.combat}</div>
-          <div style="font-size:12px; color:#ccc;">Scavenging: ${drifter.scavenging}</div>
-          <div style="font-size:12px; color:#ccc;">Tech: ${drifter.tech}</div>
-          <div style="font-size:12px; color:#ccc;">Speed: ${drifter.speed}</div>
+        <div class="crt-section" style="padding:8px;">
+          <div class="muted" style="font-weight:bold; margin-bottom:6px;">Base Stats</div>
+          <div style="font-size:12px;">Combat: ${drifter.combat}</div>
+          <div style="font-size:12px;">Scavenging: ${drifter.scavenging}</div>
+          <div style="font-size:12px;">Tech: ${drifter.tech}</div>
+          <div style="font-size:12px;">Speed: ${drifter.speed}</div>
         </div>
-        <div style="border:1px solid #444; border-radius:6px; padding:8px;">
-          <div style="color:#aaa; font-weight:bold; margin-bottom:6px;">Bonus Stats</div>
-          <div style="font-size:12px; color:#ccc;">Combat: +${bonuses.combat || 0}</div>
-          <div style="font-size:12px; color:#ccc;">Scavenging: +${bonuses.scavenging || 0}</div>
-          <div style="font-size:12px; color:#ccc;">Tech: +${bonuses.tech || 0}</div>
-          <div style="font-size:12px; color:#ccc;">Speed: +${bonuses.speed || 0}</div>
+        <div class="crt-section" style="padding:8px;">
+          <div class="muted" style="font-weight:bold; margin-bottom:6px;">Bonus Stats</div>
+          <div style="font-size:12px;">Combat: +${bonuses.combat || 0}</div>
+          <div style="font-size:12px;">Scavenging: +${bonuses.scavenging || 0}</div>
+          <div style="font-size:12px;">Tech: +${bonuses.tech || 0}</div>
+          <div style="font-size:12px;">Speed: +${bonuses.speed || 0}</div>
         </div>
       </div>
 
-      <div style="border:1px solid #444; border-radius:6px; padding:8px; margin-bottom:12px;">
-        <div style="color:#aaa; font-weight:bold; margin-bottom:6px;">Effective Stats</div>
-        <div style="font-size:12px; color:#ccc;">Combat: ${drifter.combat + (bonuses.combat || 0)}</div>
-        <div style="font-size:12px; color:#ccc;">Scavenging: ${drifter.scavenging + (bonuses.scavenging || 0)}</div>
-        <div style="font-size:12px; color:#ccc;">Tech: ${drifter.tech + (bonuses.tech || 0)}</div>
-        <div style="font-size:12px; color:#ccc;">Speed: ${drifter.speed + (bonuses.speed || 0)}</div>
+      <div class="crt-section" style="padding:8px; margin-bottom:12px;">
+        <div class="muted" style="font-weight:bold; margin-bottom:6px;">Effective Stats</div>
+        <div style="font-size:12px;">Combat: ${drifter.combat + (bonuses.combat || 0)}</div>
+        <div style="font-size:12px;">Scavenging: ${drifter.scavenging + (bonuses.scavenging || 0)}</div>
+        <div style="font-size:12px;">Tech: ${drifter.tech + (bonuses.tech || 0)}</div>
+        <div style="font-size:12px;">Speed: ${drifter.speed + (bonuses.speed || 0)}</div>
       </div>
 
       <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;">
         ${['combat', 'scavenging', 'tech', 'speed']
-					.map(
-						(attr) => `
-          <button class="alloc-btn" data-attr="${attr}" ${(dp?.unspentPoints || 0) > 0 ? '' : 'disabled'} style="padding:8px; background:${(dp?.unspentPoints || 0) > 0 ? '#2c5530' : '#444'}; border:1px solid #666; color:#fff; border-radius:4px; cursor:${(dp?.unspentPoints || 0) > 0 ? 'pointer' : 'not-allowed'};">
+          .map(
+            (attr) => `
+          <button class="alloc-btn" data-attr="${attr}" ${(dp?.unspentPoints || 0) > 0 ? '' : 'disabled'}>
             +1 ${attr.charAt(0).toUpperCase() + attr.slice(1)}
           </button>
         `,
-					)
-					.join('')}
+          )
+          .join('')}
       </div>
     `;
 

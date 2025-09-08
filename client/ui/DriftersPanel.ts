@@ -26,9 +26,9 @@ export class DriftersPanel {
 
 		panel.innerHTML = `
       <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 16px; gap: 8px;">
-        <h3 style="margin: 0; color: #FFD700;">Owned Drifters</h3>
-        <span id="drifters-panel-summary" style="font-size: 11px; color: #888; margin-left: auto;"></span>
-        <button id=\"close-drifters-panel\" style=\"background: none; border: 1px solid #666; color: #fff; padding: 4px 8px; cursor: pointer;\">✕</button>
+        <h3 style="margin: 0;">Owned Drifters</h3>
+        <span id="drifters-panel-summary" style="font-size: 11px; margin-left: auto;" class="muted"></span>
+        <button id=\"close-drifters-panel\">✕</button>
       </div>
       <div id=\"drifters-content\">
         <p>Loading drifters...</p>

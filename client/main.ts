@@ -8,6 +8,8 @@ import { GameScene } from './scenes/GameScene';
 // Import game state management and UI
 import { gameState } from './gameState';
 import { UIManager } from './ui/UIManager';
+import './styles/crt/theme-crt.css';
+import { initCrtTheme } from './ui/crtTheme';
 
 // Game configuration
 const config: Phaser.Types.Core.GameConfig = {
@@ -33,6 +35,8 @@ const _game = new Phaser.Game(config);
 // Initialize UI Manager (handles all panels and notifications)
 const _uiManager = new UIManager();
 
+// Initialize CRT theme (grungy CRT visuals with accessibility toggle)
+initCrtTheme({ enableToggleButton: false });
 // Import authentication system
 import { auth } from './auth';
 

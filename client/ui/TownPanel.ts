@@ -27,10 +27,10 @@ export class TownPanel {
 
 		panel.innerHTML = `
       <div style="display:flex; align-items:center; gap: 8px;">
-        <h3 style="margin:0; color:#FFD700;">Town</h3>
+        <h3 style="margin:0;">Town</h3>
         <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
-          <button id="center-town-btn" style="background:none; border:1px solid #666; color:#fff; padding:4px 8px; cursor:pointer;">Center on Town</button>
-          <button id="close-town-panel" style="background:none; border:1px solid #666; color:#fff; padding:4px 8px; cursor:pointer;">✕</button>
+          <button id="center-town-btn">Center on Town</button>
+          <button id="close-town-panel">✕</button>
         </div>
       </div>
       <div id="town-summary" style="margin-top: 8px; border:1px solid #333; padding:12px; border-radius:6px; background: rgba(255,255,255,0.03);"></div>
@@ -101,19 +101,21 @@ export class TownPanel {
 		const multiplier = Math.min(1.5, Math.max(1.0, 1 + 0.15 * Math.log10(1 + Math.max(0, P)))).toFixed(2);
 
 		summary.innerHTML = `
-      <div style="display:flex; gap: 12px; align-items:center;">
-        <div>Prosperity: <span style="color:#00ff88; font-weight:bold;">${Math.round(P)}</span></div>
-        <div>Resource Boost: <span style="color:#FFD700; font-weight:bold;">x${multiplier}</span></div>
+      <div class="crt-section" style="display:flex; gap: 12px; align-items:center;">
+        <div>Prosperity: <b>${Math.round(P)}</b></div>
+        <div>Resource Boost: <b>x${multiplier}</b></div>
       </div>
     `;
 
 		const vm = town.attributes['vehicle_market'];
 		vmEl.innerHTML = `
-      <h4 style="margin:0 0 8px 0; color:#FFD700;">Vehicle Market</h4>
-      <div>Level: <b>${vm.level}</b></div>
-      <div>Progress: <b>${vm.progress}</b> / <b>${vm.nextLevelCost}</b></div>
-      <div style="margin-top:8px; display:flex; gap:8px;">
-        ${this.renderContribButtons('vehicle_market', state)}
+      <div class="crt-section">
+        <h4 style="margin:0 0 8px 0;">Vehicle Market</h4>
+        <div>Level: <b>${vm.level}</b></div>
+        <div>Progress: <b>${vm.progress}</b> / <b>${vm.nextLevelCost}</b></div>
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          ${this.renderContribButtons('vehicle_market', state)}
+        </div>
       </div>
     `;
 
@@ -121,23 +123,25 @@ export class TownPanel {
 		const hp = walls.hp ?? 0;
 		const maxHp = walls.maxHp ?? 0;
 		wallsEl.innerHTML = `
-      <h4 style="margin:0 0 8px 0; color:#FFD700;">Perimeter Walls</h4>
-      <div>Level: <b>${walls.level}</b></div>
-      <div>HP: <b>${hp}</b> / <b>${maxHp}</b></div>
-      <div>Progress: <b>${walls.progress}</b> / <b>${walls.nextLevelCost}</b></div>
-      <div style="margin-top:8px; display:flex; gap:8px;">
-        ${this.renderContribButtons('perimeter_walls', state)}
+      <div class="crt-section">
+        <h4 style="margin:0 0 8px 0;">Perimeter Walls</h4>
+        <div>Level: <b>${walls.level}</b></div>
+        <div>HP: <b>${hp}</b> / <b>${maxHp}</b></div>
+        <div>Progress: <b>${walls.progress}</b> / <b>${walls.nextLevelCost}</b></div>
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          ${this.renderContribButtons('perimeter_walls', state)}
+        </div>
       </div>
     `;
 
 		const monsters = (state.monsters || []).filter((m: any) => m && m.state !== 'dead');
 		if (monsters.length === 0) {
-			monstersEl.innerHTML = '<h4 style="margin:0 0 8px 0; color:#FFD700;">Monsters</h4><p>No active monsters.</p>';
+			monstersEl.innerHTML = '<div class="crt-section"><h4 style="margin:0 0 8px 0;">Monsters</h4><p class="muted">No active monsters.</p></div>';
 		} else {
 			const missionCounts = TownPanel.getActiveMissionCounts(state);
 			monstersEl.innerHTML = `
-        <h4 style="margin:0 0 8px 0; color:#FFD700;">Monsters</h4>
-        <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px;">
+        <div class="crt-section"><h4 style="margin:0 0 8px 0;">Monsters</h4></div>
+        <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-top:8px;">
           ${monsters
 						.map((m) => {
 							const isTraveling = m.state === 'traveling';
@@ -145,19 +149,19 @@ export class TownPanel {
 							const coords =
 								m.coordinates && typeof m.coordinates.x === 'number' && typeof m.coordinates.y === 'number' ? m.coordinates : null;
 							const count = missionCounts.get(m.id) || 0;
-							const centerBtn = coords
-								? `<button class=\"center-monster-btn\" data-monster-id=\"${m.id}\" data-x=\"${coords.x}\" data-y=\"${coords.y}\" style=\"background:#444; border:1px solid #666; color:#fff; padding:4px 8px; cursor:pointer; border-radius:4px;\">Center</button>`
-								: `<button class=\"center-monster-btn\" data-monster-id=\"${m.id}\" disabled style=\"background:#222; border:1px solid #333; color:#777; padding:4px 8px; border-radius:4px; cursor:not-allowed;\">Center</button>`;
+const centerBtn = coords
+								? `<button class=\"center-monster-btn\" data-monster-id=\"${m.id}\" data-x=\"${coords.x}\" data-y=\"${coords.y}\">Center</button>`
+								: `<button class=\"center-monster-btn\" data-monster-id=\"${m.id}\" disabled>Center</button>`;
 							return `
             <div style="border:1px solid #333; padding:8px; border-radius:6px; background: rgba(255,255,255,0.02); display:flex; flex-direction:column; gap:6px;">
               <div style="display:flex; align-items:center; gap:8px; justify-content:space-between;">
                 <div style="display:flex; align-items:center; gap:6px;">
                   <b>${m.kind}</b>
-                  <span title="Active missions" style="background:#1e90ff; color:#fff; border-radius:10px; padding:1px 6px; font-size:12px; line-height:18px; display:inline-block;">${count}</span>
+<span title="Active missions" class="badge badge--count">${count}</span>
                 </div>
                 <div style="display:flex; gap:6px;">
                   ${centerBtn}
-                  <button class="target-monster-btn" data-monster-id="${m.id}" style="background:#8b0000; border:1px solid #fff; color:#fff; padding:4px 8px; cursor:pointer; border-radius:4px;">Target</button>
+<button class="target-monster-btn" data-monster-id="${m.id}">Target</button>
                 </div>
               </div>
               <div>HP: <b>${m.hp}</b> / <b>${m.maxHp}</b></div>
@@ -190,8 +194,8 @@ export class TownPanel {
 
 	private static renderContribButtons(attribute: 'vehicle_market' | 'perimeter_walls', state: GameState): string {
 		const disabled = !state.isAuthenticated || !state.profile;
-		const mkBtn = (amt: number) =>
-			`<button class="contrib-btn" data-attr="${attribute}" data-amount="${amt}" style="background:#444; border:1px solid #666; color:#fff; padding:4px 10px; cursor:pointer; border-radius:4px;" ${disabled ? 'disabled' : ''}>+${amt}</button>`;
+const mkBtn = (amt: number) =>
+			`<button class="contrib-btn" data-attr="${attribute}" data-amount="${amt}" ${disabled ? 'disabled' : ''}>+${amt}</button>`;
 		return `
       ${mkBtn(10)}
       ${mkBtn(100)}
