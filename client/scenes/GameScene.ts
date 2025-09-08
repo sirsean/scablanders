@@ -40,7 +40,7 @@ export class GameScene extends Phaser.Scene {
 	private missionIndicators = new Map<string, Phaser.GameObjects.Graphics>();
 	private missionIndicatorGlows = new Map<string, Phaser.GameObjects.Graphics>();
 	private missionRoutes = new Map<string, Phaser.GameObjects.Graphics>();
-private missionDrifters = new Map<string, Phaser.GameObjects.Container>();
+	private missionDrifters = new Map<string, Phaser.GameObjects.Container>();
 	private battleMarkers = new Map<string, Phaser.GameObjects.Graphics>();
 	private monsterIcons = new Map<string, Phaser.GameObjects.Container>();
 	private pendingTinyLoads = new Map<string, Promise<string>>();
@@ -269,7 +269,7 @@ private missionDrifters = new Map<string, Phaser.GameObjects.Container>();
 
 		// Update mission routes and drifter positions
 		if (state.activeMissions) {
-this.updateMissionRoutes(state.activeMissions || []);
+			this.updateMissionRoutes(state.activeMissions || []);
 		}
 
 		// Render battle markers (red X) for engaged monster missions until completion
@@ -775,7 +775,7 @@ this.updateMissionRoutes(state.activeMissions || []);
 			}
 			({ x: nodeX, y: nodeY } = targetNode.coordinates);
 		} else if (mission.targetMonsterId) {
-const mid = mission.targetMonsterId as string;
+			const mid = mission.targetMonsterId as string;
 			const monster = (currentState.monsters || []).find((m: any) => m.id === mid);
 			if (!monster) {
 				// Monster may have been killed/removed after engagement; fallback to battleLocation if available
@@ -826,7 +826,7 @@ const mid = mission.targetMonsterId as string;
 				return;
 			}
 		} else if (mission.targetMonsterId) {
-const mid = mission.targetMonsterId as string;
+			const mid = mission.targetMonsterId as string;
 			targetMonster = (currentState.monsters || []).find((m: any) => m.id === mid);
 			if (!targetMonster) {
 				// Monster may have been killed/removed after engagement; fallback to battleLocation if available
@@ -1134,11 +1134,10 @@ const mid = mission.targetMonsterId as string;
 				const targetNode = mission.targetNodeId
 					? currentState.resourceNodes?.find((r: ResourceNode) => r.id === mission.targetNodeId)
 					: undefined;
-const mid = mission.targetMonsterId as string | undefined;
+				const mid = mission.targetMonsterId as string | undefined;
 				const monster = mid ? (currentState.monsters || []).find((mm: any) => mm.id === mid) : undefined;
-				const monsterFallback = !monster && mission.engagementApplied && mission.battleLocation
-					? ({ coordinates: mission.battleLocation } as any)
-					: undefined;
+				const monsterFallback =
+					!monster && mission.engagementApplied && mission.battleLocation ? ({ coordinates: mission.battleLocation } as any) : undefined;
 				const monsterLike = monster || monsterFallback;
 				if (targetNode || monsterLike) {
 					this.updateDrifterPosition(drifterContainer, mission, targetNode as any, monsterLike as any);
@@ -1402,7 +1401,7 @@ const mid = mission.targetMonsterId as string | undefined;
 			return null;
 		}
 		const isSelf = this.isSelfMission(mission, playerAddress);
-const isMonster = !!mission.targetMonsterId;
+		const isMonster = !!mission.targetMonsterId;
 		if (mission.status === 'active') {
 			// If this is the player's mission and it's reached its end time, show as green (ready to claim)
 			const endTs = mission.completionTime instanceof Date ? mission.completionTime.getTime() : new Date(mission.completionTime).getTime();
@@ -1465,7 +1464,7 @@ const isMonster = !!mission.targetMonsterId;
 		}
 	}
 
-private updateBattleMarkers(missions: Mission[]) {
+	private updateBattleMarkers(missions: Mission[]) {
 		try {
 			const stateNow = gameState.getState();
 			const playerAddr = stateNow.playerAddress?.toLowerCase() || '';
@@ -1478,7 +1477,7 @@ private updateBattleMarkers(missions: Mission[]) {
 			);
 
 			// Remove markers that should no longer exist
-for (const [id, g] of this.battleMarkers) {
+			for (const [id, g] of this.battleMarkers) {
 				const still = shouldHave.has(id);
 				if (!still) {
 					try {
@@ -1492,9 +1491,11 @@ for (const [id, g] of this.battleMarkers) {
 				}
 			}
 
-// Create or update markers
+			// Create or update markers
 			for (const m of missions) {
-				if (!shouldHave.has(m.id)) continue;
+				if (!shouldHave.has(m.id)) {
+					continue;
+				}
 				const loc = m.battleLocation!;
 				let g = this.battleMarkers.get(m.id);
 				if (!g) {
@@ -1560,12 +1561,12 @@ for (const [id, g] of this.battleMarkers) {
 				this.monsterIcons.set(m.id, container);
 			} else {
 				container.setPosition(m.coordinates.x, m.coordinates.y);
-					// Update label text
-					const lbl = container.list.find((go) => (go as any).style) as Phaser.GameObjects.Text | undefined;
-					if (lbl) {
-						lbl.setText(`${m.kind}\nHP ${m.hp}/${m.maxHp}`);
-					}
+				// Update label text
+				const lbl = container.list.find((go) => (go as any).style) as Phaser.GameObjects.Text | undefined;
+				if (lbl) {
+					lbl.setText(`${m.kind}\nHP ${m.hp}/${m.maxHp}`);
 				}
 			}
 		}
 	}
+}

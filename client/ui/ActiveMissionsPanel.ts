@@ -154,7 +154,7 @@ export class ActiveMissionsPanel {
 		const targetResource = resources.find((r) => r.id === mission.targetNodeId);
 		const missionDrifters = ownedDrifters.filter((d) => mission.drifterIds.includes(d.tokenId));
 		const monsters = gameState.getState().monsters || [];
-const targetMonster = mission.targetMonsterId ? monsters.find((m) => m.id === mission.targetMonsterId) : null;
+		const targetMonster = mission.targetMonsterId ? monsters.find((m) => m.id === mission.targetMonsterId) : null;
 
 		// Determine vehicle name from player's profile if present
 		const profile = gameState.getState().profile;
@@ -169,7 +169,7 @@ const targetMonster = mission.targetMonsterId ? monsters.find((m) => m.id === mi
 			}
 		}
 
-const now = new Date();
+		const now = new Date();
 		const progress = this.calculateMissionProgress(mission.startTime, mission.completionTime, now);
 		const timeRemaining = this.formatTimeRemaining(mission.completionTime, now);
 
@@ -237,25 +237,27 @@ const now = new Date();
           <span style="color: #ccc;">Target: </span>
           <span style="color: ${targetMonster ? '#ff66ff' : '#00ff00'};">
             ${
-                      targetMonster
-                        ? `${targetMonster.kind} (${targetMonster.coordinates.x}, ${targetMonster.coordinates.y})`
-                        : targetResource
-                          ? `${targetResource.type.toUpperCase()} (${targetResource.rarity.toUpperCase()}) (${targetResource.coordinates.x}, ${targetResource.coordinates.y})`
-                          : 'Unknown location'
-                    }
+							targetMonster
+								? `${targetMonster.kind} (${targetMonster.coordinates.x}, ${targetMonster.coordinates.y})`
+								: targetResource
+									? `${targetResource.type.toUpperCase()} (${targetResource.rarity.toUpperCase()}) (${targetResource.coordinates.x}, ${targetResource.coordinates.y})`
+									: 'Unknown location'
+						}
           </span>
         </div>
 
-        ${mission.targetMonsterId
-          ? `
+        ${
+					mission.targetMonsterId
+						? `
         <div style=\"margin-bottom: 8px;\">
           <span style=\"color: #ccc;\">Engagement: </span>
           <span style=\"color: ${mission.engagementApplied ? '#66ff66' : '#ffcc00'}; font-weight: bold;\">${mission.engagementApplied ? 'Engaged' : 'Pending'}</span>
           ${mission.engagementApplied && typeof mission.combatDamageDealt === 'number' ? `<span style=\"color:#aaa; margin-left:6px;\">• Damage dealt: <b style=\"color:#ff8888;\">${mission.combatDamageDealt}</b></span>` : ''}
         </div>
 ${!mission.engagementApplied ? engagementCountdownHtml : ''}
-${mission.battleLocation
-          ? `
+${
+	mission.battleLocation
+		? `
         <div style=\"margin-bottom: 8px; display:flex; align-items:center; gap:8px;\">
           <span style=\"color:#ccc;\">Battle:</span>
           <span style=\"color:#ff4444; font-weight:bold;\">X</span>
@@ -267,21 +269,23 @@ ${mission.battleLocation
           >Center</button>
         </div>
         `
-          : ''}
+		: ''
+}
         `
-          : ''}
+						: ''
+				}
         
         <div style="margin-bottom: 8px;">
           <span style="color: #ccc;">Drifters: </span>
           ${missionDrifters
-                        .map(
-                          (d) => `
+						.map(
+							(d) => `
             <span style="color: #00bfff; font-size: 12px; margin-right: 8px;">
               #${d.tokenId}
             </span>
           `,
-                        )
-                        .join('')}
+						)
+						.join('')}
         </div>
 
         <div style="margin-bottom: 8px;">
@@ -363,9 +367,7 @@ ${mission.battleLocation
 // Global function for collecting missions
 (window as any).centerOnMap = (x: number, y: number) => {
 	try {
-		window.dispatchEvent(
-			new CustomEvent('map:center-on' as any, { detail: { x, y, smooth: true, duration: 800 } } as any),
-		);
+		window.dispatchEvent(new CustomEvent('map:center-on' as any, { detail: { x, y, smooth: true, duration: 800 } } as any));
 	} catch (e) {
 		console.warn('Failed to dispatch center-on event', e);
 	}

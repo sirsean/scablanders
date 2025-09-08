@@ -97,11 +97,7 @@ export class MissionPanel {
 			});
 
 			// Estimate duration and damage using shared helpers (instant if attacking at town)
-			let durationMs = calculateMonsterMissionDuration(
-				{ x: monster.coordinates.x, y: monster.coordinates.y },
-				teamStats,
-				selectedVehicle,
-			);
+			let durationMs = calculateMonsterMissionDuration({ x: monster.coordinates.x, y: monster.coordinates.y }, teamStats, selectedVehicle);
 			if (monster.state === 'attacking') {
 				durationMs = 0;
 			}

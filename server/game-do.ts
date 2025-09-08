@@ -762,7 +762,7 @@ export class GameDO extends DurableObject {
 				type: 'mission_started',
 				missionId,
 				playerAddress,
-message: `Combat mission started vs ${monster.kind} (${targetMonsterId})`,
+				message: `Combat mission started vs ${monster.kind} (${targetMonsterId})`,
 			});
 
 			return { success: true, missionId };
@@ -979,9 +979,9 @@ message: `Combat mission started vs ${monster.kind} (${targetMonsterId})`,
 		let totalCombatXpAwarded = 0; // for monster missions
 		let targetMonsterKind: string | undefined; // capture for completion log
 
-// Branch handling based on target type
-if (mission.targetMonsterId) {
-const targetMonsterId = mission.targetMonsterId as string;
+		// Branch handling based on target type
+		if (mission.targetMonsterId) {
+			const targetMonsterId = mission.targetMonsterId as string;
 			// Load monsters (read-only here unless we follow legacy path)
 			let monsters = await this.getStoredMonsters();
 			const monster = monsters.find((m) => m.id === targetMonsterId);
@@ -989,7 +989,7 @@ const targetMonsterId = mission.targetMonsterId as string;
 				targetMonsterKind = monster.kind;
 			}
 
-const engaged = !!mission.engagementApplied;
+			const engaged = !!mission.engagementApplied;
 			if (engaged) {
 				// Damage was already applied at engagement time; award XP now based on stored damage
 				const dmgStored = Math.max(0, Number(mission.combatDamageDealt) || 0);
@@ -1053,13 +1053,13 @@ const engaged = !!mission.engagementApplied;
 						monsters = monsters.filter((mm) => mm.id !== monster.id);
 						await this.addEvent({
 							type: 'monster_killed',
-message: `${monster.kind} killed (damage ${dmg}, hp ${before}→0)`,
+							message: `${monster.kind} killed (damage ${dmg}, hp ${before}→0)`,
 							data: { id: monster.id, kind: monster.kind, damage: dmg },
 						});
 					} else {
 						await this.addEvent({
 							type: 'town_damaged',
-message: `${monster.kind} damaged for ${dmg} (hp ${before}→${monster.hp})`,
+							message: `${monster.kind} damaged for ${dmg} (hp ${before}→${monster.hp})`,
 							data: { id: monster.id, kind: monster.kind, damage: dmg },
 						});
 					}
@@ -1204,7 +1204,7 @@ message: `${monster.kind} damaged for ${dmg} (hp ${before}→${monster.hp})`,
 			type: 'mission_complete',
 			playerAddress: mission.playerAddress,
 			missionId: mission.id,
-nodeId: mission.targetMonsterId ? undefined : mission.targetNodeId,
+			nodeId: mission.targetMonsterId ? undefined : mission.targetNodeId,
 			resourceType: undefined as any,
 			rarity: undefined as any,
 			drifterIds: mission.drifterIds,
@@ -1213,7 +1213,7 @@ nodeId: mission.targetMonsterId ? undefined : mission.targetNodeId,
 					? getVehicle(player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId)!.vehicleId)?.name
 					: 'On Foot'
 				: 'On Foot',
-message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} ${
+			message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} ${
 				mission.targetMonsterId
 					? `vs ${targetMonsterKind ?? 'MONSTER'}`
 					: `at ${(this.gameState.resourceNodes.get(mission.targetNodeId!)?.type ?? '').toString().toUpperCase()}`
@@ -1286,7 +1286,7 @@ message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpp
 		await this.broadcastPlayerStateUpdate(mission.playerAddress);
 		await this.broadcastWorldStateUpdate();
 
-// Send mission completion notification to player's sessions
+		// Send mission completion notification to player's sessions
 		const isMonsterMission = !!mission.targetMonsterId;
 		const notifMessage = isMonsterMission
 			? `Combat mission complete! Gained +${totalCombatXpAwarded} XP.`
@@ -1569,7 +1569,7 @@ message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpp
 			// Monster tick: run when due
 			const monIso = await this.ctx.storage.get<string>('nextMonsterAlarmAt');
 			let monAt = monIso ? new Date(monIso) : new Date(0);
-if (now >= monAt) {
+			if (now >= monAt) {
 				await this.monsterMovementTick(now);
 				await this.monsterAttackTick(now);
 				// Process any monster mission engagements that are due now
@@ -1606,9 +1606,9 @@ if (now >= monAt) {
 		let changesMade = false;
 
 		// Prosperity multiplier influences spawn targets and new node yields
-			const town = await this.getTownState();
-			const prosperityMult = prosperityResourceBoostMultiplier(town.prosperity);
-			const cappedSpawnMult = Math.min(1.5, Math.max(1.0, prosperityMult));
+		const town = await this.getTownState();
+		const prosperityMult = prosperityResourceBoostMultiplier(town.prosperity);
+		const cappedSpawnMult = Math.min(1.5, Math.max(1.0, prosperityMult));
 
 		// 1. Calculate hours elapsed since last update
 		const lastUpdate = this.gameState.worldMetrics.lastUpdate;
@@ -1981,7 +1981,7 @@ if (now >= monAt) {
 	}
 
 	// =============================================================================
-// Town & Monsters (initial scaffolding)
+	// Town & Monsters (initial scaffolding)
 
 	// --- Monster archetypes and helpers ---
 	private readonly MONSTER_BANDS: { kind: MonsterKind; speed: [number, number]; hp: [number, number] }[] = [
@@ -2032,8 +2032,6 @@ if (now >= monAt) {
 	// =============================================================================
 
 	// --- Prosperity math ---
-
-
 
 	// --- Town configuration defaults (tunable) ---
 	private TOWN_COST_BASE = 1000; // credits
@@ -2213,7 +2211,7 @@ if (now >= monAt) {
 		return { x: Math.round(x * scale), y: Math.round(y * scale) };
 	}
 
-private async processMonsterMissionEngagements(now: Date): Promise<boolean> {
+	private async processMonsterMissionEngagements(now: Date): Promise<boolean> {
 		try {
 			let changed = false;
 			// Work off stored monsters for HP mutations
@@ -2228,7 +2226,7 @@ private async processMonsterMissionEngagements(now: Date): Promise<boolean> {
 				if (mission.status !== 'active') {
 					continue;
 				}
-if (mission.engagementApplied) {
+				if (mission.engagementApplied) {
 					continue; // already engaged; waiting to return
 				}
 
@@ -2280,9 +2278,17 @@ if (mission.engagementApplied) {
 					killed = monster.hp <= 0;
 					if (killed) {
 						monsters = monsters.filter((mm) => mm.id !== monster.id);
-						await this.addEvent({ type: 'monster_killed', message: `${kind} killed (damage ${dmgApplied}, hp ${before}→0)`, data: { id: monster.id, kind, damage: dmgApplied } });
+						await this.addEvent({
+							type: 'monster_killed',
+							message: `${kind} killed (damage ${dmgApplied}, hp ${before}→0)`,
+							data: { id: monster.id, kind, damage: dmgApplied },
+						});
 					} else {
-						await this.addEvent({ type: 'town_damaged', message: `${kind} damaged for ${dmgApplied} (hp ${before}→${monster.hp})`, data: { id: monster.id, kind, damage: dmgApplied } });
+						await this.addEvent({
+							type: 'town_damaged',
+							message: `${kind} damaged for ${dmgApplied} (hp ${before}→${monster.hp})`,
+							data: { id: monster.id, kind, damage: dmgApplied },
+						});
 					}
 					await this.setStoredMonsters(monsters);
 				} else {
@@ -2292,7 +2298,7 @@ if (mission.engagementApplied) {
 				}
 
 				// Persist engagement state to mission and recompute return leg
-mission.engagementApplied = true;
+				mission.engagementApplied = true;
 				mission.combatDamageDealt = dmgApplied;
 				mission.battleLocation = battleCoords;
 
@@ -2316,7 +2322,7 @@ mission.engagementApplied = true;
 		}
 	}
 
-private async monsterMovementTick(now: Date): Promise<boolean> {
+	private async monsterMovementTick(now: Date): Promise<boolean> {
 		try {
 			const lastIso = (await this.ctx.storage.get<string>('lastMonsterMoveAt')) || '';
 			const last = lastIso ? new Date(lastIso) : new Date(); // if missing, initialize with now
@@ -2356,7 +2362,7 @@ private async monsterMovementTick(now: Date): Promise<boolean> {
 					m.coordinates = snapped;
 					m.state = 'attacking';
 					m.etaToTown = now;
-await this.addEvent({ type: 'monster_arrived', message: `${m.kind} arrived at town`, data: { id: m.id, kind: m.kind } });
+					await this.addEvent({ type: 'monster_arrived', message: `${m.kind} arrived at town`, data: { id: m.id, kind: m.kind } });
 					arrived++;
 					changed = true;
 				} else {
@@ -2382,7 +2388,7 @@ await this.addEvent({ type: 'monster_arrived', message: `${m.kind} arrived at to
 					if (!targetMonsterId) {
 						continue;
 					}
-if (mission.status !== 'active') {
+					if (mission.status !== 'active') {
 						continue;
 					}
 					// Do not adjust timing after engagement has already occurred
@@ -2494,7 +2500,7 @@ if (mission.status !== 'active') {
 					townChanged = true;
 					await this.addEvent({
 						type: 'town_damaged',
-message: `Town damaged by ${m.kind} for ${totalDamage} (walls:${outcome.wallsDamage} other:${outcome.attrDamage} prosperity:${outcome.prosperityDamage})`,
+						message: `Town damaged by ${m.kind} for ${totalDamage} (walls:${outcome.wallsDamage} other:${outcome.attrDamage} prosperity:${outcome.prosperityDamage})`,
 						data: { monsterId: m.id, kind: m.kind, ...outcome },
 					});
 				}
@@ -2507,7 +2513,11 @@ message: `Town damaged by ${m.kind} for ${totalDamage} (walls:${outcome.wallsDam
 					if (m.hp <= 0) {
 						// Remove from list when defeated at the walls
 						monsters = monsters.filter((mm) => mm.id !== m.id);
-await this.addEvent({ type: 'monster_killed', message: `${m.kind} died while attacking the town`, data: { id: m.id, kind: m.kind } });
+						await this.addEvent({
+							type: 'monster_killed',
+							message: `${m.kind} died while attacking the town`,
+							data: { id: m.id, kind: m.kind },
+						});
 					}
 				}
 			}
@@ -2606,7 +2616,7 @@ await this.addEvent({ type: 'monster_killed', message: `${m.kind} died while att
 		return { changed, wallsDamage, attrDamage, prosperityDamage };
 	}
 
-	private async maybeSpawnMonster(now: Date, prosperity: number): Promise<boolean> {
+	private async maybeSpawnMonster(now: Date, _prosperity: number): Promise<boolean> {
 		try {
 			const monsters = await this.getStoredMonsters();
 			if (monsters.length >= 3) {
@@ -2652,7 +2662,7 @@ await this.addEvent({ type: 'monster_killed', message: `${m.kind} died while att
 
 			await this.addEvent({
 				type: 'monster_spawned',
-message: `${m.kind} spawned at (${x}, ${y}) with ${hp} HP`,
+				message: `${m.kind} spawned at (${x}, ${y}) with ${hp} HP`,
 				data: { id: m.id, kind: m.kind, x, y, hp },
 			});
 			return true;

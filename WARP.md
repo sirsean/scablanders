@@ -26,7 +26,7 @@ Agent workflow and version control
 Notes
 
 - The Vite dev server serves the client from client/ at http://localhost:5173.
-- Wrangler (Cloudflare) serves the API under /api/* and WebSocket upgrade at /ws through server/worker.ts. Static assets are built to public/ and served by the Worker via wrangler assets binding.
+- Wrangler (Cloudflare) serves the API under /api/\* and WebSocket upgrade at /ws through server/worker.ts. Static assets are built to public/ and served by the Worker via wrangler assets binding.
 - Path aliases in TS/Vite: @shared/_ → ./shared/_, @client/_ → ./client/_, @server/_ → ./server/_.
 - Module imports: Use static ES module imports at the top of files. Do not use dynamic import() unless explicitly requested. This simplifies bundling and avoids runtime module loading in the Worker environment.
 
