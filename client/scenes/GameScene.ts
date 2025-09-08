@@ -774,15 +774,22 @@ this.updateMissionRoutes(state.activeMissions || []);
 				return;
 			}
 			({ x: nodeX, y: nodeY } = targetNode.coordinates);
-} else if (mission.targetMonsterId) {
+		} else if (mission.targetMonsterId) {
 const mid = mission.targetMonsterId as string;
 			const monster = (currentState.monsters || []).find((m: any) => m.id === mid);
 			if (!monster) {
-				console.warn(`[GameScene] ⚠️ Skipping route creation - monster ${mid} not found for mission ${mission.id}`);
-				return;
+				// Monster may have been killed/removed after engagement; fallback to battleLocation if available
+				if (mission.engagementApplied && mission.battleLocation) {
+					nodeX = mission.battleLocation.x;
+					nodeY = mission.battleLocation.y;
+				} else {
+					console.warn(`[GameScene] ⚠️ Skipping route creation - monster ${mid} not found for mission ${mission.id}`);
+					return;
+				}
+			} else {
+				nodeX = monster.coordinates.x;
+				nodeY = monster.coordinates.y;
 			}
-			nodeX = monster.coordinates.x;
-			nodeY = monster.coordinates.y;
 			// Override color for monster missions to a distinct purple
 			color = 0x9c27b0;
 		} else {
@@ -818,12 +825,17 @@ const mid = mission.targetMonsterId as string;
 				console.warn(`[GameScene]   - Available resource node IDs:`, currentState.resourceNodes?.map((n) => n.id) || []);
 				return;
 			}
-} else if (mission.targetMonsterId) {
+		} else if (mission.targetMonsterId) {
 const mid = mission.targetMonsterId as string;
 			targetMonster = (currentState.monsters || []).find((m: any) => m.id === mid);
 			if (!targetMonster) {
-				console.warn(`[GameScene] ⚠️ Skipping drifter creation - monster ${mid} not found for mission ${mission.id}`);
-				return;
+				// Monster may have been killed/removed after engagement; fallback to battleLocation if available
+				if (mission.engagementApplied && mission.battleLocation) {
+					targetMonster = { coordinates: mission.battleLocation } as any;
+				} else {
+					console.warn(`[GameScene] ⚠️ Skipping drifter creation - monster ${mid} not found for mission ${mission.id}`);
+					return;
+				}
 			}
 		} else {
 			return;
@@ -1124,14 +1136,19 @@ const mid = mission.targetMonsterId as string;
 					: undefined;
 const mid = mission.targetMonsterId as string | undefined;
 				const monster = mid ? (currentState.monsters || []).find((mm: any) => mm.id === mid) : undefined;
-				if (targetNode || monster) {
-					this.updateDrifterPosition(drifterContainer, mission, targetNode as any, monster as any);
+				const monsterFallback = !monster && mission.engagementApplied && mission.battleLocation
+					? ({ coordinates: mission.battleLocation } as any)
+					: undefined;
+				const monsterLike = monster || monsterFallback;
+				if (targetNode || monsterLike) {
+					this.updateDrifterPosition(drifterContainer, mission, targetNode as any, monsterLike as any);
 					// Update ring color live based on time
 					const ring = drifterContainer.getData('indicatorRing') as Phaser.GameObjects.Graphics | undefined;
 					if (ring) {
 						const playerAddr = gameState.getState().playerAddress;
 						let color = this.getMissionRenderColor(mission, playerAddr) ?? COLOR_SELF_ACTIVE;
-						if (monster) {
+						// Ensure monster missions stay purple while active, even when using fallback
+						if (mission.targetMonsterId) {
 							color = 0x9c27b0;
 						}
 						ring.clear();
