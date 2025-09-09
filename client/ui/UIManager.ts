@@ -21,11 +21,11 @@ export class UIManager {
 	private activeMissionsPanel: HTMLElement | null = null;
 	private marketPanel: HTMLElement | null = null;
 	private vehiclePanel: HTMLElement | null = null;
-private logPanel: HTMLElement | null = null;
-private townPanel: HTMLElement | null = null;
-private leaderboardsPanel: HTMLElement | null = null;
-private drifterInfoPanel: HTMLElement | null = null;
-private buttonUpdateInterval: number | null = null;
+	private logPanel: HTMLElement | null = null;
+	private townPanel: HTMLElement | null = null;
+	private leaderboardsPanel: HTMLElement | null = null;
+	private drifterInfoPanel: HTMLElement | null = null;
+	private buttonUpdateInterval: number | null = null;
 
 	/**
 	 * Attach bubbling-phase handlers to swallow pointer/mouse/touch events
@@ -112,7 +112,7 @@ private buttonUpdateInterval: number | null = null;
 		this.createMarketPanel();
 		this.createVehiclePanel();
 		this.createLogPanel();
-this.createTownPanel();
+		this.createTownPanel();
 		this.createLeaderboardsPanel();
 		this.createDrifterInfoPanel();
 	}
@@ -139,8 +139,8 @@ this.createTownPanel();
 			{ id: 'toggle-vehicles', label: 'Vehicles (V)' },
 			{ id: 'toggle-market', label: 'Market (M)' },
 			{ id: 'toggle-missions', label: 'Active Missions (A)' },
-{ id: 'toggle-log', label: 'Log (L)' },
-{ id: 'toggle-leaderboards', label: 'Leaderboards (B)' },
+			{ id: 'toggle-log', label: 'Log (L)' },
+			{ id: 'toggle-leaderboards', label: 'Leaderboards (B)' },
 		];
 
 		for (const b of buttons) {
@@ -274,7 +274,7 @@ this.createTownPanel();
 		document.body.appendChild(this.missionTooltipEl);
 	}
 
-private createLeaderboardsPanel() {
+	private createLeaderboardsPanel() {
 		this.leaderboardsPanel = LeaderboardsPanel.createLeaderboardsPanel();
 		document.body.appendChild(this.leaderboardsPanel);
 		this.swallowPointerEvents(this.leaderboardsPanel);
@@ -345,7 +345,7 @@ private createLeaderboardsPanel() {
 		document.getElementById('close-town-panel')?.addEventListener('click', () => {
 			gameState.toggleTownPanel();
 		});
-document.getElementById('close-log-panel')?.addEventListener('click', () => {
+		document.getElementById('close-log-panel')?.addEventListener('click', () => {
 			gameState.toggleLogPanel();
 		});
 		document.getElementById('close-leaderboards-panel')?.addEventListener('click', () => {
@@ -373,7 +373,7 @@ document.getElementById('close-log-panel')?.addEventListener('click', () => {
 		document.getElementById('toggle-town')?.addEventListener('click', () => {
 			gameState.toggleTownPanel();
 		});
-document.getElementById('toggle-log')?.addEventListener('click', () => {
+		document.getElementById('toggle-log')?.addEventListener('click', () => {
 			gameState.toggleLogPanel();
 		});
 		document.getElementById('toggle-leaderboards')?.addEventListener('click', () => {
@@ -423,7 +423,7 @@ document.getElementById('toggle-log')?.addEventListener('click', () => {
 				case 'P':
 					gameState.toggleProfilePanel();
 					break;
-case 'l':
+				case 'l':
 				case 'L':
 					gameState.toggleLogPanel();
 					break;
@@ -512,7 +512,7 @@ case 'l':
 			}
 		}
 
-if (this.leaderboardsPanel) {
+		if (this.leaderboardsPanel) {
 			this.leaderboardsPanel.style.display = state.showLeaderboardsPanel ? 'block' : 'none';
 			if (state.showLeaderboardsPanel) {
 				LeaderboardsPanel.updateLeaderboardsPanel(state);
@@ -640,9 +640,7 @@ if (this.leaderboardsPanel) {
 
 		// Update button text to show count (preserve shortcut key)
 		if (hasCompleted) {
-			button.textContent = completedCount === 1
-				? 'Active Missions (A) (1 Complete!)'
-				: `Active Missions (A) (${completedCount} Complete!)`;
+			button.textContent = completedCount === 1 ? 'Active Missions (A) (1 Complete!)' : `Active Missions (A) (${completedCount} Complete!)`;
 		} else {
 			button.textContent = 'Active Missions (A)';
 		}
@@ -682,7 +680,7 @@ if (this.leaderboardsPanel) {
 			this.driftersPanel,
 			this.drifterInfoPanel,
 			this.marketPanel,
-this.townPanel,
+			this.townPanel,
 			this.leaderboardsPanel,
 			this.missionPanel,
 		];

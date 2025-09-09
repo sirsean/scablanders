@@ -146,14 +146,14 @@ export class DrifterInfoPanel {
 
       <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;">
         ${['combat', 'scavenging', 'tech', 'speed']
-          .map(
-            (attr) => `
+					.map(
+						(attr) => `
           <button class="alloc-btn" data-attr="${attr}" ${(dp?.unspentPoints || 0) > 0 ? '' : 'disabled'}>
             +1 ${attr.charAt(0).toUpperCase() + attr.slice(1)}
           </button>
         `,
-          )
-          .join('')}
+					)
+					.join('')}
       </div>
     `;
 

@@ -124,10 +124,10 @@ export class GameDO extends DurableObject {
 	}
 	private gameState: GameState;
 	private webSocketSessions: Map<string, WebSocketSession>;
-private pendingNotifications: Map<string, Set<string>>; // sessionId -> Set<notificationId>
-private playerReplayQueues: Map<string, PendingNotification[]>; // playerAddress -> notification queue
-private contributionStats: Map<string, PlayerContributionStats>; // address -> contribution totals
-private env: Env;
+	private pendingNotifications: Map<string, Set<string>>; // sessionId -> Set<notificationId>
+	private playerReplayQueues: Map<string, PendingNotification[]>; // playerAddress -> notification queue
+	private contributionStats: Map<string, PlayerContributionStats>; // address -> contribution totals
+	private env: Env;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -135,9 +135,9 @@ private env: Env;
 
 		// Initialize WebSocket sessions and notification tracking
 		this.webSocketSessions = new Map();
-this.pendingNotifications = new Map();
-this.playerReplayQueues = new Map();
-this.contributionStats = new Map();
+		this.pendingNotifications = new Map();
+		this.playerReplayQueues = new Map();
+		this.contributionStats = new Map();
 
 		// Initialize empty game state
 		this.gameState = {
@@ -221,7 +221,7 @@ this.contributionStats = new Map();
 				this.gameState.resourceNodes = new Map(Object.entries(nodesData));
 			}
 
-// Load world metrics
+			// Load world metrics
 			const worldMetrics = await this.ctx.storage.get<typeof this.gameState.worldMetrics>('worldMetrics');
 			if (worldMetrics) {
 				this.gameState.worldMetrics = worldMetrics;
@@ -277,7 +277,7 @@ this.contributionStats = new Map();
 			console.log(`[GameDO] Saving game state - missions count: ${this.gameState.missions.size}`);
 			console.log(`[GameDO] Missions being saved:`, Object.keys(missionsToSave));
 
-await Promise.all([
+			await Promise.all([
 				this.ctx.storage.put('players', Object.fromEntries(this.gameState.players)),
 				this.ctx.storage.put('notifications', Object.fromEntries(this.gameState.notifications)),
 				this.ctx.storage.put('missions', missionsToSave),
@@ -573,64 +573,64 @@ await Promise.all([
 		await this.broadcastEventAppend(event);
 	}
 
-// =============================================================================
-// Player Management
-// =============================================================================
+	// =============================================================================
+	// Player Management
+	// =============================================================================
 
-/** Contribution stats helpers */
-private getOrCreateContributionStats(address: string): PlayerContributionStats {
-	const a = address.toLowerCase();
-	let stats = this.contributionStats.get(a);
-	if (!stats) {
-		stats = { totalUpgradeCredits: 0, totalProsperityFromMissions: 0, totalCombatDamage: 0 };
-		this.contributionStats.set(a, stats);
+	/** Contribution stats helpers */
+	private getOrCreateContributionStats(address: string): PlayerContributionStats {
+		const a = address.toLowerCase();
+		let stats = this.contributionStats.get(a);
+		if (!stats) {
+			stats = { totalUpgradeCredits: 0, totalProsperityFromMissions: 0, totalCombatDamage: 0 };
+			this.contributionStats.set(a, stats);
+		}
+		return stats;
 	}
-	return stats;
-}
 
-private incrementUpgradeCredits(address: string, amount: number) {
-	const amt = Math.floor(Number(amount) || 0);
-	if (amt <= 0) {
-		return;
+	private incrementUpgradeCredits(address: string, amount: number) {
+		const amt = Math.floor(Number(amount) || 0);
+		if (amt <= 0) {
+			return;
+		}
+		const stats = this.getOrCreateContributionStats(address);
+		stats.totalUpgradeCredits += amt;
 	}
-	const stats = this.getOrCreateContributionStats(address);
-	stats.totalUpgradeCredits += amt;
-}
 
-private incrementProsperityFromMissions(address: string, delta: number) {
-	const d = Number(delta) || 0;
-	if (d <= 0) {
-		return;
+	private incrementProsperityFromMissions(address: string, delta: number) {
+		const d = Number(delta) || 0;
+		if (d <= 0) {
+			return;
+		}
+		const stats = this.getOrCreateContributionStats(address);
+		stats.totalProsperityFromMissions += d;
 	}
-	const stats = this.getOrCreateContributionStats(address);
-	stats.totalProsperityFromMissions += d;
-}
 
-private incrementCombatDamage(address: string, dmg: number) {
-	const d = Math.floor(Number(dmg) || 0);
-	if (d <= 0) {
-		return;
+	private incrementCombatDamage(address: string, dmg: number) {
+		const d = Math.floor(Number(dmg) || 0);
+		if (d <= 0) {
+			return;
+		}
+		const stats = this.getOrCreateContributionStats(address);
+		stats.totalCombatDamage += d;
 	}
-	const stats = this.getOrCreateContributionStats(address);
-	stats.totalCombatDamage += d;
-}
 
-public async getLeaderboards(): Promise<LeaderboardsResponse> {
-	// Build arrays and sort desc, assign ranks starting at 1
-	const entries = Array.from(this.contributionStats.entries());
-	const build = (selector: (s: PlayerContributionStats) => number): LeaderboardEntry[] => {
-		const arr = entries
-			.map(([address, s]) => ({ address, value: selector(s) }))
-			.filter((e) => e.value > 0)
-			.sort((a, b) => b.value - a.value);
-		return arr.map((e, i) => ({ address: e.address, value: e.value, rank: i + 1 }));
-	};
-	return {
-		upgradeContributions: build((s) => s.totalUpgradeCredits),
-		resourceProsperity: build((s) => s.totalProsperityFromMissions),
-		combatDamage: build((s) => s.totalCombatDamage),
-	};
-}
+	public async getLeaderboards(): Promise<LeaderboardsResponse> {
+		// Build arrays and sort desc, assign ranks starting at 1
+		const entries = Array.from(this.contributionStats.entries());
+		const build = (selector: (s: PlayerContributionStats) => number): LeaderboardEntry[] => {
+			const arr = entries
+				.map(([address, s]) => ({ address, value: selector(s) }))
+				.filter((e) => e.value > 0)
+				.sort((a, b) => b.value - a.value);
+			return arr.map((e, i) => ({ address: e.address, value: e.value, rank: i + 1 }));
+		};
+		return {
+			upgradeContributions: build((s) => s.totalUpgradeCredits),
+			resourceProsperity: build((s) => s.totalProsperityFromMissions),
+			combatDamage: build((s) => s.totalCombatDamage),
+		};
+	}
 
 	/**
 	 * Get or create player profile
@@ -846,7 +846,7 @@ public async getLeaderboards(): Promise<LeaderboardsResponse> {
 			player.activeMissions = [...(player.activeMissions || []), missionId];
 
 			await this.saveGameState();
-await this.broadcastWorldStateUpdate();
+			await this.broadcastWorldStateUpdate();
 			await this.broadcastMissionUpdate({ mission });
 			await this.broadcastPlayerStateUpdate(playerAddress);
 			await this.broadcastLeaderboardsUpdate();
@@ -1137,7 +1137,7 @@ await this.broadcastWorldStateUpdate();
 					}
 					const est = estimateMonsterDamage(dStats, vehicleDataForDmg);
 					const variance = 0.15; // ±15% (keep same as client range)
-const dmg = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
+					const dmg = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
 					// Track combat damage for leaderboards (legacy completion path)
 					this.incrementCombatDamage(mission.playerAddress, dmg);
 					const before = monster.hp;
@@ -1255,10 +1255,10 @@ const dmg = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * var
 						if (delta > 0) {
 							const before = town.prosperity || 0;
 							town.prosperity = Math.max(0, before + delta); // unbounded above
-await this.setTownState(town);
-						// Track player prosperity contribution for leaderboards
-						this.incrementProsperityFromMissions(mission.playerAddress, delta);
-						await this.addEvent({
+							await this.setTownState(town);
+							// Track player prosperity contribution for leaderboards
+							this.incrementProsperityFromMissions(mission.playerAddress, delta);
+							await this.addEvent({
 								type: 'town_prosperity_changed',
 								message: `Town Prosperity +${delta.toFixed(2)} → ${Math.round(town.prosperity)}`,
 								data: {
@@ -1380,9 +1380,9 @@ await this.setTownState(town);
 		// since we use the real-time notification system instead
 
 		// Broadcast updates
-await this.broadcastPlayerStateUpdate(mission.playerAddress);
-			await this.broadcastWorldStateUpdate();
-			await this.broadcastLeaderboardsUpdate();
+		await this.broadcastPlayerStateUpdate(mission.playerAddress);
+		await this.broadcastWorldStateUpdate();
+		await this.broadcastLeaderboardsUpdate();
 
 		// Send mission completion notification to player's sessions
 		const isMonsterMission = !!mission.targetMonsterId;
@@ -1823,7 +1823,7 @@ await this.broadcastPlayerStateUpdate(mission.playerAddress);
 
 		if (changesMade) {
 			await this.saveGameState();
-await this.broadcastWorldStateUpdate();
+			await this.broadcastWorldStateUpdate();
 			await this.broadcastLeaderboardsUpdate();
 			console.log('[GameDO] Resource degradation cycle completed with changes');
 		} else {
@@ -2223,7 +2223,7 @@ await this.broadcastWorldStateUpdate();
 			}
 
 			// Debit credits up-front
-player.balance -= remaining;
+			player.balance -= remaining;
 
 			// Track full contribution amount toward upgrade credits leaderboard
 			this.incrementUpgradeCredits(playerAddress, amountCredits);
@@ -2374,7 +2374,7 @@ player.balance -= remaining;
 					battleCoords = { ...monster.coordinates };
 					const est = estimateMonsterDamage(dStats, vehicleData);
 					const variance = 0.15; // ±15%
-dmgApplied = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
+					dmgApplied = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
 					// Track combat damage for leaderboards (engagement path)
 					this.incrementCombatDamage(mission.playerAddress, dmgApplied);
 					const before = monster.hp;
@@ -2414,7 +2414,7 @@ dmgApplied = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * va
 				await this.broadcastMissionUpdate({ mission });
 			}
 
-if (changed) {
+			if (changed) {
 				await this.saveGameState();
 				await this.broadcastWorldStateUpdate();
 				await this.broadcastLeaderboardsUpdate();
@@ -2636,7 +2636,7 @@ if (changed) {
 				if (townChanged) {
 					await this.setTownState(town);
 				}
-await this.broadcastWorldStateUpdate();
+				await this.broadcastWorldStateUpdate();
 				await this.broadcastLeaderboardsUpdate();
 				console.log(`[Monsters] Attack: ${townChanged ? 'town state updated' : ''} ${changed ? 'monsters updated' : ''}`.trim());
 			} else {

@@ -85,19 +85,19 @@ export class ProfilePanel {
         <h4>Recent Activity</h4>
         <div class="crt-scroll" style="font-size: 12px;">
           ${
-            recentForPlayer.length
-              ? recentForPlayer
-                  .map(
-                    (ev) => `
+						recentForPlayer.length
+							? recentForPlayer
+									.map(
+										(ev) => `
             <div style=\"${buildEventBorderStyle((ev as any).type, 'margin: 8px 0;')}\">
               <div style=\"font-size:11px;\">${ProfilePanel.formatTime(ev.timestamp)}</div>
               <div style=\"font-size:13px;\">${ev.message}</div>
             </div>
           `,
-                  )
-                  .join('')
-              : '<p class="muted">No recent activity</p>'
-          }
+									)
+									.join('')
+							: '<p class="muted">No recent activity</p>'
+					}
         </div>
       </div>
     `;

@@ -270,7 +270,7 @@ export class WebSocketManager extends EventTarget {
 					);
 					break;
 
-case 'leaderboards_update':
+				case 'leaderboards_update':
 					console.log('[WS Client] Leaderboards update:', (message as any).data);
 					this.dispatchEvent(
 						new CustomEvent('leaderboardsUpdate', {

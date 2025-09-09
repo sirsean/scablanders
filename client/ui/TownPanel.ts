@@ -136,7 +136,8 @@ export class TownPanel {
 
 		const monsters = (state.monsters || []).filter((m: any) => m && m.state !== 'dead');
 		if (monsters.length === 0) {
-			monstersEl.innerHTML = '<div class="crt-section"><h4 style="margin:0 0 8px 0;">Monsters</h4><p class="muted">No active monsters.</p></div>';
+			monstersEl.innerHTML =
+				'<div class="crt-section"><h4 style="margin:0 0 8px 0;">Monsters</h4><p class="muted">No active monsters.</p></div>';
 		} else {
 			const missionCounts = TownPanel.getActiveMissionCounts(state);
 			monstersEl.innerHTML = `
@@ -149,7 +150,7 @@ export class TownPanel {
 							const coords =
 								m.coordinates && typeof m.coordinates.x === 'number' && typeof m.coordinates.y === 'number' ? m.coordinates : null;
 							const count = missionCounts.get(m.id) || 0;
-const centerBtn = coords
+							const centerBtn = coords
 								? `<button class=\"center-monster-btn\" data-monster-id=\"${m.id}\" data-x=\"${coords.x}\" data-y=\"${coords.y}\">Center</button>`
 								: `<button class=\"center-monster-btn\" data-monster-id=\"${m.id}\" disabled>Center</button>`;
 							return `
@@ -194,7 +195,7 @@ const centerBtn = coords
 
 	private static renderContribButtons(attribute: 'vehicle_market' | 'perimeter_walls', state: GameState): string {
 		const disabled = !state.isAuthenticated || !state.profile;
-const mkBtn = (amt: number) =>
+		const mkBtn = (amt: number) =>
 			`<button class="contrib-btn" data-attr="${attribute}" data-amount="${amt}" ${disabled ? 'disabled' : ''}>+${amt}</button>`;
 		return `
       ${mkBtn(10)}

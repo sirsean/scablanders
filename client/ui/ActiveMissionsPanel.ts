@@ -150,7 +150,7 @@ export class ActiveMissionsPanel {
     `;
 	}
 
-private static renderMissionCard(mission: Mission, ownedDrifters: DrifterProfile[], resources: ResourceNode[]): string {
+	private static renderMissionCard(mission: Mission, ownedDrifters: DrifterProfile[], resources: ResourceNode[]): string {
 		const targetResource = resources.find((r) => r.id === mission.targetNodeId);
 		const missionDrifters = ownedDrifters.filter((d) => mission.drifterIds.includes(d.tokenId));
 		const monsters = gameState.getState().monsters || [];
@@ -230,18 +230,18 @@ private static renderMissionCard(mission: Mission, ownedDrifters: DrifterProfile
           <span class="label">Target: </span>
           <span class="value" data-kind="${targetKind}">
             ${
-              targetMonster
-                ? `${targetMonster.kind} (${targetMonster.coordinates.x}, ${targetMonster.coordinates.y})`
-                : targetResource
-                  ? `${targetResource.type.toUpperCase()} (${targetResource.rarity.toUpperCase()}) (${targetResource.coordinates.x}, ${targetResource.coordinates.y})`
-                  : 'Unknown location'
-            }
+							targetMonster
+								? `${targetMonster.kind} (${targetMonster.coordinates.x}, ${targetMonster.coordinates.y})`
+								: targetResource
+									? `${targetResource.type.toUpperCase()} (${targetResource.rarity.toUpperCase()}) (${targetResource.coordinates.x}, ${targetResource.coordinates.y})`
+									: 'Unknown location'
+						}
           </span>
         </div>
 
         ${
-          mission.targetMonsterId
-            ? `
+					mission.targetMonsterId
+						? `
         <div class=\"mission-card__engagement\" style=\"margin-bottom: 8px;\">
           <span class=\"label\">Engagement: </span>
           <span class=\"crt-status\" data-state=\"${mission.engagementApplied ? 'complete' : 'active'}\">${mission.engagementApplied ? 'Engaged' : 'Pending'}</span>
@@ -249,8 +249,8 @@ private static renderMissionCard(mission: Mission, ownedDrifters: DrifterProfile
         </div>
 ${!mission.engagementApplied ? engagementCountdownHtml : ''}
 ${
-  mission.battleLocation
-    ? `
+	mission.battleLocation
+		? `
         <div class=\"mission-card__battle\" style=\"margin-bottom: 8px; display:flex; align-items:center; gap:8px;\">
           <span class=\"label\">Battle:</span>
           <span class=\"tag\">X</span>
@@ -258,11 +258,11 @@ ${
           <button onclick=\"centerOnMap(${mission.battleLocation.x}, ${mission.battleLocation.y})\" title=\"Center map on battle location\">Center</button>
         </div>
         `
-    : ''
+		: ''
 }
         `
-            : ''
-        }
+						: ''
+				}
 
         <div class="mission-card__team" style="margin-bottom: 8px;">
           <span class="label">Drifters: </span>
@@ -280,15 +280,15 @@ ${
         </div>
 
         ${
-          progress >= 100
-            ? `
+					progress >= 100
+						? `
           <button onclick="collectMission('${mission.id}')" style="width: 100%; padding: 6px; font-size: 12px;">Collect Rewards</button>
         `
-            : ''
-        }
+						: ''
+				}
       </div>
     `;
-}
+	}
 
 	private static calculateMissionProgress(startTime: Date | string, completionTime: Date | string, currentTime: Date): number {
 		const startDate = startTime instanceof Date ? startTime : new Date(startTime);

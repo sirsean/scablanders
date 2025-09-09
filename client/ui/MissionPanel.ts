@@ -339,14 +339,14 @@ export class MissionPanel {
 
 		const selectedMissionType = state.selectedMissionType;
 
-        return `
+		return `
       <div class="mission-type-grid">
         ${availableMissionTypes
-          .map((missionType) => {
-            const isSelected = selectedMissionType === missionType.type;
-            const disabledAttr = missionType.enabled ? '' : 'disabled';
-            const selectedAttr = isSelected ? 'data-selected="true"' : '';
-            return `
+					.map((missionType) => {
+						const isSelected = selectedMissionType === missionType.type;
+						const disabledAttr = missionType.enabled ? '' : 'disabled';
+						const selectedAttr = isSelected ? 'data-selected="true"' : '';
+						return `
             <button
               class="mission-type-btn"
               data-type="${missionType.type}"
@@ -356,8 +356,8 @@ export class MissionPanel {
               ${missionType.name}<br><small>${missionType.description}</small>
             </button>
           `;
-          })
-          .join('')}
+					})
+					.join('')}
       </div>
     `;
 	}
