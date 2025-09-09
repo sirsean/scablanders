@@ -40,8 +40,12 @@ panel.innerHTML = `
   }
 
   private static truncate(addr: string): string {
-    if (!addr) return '';
-    if (addr.length <= 12) return addr;
+    if (!addr) {
+      return '';
+    }
+    if (addr.length <= 12) {
+      return addr;
+    }
     return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
   }
 
@@ -72,7 +76,9 @@ panel.innerHTML = `
 
   static updateLeaderboardsPanel(state: GameState) {
     const content = document.getElementById('leaderboards-content');
-    if (!content) return;
+    if (!content) {
+      return;
+    }
 
     if (state.isLoadingLeaderboards) {
       content.innerHTML = '<p>Loading leaderboards…</p>';

@@ -590,21 +590,27 @@ private getOrCreateContributionStats(address: string): PlayerContributionStats {
 
 private incrementUpgradeCredits(address: string, amount: number) {
 	const amt = Math.floor(Number(amount) || 0);
-	if (amt <= 0) return;
+	if (amt <= 0) {
+		return;
+	}
 	const stats = this.getOrCreateContributionStats(address);
 	stats.totalUpgradeCredits += amt;
 }
 
 private incrementProsperityFromMissions(address: string, delta: number) {
 	const d = Number(delta) || 0;
-	if (d <= 0) return;
+	if (d <= 0) {
+		return;
+	}
 	const stats = this.getOrCreateContributionStats(address);
 	stats.totalProsperityFromMissions += d;
 }
 
 private incrementCombatDamage(address: string, dmg: number) {
 	const d = Math.floor(Number(dmg) || 0);
-	if (d <= 0) return;
+	if (d <= 0) {
+		return;
+	}
 	const stats = this.getOrCreateContributionStats(address);
 	stats.totalCombatDamage += d;
 }

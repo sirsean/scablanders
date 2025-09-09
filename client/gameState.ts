@@ -776,7 +776,9 @@ webSocketManager.subscribe([
 
 // Leaderboards
 async loadLeaderboards() {
-	if (this.state.isLoadingLeaderboards) return;
+	if (this.state.isLoadingLeaderboards) {
+		return;
+	}
 	this.setState({ isLoadingLeaderboards: true });
 	try {
 		const response = await this.apiCall('/leaderboards');

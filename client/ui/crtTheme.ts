@@ -61,7 +61,9 @@ function createOverlay(): HTMLElement {
 
 function createToggleButton(onToggle: (next: boolean) => void): HTMLButtonElement {
   let btn = document.getElementById('crt-toggle') as HTMLButtonElement | null;
-  if (btn) return btn;
+  if (btn) {
+    return btn;
+  }
 
   btn = document.createElement('button');
   btn.id = 'crt-toggle';
@@ -91,7 +93,9 @@ function createToggleButton(onToggle: (next: boolean) => void): HTMLButtonElemen
     const next = !isOn;
     root.setAttribute('data-crt-effects', next ? 'on' : 'off');
     btn!.setAttribute('aria-pressed', next ? 'true' : 'false');
-    if (next) createOverlay();
+    if (next) {
+      createOverlay();
+    }
     onToggle(next);
   });
 
@@ -101,11 +105,15 @@ function createToggleButton(onToggle: (next: boolean) => void): HTMLButtonElemen
 
 function randomizePanelFlicker(root: ParentNode) {
   const reduce = getPrefersReducedMotion();
-  if (reduce) return;
+  if (reduce) {
+    return;
+  }
   const nodes = root.querySelectorAll<HTMLElement>('.game-panel, .crt-section');
   nodes.forEach((el) => {
     // Skip if already initialized
-    if ((el as any).__crtFlickerInit) return;
+    if ((el as any).__crtFlickerInit) {
+      return;
+    }
     (el as any).__crtFlickerInit = true;
     const dur = (1.6 + Math.random() * 2.4).toFixed(2) + 's';
     const delay = (Math.random() * 2.8).toFixed(2) + 's';
@@ -129,7 +137,9 @@ export function initCrtTheme(options: CrtOptions = {}) {
   // Apply
   document.documentElement.setAttribute('data-theme', 'crt');
   document.documentElement.setAttribute('data-crt-effects', shouldEnable ? 'on' : 'off');
-  if (shouldEnable) createOverlay();
+  if (shouldEnable) {
+    createOverlay();
+  }
 
   // Initialize per-panel flicker on existing elements
   try { randomizePanelFlicker(document); } catch {}
@@ -160,7 +170,9 @@ export function initCrtTheme(options: CrtOptions = {}) {
       if (getSaved(opts.storageKey) == null) {
         const enable = !e.matches;
         document.documentElement.setAttribute('data-crt-effects', enable ? 'on' : 'off');
-        if (enable) createOverlay();
+        if (enable) {
+          createOverlay();
+        }
       }
     };
     // safari and older support addListener; modern uses addEventListener
