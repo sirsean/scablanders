@@ -1,4 +1,5 @@
 import type { PlayerProfile, Mission, DrifterProfile, ResourceNode, Vehicle, GameEvent, TownState, Monster } from '@shared/models';
+import type { LeaderboardsResponse } from '@shared/leaderboards';
 import { auth } from './auth';
 import { webSocketManager } from './websocketManager';
 import type { PlayerStateUpdate, WorldStateUpdate } from '@shared/models';
@@ -49,16 +50,22 @@ export interface GameState {
 	showMarketPanel: boolean;
 	showVehiclePanel: boolean;
 	showTownPanel: boolean;
-	showLogPanel: boolean;
-	notifications: GameNotification[];
-	// Logs
-	eventLog: GameEvent[];
+showLogPanel: boolean;
+showLeaderboardsPanel: boolean;
+notifications: GameNotification[];
+// Logs
+ eventLog: GameEvent[];
 
-	// Loading states
-	isLoadingProfile: boolean;
-	isLoadingWorld: boolean;
-	isLoadingPlayerMissions: boolean;
-	isLoadingMarket: boolean;
+ // Leaderboards
+ leaderboards: LeaderboardsResponse | null;
+ leaderboardsLoadedAt: number | null;
+ isLoadingLeaderboards: boolean;
+
+ // Loading states
+ isLoadingProfile: boolean;
+ isLoadingWorld: boolean;
+ isLoadingPlayerMissions: boolean;
+ isLoadingMarket: boolean;
 }
 
 export interface GameNotification {
@@ -101,13 +108,17 @@ class GameStateManager extends EventTarget {
 		showMarketPanel: false,
 		showVehiclePanel: false,
 		showTownPanel: false,
-		showLogPanel: false,
-		notifications: [],
-		eventLog: [],
-		isLoadingProfile: false,
-		isLoadingWorld: false,
-		isLoadingPlayerMissions: false,
-		isLoadingMarket: false,
+showLogPanel: false,
+	showLeaderboardsPanel: false,
+	notifications: [],
+	eventLog: [],
+	leaderboards: null,
+	leaderboardsLoadedAt: null,
+	isLoadingLeaderboards: false,
+	isLoadingProfile: false,
+	isLoadingWorld: false,
+	isLoadingPlayerMissions: false,
+	isLoadingMarket: false,
 	};
 
 	constructor() {
@@ -212,13 +223,14 @@ class GameStateManager extends EventTarget {
 				// Subscribe to events once authenticated
 				if (authenticated) {
 					console.log('[GameState] WebSocket authenticated, subscribing to events');
-					webSocketManager.subscribe([
+webSocketManager.subscribe([
 						'player_state',
 						'world_state',
 						'mission_update',
 						'event_log_append',
 						'event_log_snapshot',
 						'notification',
+						'leaderboards_update',
 					]);
 					// Initial sync of event log
 					this.syncEventLog();
@@ -323,6 +335,16 @@ class GameStateManager extends EventTarget {
 					title: update.notification.title,
 					message: update.notification.message,
 				});
+			}
+		});
+
+// Listen for leaderboards updates
+		webSocketManager.addEventListener('leaderboardsUpdate', (event: any) => {
+			try {
+				const boards = event.detail;
+				this.setState({ leaderboards: boards, leaderboardsLoadedAt: Date.now(), isLoadingLeaderboards: false });
+			} catch (e) {
+				console.warn('[GameState] Failed processing leaderboardsUpdate', e);
 			}
 		});
 
@@ -750,9 +772,33 @@ class GameStateManager extends EventTarget {
 			// Best-effort refresh; live updates will append thereafter
 			this.syncEventLog().catch((e) => console.warn('[GameState] syncEventLog on open failed:', e));
 		}
-	}
+}
 
-	// Multi-drifter selection management
+// Leaderboards
+async loadLeaderboards() {
+	if (this.state.isLoadingLeaderboards) return;
+	this.setState({ isLoadingLeaderboards: true });
+	try {
+		const response = await this.apiCall('/leaderboards');
+		const data = (await response.json()) as LeaderboardsResponse;
+		this.setState({ leaderboards: data, leaderboardsLoadedAt: Date.now(), isLoadingLeaderboards: false });
+	} catch {
+		this.setState({ isLoadingLeaderboards: false });
+	}
+}
+
+toggleLeaderboardsPanel() {
+	const willShow = !this.state.showLeaderboardsPanel;
+	this.setState({ showLeaderboardsPanel: willShow });
+	if (willShow) {
+		const stale = !this.state.leaderboardsLoadedAt || Date.now() - this.state.leaderboardsLoadedAt > 30_000;
+		if (!this.state.leaderboards || stale) {
+			this.loadLeaderboards().catch(() => {});
+		}
+	}
+}
+
+// Multi-drifter selection management
 	toggleDrifterSelection(drifterId: number) {
 		const currentSelection = [...this.state.selectedDrifterIds];
 		const index = currentSelection.indexOf(drifterId);

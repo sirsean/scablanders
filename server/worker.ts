@@ -11,6 +11,7 @@ import market from './routes/market';
 import logs from './routes/logs';
 import drifters from './routes/drifters';
 import town from './routes/town';
+import leaderboards from './routes/leaderboards';
 
 import { getPlayerOwnedDrifters } from './nft';
 
@@ -161,6 +162,7 @@ app.route('/api/market', market);
 app.route('/api/logs', logs);
 app.route('/api/drifters', drifters);
 app.route('/api/town', town);
+app.route('/api/leaderboards', leaderboards);
 
 // 404 handler for unmatched API routes
 app.notFound((c) => {

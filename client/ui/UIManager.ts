@@ -9,6 +9,7 @@ import { MissionPanel } from './MissionPanel';
 import { DriftersPanel } from './DriftersPanel';
 import { ProfilePanel } from './ProfilePanel';
 import { TownPanel } from './TownPanel';
+import { LeaderboardsPanel } from './LeaderboardsPanel';
 import { buildNotificationStyle } from './utils/notificationStyles';
 
 export class UIManager {
@@ -20,10 +21,11 @@ export class UIManager {
 	private activeMissionsPanel: HTMLElement | null = null;
 	private marketPanel: HTMLElement | null = null;
 	private vehiclePanel: HTMLElement | null = null;
-	private logPanel: HTMLElement | null = null;
-	private townPanel: HTMLElement | null = null;
-	private drifterInfoPanel: HTMLElement | null = null;
-	private buttonUpdateInterval: number | null = null;
+private logPanel: HTMLElement | null = null;
+private townPanel: HTMLElement | null = null;
+private leaderboardsPanel: HTMLElement | null = null;
+private drifterInfoPanel: HTMLElement | null = null;
+private buttonUpdateInterval: number | null = null;
 
 	/**
 	 * Attach bubbling-phase handlers to swallow pointer/mouse/touch events
@@ -110,7 +112,8 @@ export class UIManager {
 		this.createMarketPanel();
 		this.createVehiclePanel();
 		this.createLogPanel();
-		this.createTownPanel();
+this.createTownPanel();
+		this.createLeaderboardsPanel();
 		this.createDrifterInfoPanel();
 	}
 
@@ -136,7 +139,8 @@ export class UIManager {
 			{ id: 'toggle-vehicles', label: 'Vehicles (V)' },
 			{ id: 'toggle-market', label: 'Market (M)' },
 			{ id: 'toggle-missions', label: 'Active Missions (A)' },
-			{ id: 'toggle-log', label: 'Log (L)' },
+{ id: 'toggle-log', label: 'Log (L)' },
+{ id: 'toggle-leaderboards', label: 'Leaderboards (B)' },
 		];
 
 		for (const b of buttons) {
@@ -270,6 +274,12 @@ export class UIManager {
 		document.body.appendChild(this.missionTooltipEl);
 	}
 
+private createLeaderboardsPanel() {
+		this.leaderboardsPanel = LeaderboardsPanel.createLeaderboardsPanel();
+		document.body.appendChild(this.leaderboardsPanel);
+		this.swallowPointerEvents(this.leaderboardsPanel);
+	}
+
 	private createDrifterInfoPanel() {
 		this.drifterInfoPanel = DrifterInfoPanel.createDrifterInfoPanel();
 		document.body.appendChild(this.drifterInfoPanel);
@@ -335,8 +345,11 @@ export class UIManager {
 		document.getElementById('close-town-panel')?.addEventListener('click', () => {
 			gameState.toggleTownPanel();
 		});
-		document.getElementById('close-log-panel')?.addEventListener('click', () => {
+document.getElementById('close-log-panel')?.addEventListener('click', () => {
 			gameState.toggleLogPanel();
+		});
+		document.getElementById('close-leaderboards-panel')?.addEventListener('click', () => {
+			gameState.toggleLeaderboardsPanel();
 		});
 
 		document.getElementById('toggle-market')?.addEventListener('click', () => {
@@ -360,8 +373,11 @@ export class UIManager {
 		document.getElementById('toggle-town')?.addEventListener('click', () => {
 			gameState.toggleTownPanel();
 		});
-		document.getElementById('toggle-log')?.addEventListener('click', () => {
+document.getElementById('toggle-log')?.addEventListener('click', () => {
 			gameState.toggleLogPanel();
+		});
+		document.getElementById('toggle-leaderboards')?.addEventListener('click', () => {
+			gameState.toggleLeaderboardsPanel();
 		});
 
 		document.getElementById('close-vehicle-panel')?.addEventListener('click', () => {
@@ -407,9 +423,13 @@ export class UIManager {
 				case 'P':
 					gameState.toggleProfilePanel();
 					break;
-				case 'l':
+case 'l':
 				case 'L':
 					gameState.toggleLogPanel();
+					break;
+				case 'b':
+				case 'B':
+					gameState.toggleLeaderboardsPanel();
 					break;
 				case 't':
 				case 'T':
@@ -489,6 +509,13 @@ export class UIManager {
 			this.vehiclePanel.style.display = state.showVehiclePanel ? 'block' : 'none';
 			if (state.showVehiclePanel && state.profile) {
 				VehiclePanel.updateVehiclePanel(state.profile.vehicles);
+			}
+		}
+
+if (this.leaderboardsPanel) {
+			this.leaderboardsPanel.style.display = state.showLeaderboardsPanel ? 'block' : 'none';
+			if (state.showLeaderboardsPanel) {
+				LeaderboardsPanel.updateLeaderboardsPanel(state);
 			}
 		}
 
@@ -655,7 +682,8 @@ export class UIManager {
 			this.driftersPanel,
 			this.drifterInfoPanel,
 			this.marketPanel,
-			this.townPanel,
+this.townPanel,
+			this.leaderboardsPanel,
 			this.missionPanel,
 		];
 

@@ -270,6 +270,15 @@ export class WebSocketManager extends EventTarget {
 					);
 					break;
 
+case 'leaderboards_update':
+					console.log('[WS Client] Leaderboards update:', (message as any).data);
+					this.dispatchEvent(
+						new CustomEvent('leaderboardsUpdate', {
+							detail: (message as any).data,
+						}),
+					);
+					break;
+
 				case 'event_log_snapshot':
 					console.log('[WS Client] Event log snapshot:', message.data);
 					this.dispatchEvent(

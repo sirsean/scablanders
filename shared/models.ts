@@ -351,6 +351,13 @@ export interface WebSocketMessage {
 	data?: any;
 }
 
+// Leaderboards WS update
+import type { LeaderboardsResponse } from './leaderboards';
+export interface LeaderboardsUpdate extends WebSocketMessage {
+	type: 'leaderboards_update';
+	data: LeaderboardsResponse;
+}
+
 export interface PlayerStateUpdate extends WebSocketMessage {
 	type: 'player_state';
 	data: {
@@ -423,7 +430,8 @@ export type GameWebSocketMessage =
 	| ConnectionStatusUpdate
 	| NotificationAck
 	| EventLogAppend
-	| EventLogSnapshot;
+	| EventLogSnapshot
+	| LeaderboardsUpdate;
 
 // Utility types
 export type Coordinates = {

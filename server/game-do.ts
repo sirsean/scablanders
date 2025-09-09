@@ -29,6 +29,7 @@ import {
 import { getDrifterStats } from './drifters';
 import { getVehicle } from './vehicles';
 import { calculateProsperityGain, prosperityResourceBoostMultiplier } from '../shared/prosperity-utils';
+import type { LeaderboardsResponse, LeaderboardEntry } from '@shared/leaderboards';
 interface WebSocketSession {
 	websocket: WebSocket;
 	sessionId: string;
@@ -53,6 +54,12 @@ interface ResourceManagementConfig {
 	degradationRate: number; // percentage per hour (negative)
 	// World is centered at (0,0); resources spawn within this radius
 	spawnRadius: number; // in world units (pixels)
+}
+
+interface PlayerContributionStats {
+	totalUpgradeCredits: number;
+	totalProsperityFromMissions: number;
+	totalCombatDamage: number;
 }
 
 interface GameState {
@@ -117,9 +124,10 @@ export class GameDO extends DurableObject {
 	}
 	private gameState: GameState;
 	private webSocketSessions: Map<string, WebSocketSession>;
-	private pendingNotifications: Map<string, Set<string>>; // sessionId -> Set<notificationId>
-	private playerReplayQueues: Map<string, PendingNotification[]>; // playerAddress -> notification queue
-	private env: Env;
+private pendingNotifications: Map<string, Set<string>>; // sessionId -> Set<notificationId>
+private playerReplayQueues: Map<string, PendingNotification[]>; // playerAddress -> notification queue
+private contributionStats: Map<string, PlayerContributionStats>; // address -> contribution totals
+private env: Env;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -127,8 +135,9 @@ export class GameDO extends DurableObject {
 
 		// Initialize WebSocket sessions and notification tracking
 		this.webSocketSessions = new Map();
-		this.pendingNotifications = new Map();
-		this.playerReplayQueues = new Map();
+this.pendingNotifications = new Map();
+this.playerReplayQueues = new Map();
+this.contributionStats = new Map();
 
 		// Initialize empty game state
 		this.gameState = {
@@ -212,10 +221,16 @@ export class GameDO extends DurableObject {
 				this.gameState.resourceNodes = new Map(Object.entries(nodesData));
 			}
 
-			// Load world metrics
+// Load world metrics
 			const worldMetrics = await this.ctx.storage.get<typeof this.gameState.worldMetrics>('worldMetrics');
 			if (worldMetrics) {
 				this.gameState.worldMetrics = worldMetrics;
+			}
+
+			// Load contribution stats
+			const contribData = await this.ctx.storage.get<Record<string, PlayerContributionStats>>('contributionStats');
+			if (contribData) {
+				this.contributionStats = new Map(Object.entries(contribData));
 			}
 
 			// Load drifter progress
@@ -262,7 +277,7 @@ export class GameDO extends DurableObject {
 			console.log(`[GameDO] Saving game state - missions count: ${this.gameState.missions.size}`);
 			console.log(`[GameDO] Missions being saved:`, Object.keys(missionsToSave));
 
-			await Promise.all([
+await Promise.all([
 				this.ctx.storage.put('players', Object.fromEntries(this.gameState.players)),
 				this.ctx.storage.put('notifications', Object.fromEntries(this.gameState.notifications)),
 				this.ctx.storage.put('missions', missionsToSave),
@@ -270,6 +285,7 @@ export class GameDO extends DurableObject {
 				this.ctx.storage.put('worldMetrics', this.gameState.worldMetrics),
 				this.ctx.storage.put('eventLog', this.gameState.eventLog),
 				this.ctx.storage.put('drifterProgress', Object.fromEntries(this.gameState.drifterProgress)),
+				this.ctx.storage.put('contributionStats', Object.fromEntries(this.contributionStats)),
 			]);
 
 			console.log('[GameDO] Game state saved successfully');
@@ -503,6 +519,27 @@ export class GameDO extends DurableObject {
 	}
 
 	/**
+	 * Broadcast leaderboards update to all authenticated sessions
+	 */
+	private async broadcastLeaderboardsUpdate() {
+		try {
+			const boards = await this.getLeaderboards();
+			const message = {
+				type: 'leaderboards_update',
+				timestamp: new Date(),
+				data: boards,
+			};
+			for (const [_sessionId, session] of this.webSocketSessions) {
+				if (session.authenticated && session.websocket.readyState === WebSocket.READY_STATE_OPEN) {
+					session.websocket.send(JSON.stringify(message));
+				}
+			}
+		} catch (e) {
+			console.warn('[GameDO] Failed broadcasting leaderboards update', e);
+		}
+	}
+
+	/**
 	 * Broadcast a single appended event to all authenticated sessions
 	 */
 	private async broadcastEventAppend(event: GameEvent) {
@@ -536,9 +573,58 @@ export class GameDO extends DurableObject {
 		await this.broadcastEventAppend(event);
 	}
 
-	// =============================================================================
-	// Player Management
-	// =============================================================================
+// =============================================================================
+// Player Management
+// =============================================================================
+
+/** Contribution stats helpers */
+private getOrCreateContributionStats(address: string): PlayerContributionStats {
+	const a = address.toLowerCase();
+	let stats = this.contributionStats.get(a);
+	if (!stats) {
+		stats = { totalUpgradeCredits: 0, totalProsperityFromMissions: 0, totalCombatDamage: 0 };
+		this.contributionStats.set(a, stats);
+	}
+	return stats;
+}
+
+private incrementUpgradeCredits(address: string, amount: number) {
+	const amt = Math.floor(Number(amount) || 0);
+	if (amt <= 0) return;
+	const stats = this.getOrCreateContributionStats(address);
+	stats.totalUpgradeCredits += amt;
+}
+
+private incrementProsperityFromMissions(address: string, delta: number) {
+	const d = Number(delta) || 0;
+	if (d <= 0) return;
+	const stats = this.getOrCreateContributionStats(address);
+	stats.totalProsperityFromMissions += d;
+}
+
+private incrementCombatDamage(address: string, dmg: number) {
+	const d = Math.floor(Number(dmg) || 0);
+	if (d <= 0) return;
+	const stats = this.getOrCreateContributionStats(address);
+	stats.totalCombatDamage += d;
+}
+
+public async getLeaderboards(): Promise<LeaderboardsResponse> {
+	// Build arrays and sort desc, assign ranks starting at 1
+	const entries = Array.from(this.contributionStats.entries());
+	const build = (selector: (s: PlayerContributionStats) => number): LeaderboardEntry[] => {
+		const arr = entries
+			.map(([address, s]) => ({ address, value: selector(s) }))
+			.filter((e) => e.value > 0)
+			.sort((a, b) => b.value - a.value);
+		return arr.map((e, i) => ({ address: e.address, value: e.value, rank: i + 1 }));
+	};
+	return {
+		upgradeContributions: build((s) => s.totalUpgradeCredits),
+		resourceProsperity: build((s) => s.totalProsperityFromMissions),
+		combatDamage: build((s) => s.totalCombatDamage),
+	};
+}
 
 	/**
 	 * Get or create player profile
@@ -754,9 +840,10 @@ export class GameDO extends DurableObject {
 			player.activeMissions = [...(player.activeMissions || []), missionId];
 
 			await this.saveGameState();
-			await this.broadcastWorldStateUpdate();
+await this.broadcastWorldStateUpdate();
 			await this.broadcastMissionUpdate({ mission });
 			await this.broadcastPlayerStateUpdate(playerAddress);
+			await this.broadcastLeaderboardsUpdate();
 
 			await this.addEvent({
 				type: 'mission_started',
@@ -1044,7 +1131,9 @@ export class GameDO extends DurableObject {
 					}
 					const est = estimateMonsterDamage(dStats, vehicleDataForDmg);
 					const variance = 0.15; // ±15% (keep same as client range)
-					const dmg = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
+const dmg = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
+					// Track combat damage for leaderboards (legacy completion path)
+					this.incrementCombatDamage(mission.playerAddress, dmg);
 					const before = monster.hp;
 					monster.hp = Math.max(0, monster.hp - dmg);
 					const killed = monster.hp <= 0;
@@ -1160,8 +1249,10 @@ export class GameDO extends DurableObject {
 						if (delta > 0) {
 							const before = town.prosperity || 0;
 							town.prosperity = Math.max(0, before + delta); // unbounded above
-							await this.setTownState(town);
-							await this.addEvent({
+await this.setTownState(town);
+						// Track player prosperity contribution for leaderboards
+						this.incrementProsperityFromMissions(mission.playerAddress, delta);
+						await this.addEvent({
 								type: 'town_prosperity_changed',
 								message: `Town Prosperity +${delta.toFixed(2)} → ${Math.round(town.prosperity)}`,
 								data: {
@@ -1283,8 +1374,9 @@ export class GameDO extends DurableObject {
 		// since we use the real-time notification system instead
 
 		// Broadcast updates
-		await this.broadcastPlayerStateUpdate(mission.playerAddress);
-		await this.broadcastWorldStateUpdate();
+await this.broadcastPlayerStateUpdate(mission.playerAddress);
+			await this.broadcastWorldStateUpdate();
+			await this.broadcastLeaderboardsUpdate();
 
 		// Send mission completion notification to player's sessions
 		const isMonsterMission = !!mission.targetMonsterId;
@@ -1725,7 +1817,8 @@ export class GameDO extends DurableObject {
 
 		if (changesMade) {
 			await this.saveGameState();
-			await this.broadcastWorldStateUpdate();
+await this.broadcastWorldStateUpdate();
+			await this.broadcastLeaderboardsUpdate();
 			console.log('[GameDO] Resource degradation cycle completed with changes');
 		} else {
 			console.log('[GameDO] Resource degradation cycle completed with no changes needed');
@@ -2124,7 +2217,10 @@ export class GameDO extends DurableObject {
 			}
 
 			// Debit credits up-front
-			player.balance -= remaining;
+player.balance -= remaining;
+
+			// Track full contribution amount toward upgrade credits leaderboard
+			this.incrementUpgradeCredits(playerAddress, amountCredits);
 
 			// Walls: repair HP first (if applicable)
 			if (attribute === 'perimeter_walls') {
@@ -2272,7 +2368,9 @@ export class GameDO extends DurableObject {
 					battleCoords = { ...monster.coordinates };
 					const est = estimateMonsterDamage(dStats, vehicleData);
 					const variance = 0.15; // ±15%
-					dmgApplied = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
+dmgApplied = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
+					// Track combat damage for leaderboards (engagement path)
+					this.incrementCombatDamage(mission.playerAddress, dmgApplied);
 					const before = monster.hp;
 					monster.hp = Math.max(0, (monster.hp || 0) - dmgApplied);
 					killed = monster.hp <= 0;
@@ -2310,9 +2408,10 @@ export class GameDO extends DurableObject {
 				await this.broadcastMissionUpdate({ mission });
 			}
 
-			if (changed) {
+if (changed) {
 				await this.saveGameState();
 				await this.broadcastWorldStateUpdate();
+				await this.broadcastLeaderboardsUpdate();
 			}
 
 			return changed;
@@ -2531,7 +2630,8 @@ export class GameDO extends DurableObject {
 				if (townChanged) {
 					await this.setTownState(town);
 				}
-				await this.broadcastWorldStateUpdate();
+await this.broadcastWorldStateUpdate();
+				await this.broadcastLeaderboardsUpdate();
 				console.log(`[Monsters] Attack: ${townChanged ? 'town state updated' : ''} ${changed ? 'monsters updated' : ''}`.trim());
 			} else {
 				console.log('[Monsters] Attack: no town changes');
