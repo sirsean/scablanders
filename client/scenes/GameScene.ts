@@ -632,22 +632,17 @@ export class GameScene extends Phaser.Scene {
 		const townContainer = this.add.container(TOWN_X, TOWN_Y);
 		townContainer.setDepth(DEPTH_TOWN);
 
-		// Town building silhouette
-		const townBuilding = this.add.graphics();
-		townBuilding.fillStyle(0x8b4513);
-		townBuilding.fillRect(-20, -15, 40, 30);
-		townBuilding.lineStyle(2, 0xffd700);
-		townBuilding.strokeRect(-20, -15, 40, 30);
+		// Town image (replace previous rectangle/flag)
+		const townImage = this.add.image(0, 0, 'town').setOrigin(0.5, 0.7);
+		// Scale to a sensible display height regardless of source image size
+		const TARGET_TOWN_HEIGHT = 128; // px, tweak as needed
+		const baseH = townImage.height || 1;
+		const scale = TARGET_TOWN_HEIGHT / baseH;
+		townImage.setScale(scale);
 
-		// Town flag
-		townBuilding.fillStyle(0xdc143c);
-		townBuilding.fillTriangle(-15, -15, -15, -25, -5, -20);
-		townBuilding.lineStyle(1, 0x000000);
-		townBuilding.lineBetween(-15, -15, -15, -25);
-
-		// Town label
+		// Town label positioned above the top of the image
 		const townLabel = this.add
-			.text(0, -35, 'TOWN', {
+			.text(0, 30, 'TOWN', {
 				fontSize: '12px',
 				color: '#FFD700',
 				fontFamily: 'Courier New',
@@ -657,13 +652,8 @@ export class GameScene extends Phaser.Scene {
 			})
 			.setOrigin(0.5);
 
-		townContainer.add([townBuilding, townLabel]);
+		townContainer.add([townImage, townLabel]);
 		this.townMarker = townContainer;
-
-		// Add subtle glow effect
-		const glow = this.add.circle(TOWN_X, TOWN_Y, 25, 0xffd700, 0.1);
-		glow.setBlendMode(Phaser.BlendModes.ADD);
-		glow.setDepth(DEPTH_TOWN - 1);
 	}
 
 	private async ensureDrifterTinyTexture(tokenId: number | string): Promise<string> {

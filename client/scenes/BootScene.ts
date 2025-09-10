@@ -40,6 +40,9 @@ export class BootScene extends Phaser.Scene {
 		// Load the world map background image
 		this.load.image('tile-bg', 'assets/images/map-tile.png');
 
+		// Load town marker image
+		this.load.image('town', 'assets/images/town.png');
+
 		// Load resource node textures by type and rarity
 		for (const type of RESOURCE_TYPES) {
 			for (const rarity of RARITIES_WITH_TEXTURE) {
