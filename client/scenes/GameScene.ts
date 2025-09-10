@@ -169,8 +169,6 @@ export class GameScene extends Phaser.Scene {
 
 		// Resource nodes will be loaded from server via gameState
 
-		console.log('Game Scene initialized');
-
 		// Listen for external UI requests to center/pan the map
 		window.addEventListener('map:center-on' as any, this.onMapCenterOn as EventListener);
 		this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -368,7 +366,7 @@ export class GameScene extends Phaser.Scene {
 		for (const [nodeId] of this.resourceNodes) {
 			const serverNode = serverNodeMap.get(nodeId);
 			if (serverNode && serverNode.currentYield <= 0) {
-				console.warn(`[GameScene] ⚠️ WARNING: Node ${nodeId} still displayed but has 0 yield!`);
+				// node displayed but yield is 0
 			}
 		}
 	}
@@ -572,7 +570,6 @@ export class GameScene extends Phaser.Scene {
 		// Old per-indicator objects removed; batched items computed and drawn instead
 
 	private selectResourceNode(nodeId: string, nodeData: any) {
-		console.log(`Selected resource node: ${nodeId}`, nodeData);
 
 		const currentState = gameState.getState();
 

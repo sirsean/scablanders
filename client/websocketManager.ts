@@ -44,7 +44,7 @@ export class WebSocketManager extends EventTarget {
 				this.reconnectTimeout = null;
 			}
 
-			console.log('Connecting to WebSocket server...');
+			// removed verbose connect log
 			this.websocket = new WebSocket(this.options.url);
 
 			return new Promise((resolve, reject) => {
@@ -57,7 +57,7 @@ export class WebSocketManager extends EventTarget {
 					clearTimeout(connectTimeout);
 					this.isConnecting = false;
 					this.reconnectAttempts = 0;
-					console.log('[WS Client] WebSocket connected successfully');
+					// connected
 
 					// Start ping interval to keep connection alive
 					this.startPingInterval();
@@ -74,7 +74,7 @@ export class WebSocketManager extends EventTarget {
 					this.isConnecting = false;
 					this.isAuthenticated = false;
 
-					console.log(`WebSocket closed: ${event.code} - ${event.reason}`);
+					// closed
 
 					// Send connection status event
 					this.dispatchEvent(
@@ -141,11 +141,11 @@ export class WebSocketManager extends EventTarget {
 	 */
 	authenticate(playerAddress: string): void {
 		if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
-			console.warn('Cannot authenticate: WebSocket not connected');
+		// Cannot authenticate: WebSocket not connected
 			return;
 		}
 
-		console.log('[WS Client] Authenticating with player address:', playerAddress);
+		// authenticating
 		this.send({
 			type: 'authenticate',
 			playerAddress,
@@ -157,7 +157,7 @@ export class WebSocketManager extends EventTarget {
 	 */
 	subscribe(events: string[]): void {
 		if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
-			console.warn('Cannot subscribe: WebSocket not connected');
+		// Cannot subscribe: WebSocket not connected
 			return;
 		}
 
@@ -179,7 +179,7 @@ export class WebSocketManager extends EventTarget {
 	 */
 	private send(message: any): void {
 		if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
-			console.warn('Cannot send message: WebSocket not connected');
+		// Cannot send message: WebSocket not connected
 			return;
 		}
 
@@ -218,7 +218,6 @@ export class WebSocketManager extends EventTarget {
 				case 'connection_status':
 					const statusMsg = message as ConnectionStatusUpdate;
 					this.isAuthenticated = statusMsg.data.authenticated;
-					console.log('[WS Client] Connection status update:', statusMsg.data);
 
 					// Dispatch custom event for GameStateManager
 					this.dispatchEvent(
@@ -295,11 +294,9 @@ export class WebSocketManager extends EventTarget {
 					break;
 
 				case 'pong':
-					console.log('[WS Client] Received pong');
 					break;
 
 				case 'subscription_confirmed':
-					console.log('[WS Client] Subscription confirmed:', message.data);
 					break;
 
 				case 'error':
@@ -328,7 +325,7 @@ export class WebSocketManager extends EventTarget {
 		this.reconnectAttempts++;
 		const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000); // Exponential backoff, max 30s
 
-		console.log(`Scheduling WebSocket reconnect attempt ${this.reconnectAttempts} in ${delay}ms`);
+		// scheduling reconnect
 
 		// Send reconnecting status
 		this.dispatchEvent(

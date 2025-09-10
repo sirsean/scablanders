@@ -79,7 +79,7 @@ export class ScablandersAuth {
 				}
 			}
 		} catch {
-			console.log('No existing session found');
+			// No existing session found
 		}
 	}
 
@@ -111,7 +111,7 @@ export class ScablandersAuth {
 			}
 
 			const address = account.address;
-			console.log('address', address);
+			// address
 
 			// Get nonce from server
 			const nonceResponse = await fetch('/api/auth/nonce', {
@@ -122,7 +122,7 @@ export class ScablandersAuth {
 			}
 
 			const { nonce } = await nonceResponse.json();
-			console.log('nonce', nonce);
+			// nonce
 
 			// Create SIWE message using the proper library
 			const siweMessage = new SiweMessage({
@@ -136,7 +136,7 @@ export class ScablandersAuth {
 			});
 
 			const message = siweMessage.prepareMessage();
-			console.log('message', message);
+			// message
 
 			// Sign message using wagmi
 			const signature = await signMessage(config, { message });

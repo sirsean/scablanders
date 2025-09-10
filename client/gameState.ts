@@ -930,7 +930,7 @@ class GameStateManager extends EventTarget {
 					notificationIds,
 				},
 			});
-			console.log('[GameState] Sent ACK for notifications:', notificationIds);
+			// ACK sent
 		}
 	}
 

@@ -107,24 +107,15 @@ gameState.addNotification({
 
 // SIWE Authentication handlers
 document.getElementById('connect-wallet')?.addEventListener('click', async () => {
-	console.log('Starting SIWE authentication...');
 	await auth.connect();
 });
 
 document.getElementById('disconnect-wallet')?.addEventListener('click', async () => {
-	console.log('Disconnecting wallet...');
 	await auth.disconnect();
 });
 
 // Action menu buttons are created by UIManager. Listeners are attached there.
 
-console.log('Scablanders Phase 4 client initialized');
-console.log('🎮 Game Controls:');
-console.log('  • Click resource nodes to plan missions');
-console.log('  • Press M for Mercenaries panel');
-console.log('  • Press P for Profile panel');
-console.log('  • Press ESC to close panels');
-console.log('  • Space to deselect nodes');
 
 // Debug functions for resource management testing
 function debugResourceFlow() {
