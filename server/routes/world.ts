@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { RESOURCE_NODE_CAP } from '../config';
 import { authMiddleware, AuthVariables } from '../middleware/auth';
 
 const world = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
@@ -21,7 +22,18 @@ world.get('/state', async (c) => {
 			gameStub.getMonsters(),
 		]);
 
-		return c.json({ resourceNodes, activeMissions, worldMetrics, town, monsters });
+// Trim nodes to the hard cap for response safety: prefer active nodes by highest currentYield
+		const active = (resourceNodes || []).filter((r: any) => r?.isActive && (r?.currentYield || 0) > 0);
+		const inactive = (resourceNodes || []).filter((r: any) => !active.includes(r));
+		const sortByYieldDesc = (arr: any[]) => arr.sort((a, b) => (b.currentYield || 0) - (a.currentYield || 0));
+		const topActive = sortByYieldDesc(active).slice(0, RESOURCE_NODE_CAP);
+		let visible = topActive;
+		if (visible.length < RESOURCE_NODE_CAP) {
+			const remaining = RESOURCE_NODE_CAP - visible.length;
+			const topInactive = sortByYieldDesc(inactive).slice(0, remaining);
+			visible = visible.concat(topInactive);
+		}
+		return c.json({ resourceNodes: visible, activeMissions, worldMetrics, town, monsters });
 	} catch (error) {
 		console.error('World state error:', error);
 		return c.json({ error: 'Failed to get world state' }, 500);
@@ -98,6 +110,20 @@ world.post('/debug/trigger-resource-management', async (c) => {
 	} catch (error) {
 		console.error('Debug trigger error:', error);
 		return c.json({ error: 'Failed to trigger resource management' }, 500);
+	}
+});
+
+// POST /api/world/debug/prune-resource-nodes - Manually trigger pruning to cap
+world.post('/debug/prune-resource-nodes', async (c) => {
+	try {
+		const gameId = c.env.GAME_DO.idFromName('game');
+		const gameStub = c.env.GAME_DO.get(gameId);
+		console.log('[DEBUG] Manually triggering prune to resource cap');
+		const result = await gameStub.triggerPruneResourceNodes();
+		return c.json({ success: result.success, pruned: result.pruned, total: result.total, cap: result.cap, timestamp: new Date().toISOString() });
+	} catch (error) {
+		console.error('Debug prune error:', error);
+		return c.json({ error: 'Failed to prune resource nodes' }, 500);
 	}
 });
 

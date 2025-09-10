@@ -27,6 +27,7 @@ import {
 	estimateMonsterDamage,
 } from '../shared/mission-utils';
 import { getDrifterStats } from './drifters';
+import { RESOURCE_NODE_CAP } from './config';
 import { getVehicle } from './vehicles';
 import { calculateProsperityGain, prosperityResourceBoostMultiplier } from '../shared/prosperity-utils';
 import type { LeaderboardsResponse, LeaderboardEntry } from '@shared/leaderboards';
@@ -177,9 +178,11 @@ export class GameDO extends DurableObject {
 	/**
 	 * Initialize game state by loading from storage and setting up defaults
 	 */
-	private async initializeGameState() {
+private async initializeGameState() {
 		await this.loadGameState();
 		await this.initializeResourceNodes();
+		// Enforce a hard cap on total stored nodes on startup/hydration
+		await this.pruneResourceNodesToCap(/*broadcast*/ false);
 	}
 
 	/**
@@ -297,7 +300,7 @@ export class GameDO extends DurableObject {
 	/**
 	 * Initialize resource nodes if they don't exist
 	 */
-	private async initializeResourceNodes() {
+private async initializeResourceNodes() {
 		// Migration: if existing nodes are present but coordinate system version changed, regenerate
 		const storedVer = (await this.ctx.storage.get<number>('coordSystemVersion')) ?? 0;
 		const CURRENT_VER = 2;
@@ -327,6 +330,10 @@ export class GameDO extends DurableObject {
 		const nodes: ResourceNode[] = [];
 
 		for (let i = 0; i < nodesToCreate.length; i++) {
+			// Respect global cap even on initial creation
+			if (this.gameState.resourceNodes.size + nodes.length >= RESOURCE_NODE_CAP) {
+				break;
+			}
 			const type = nodesToCreate[i];
 			const newNode = this.createRandomResourceNodeWithAntiOverlap(type);
 			nodes.push(newNode);
@@ -1619,12 +1626,14 @@ export class GameDO extends DurableObject {
 		await this.scheduleNextAlarm();
 	}
 
-	private async initializeResourceManagement() {
+private async initializeResourceManagement() {
 		console.log('[GameDO] Initializing resource management');
 
 		try {
 			// Run resource management immediately on startup
 			await this.performResourceManagement();
+			// Enforce prune after initial management
+			await this.pruneResourceNodesToCap(/*broadcast*/ true);
 			console.log('[GameDO] Initial resource management check completed');
 		} catch (error) {
 			console.error('[GameDO] Error during initial resource management:', error);
@@ -1658,7 +1667,7 @@ export class GameDO extends DurableObject {
 	/**
 	 * Handle alarm - run whichever systems are due and reschedule
 	 */
-	async alarm() {
+async alarm() {
 		console.log('[GameDO] Alarm triggered');
 
 		try {
@@ -1681,6 +1690,8 @@ export class GameDO extends DurableObject {
 			let resAt = resIso ? new Date(resIso) : new Date(0);
 			if (now >= resAt) {
 				await this.performResourceManagement();
+				// Prune to cap every resource cycle to keep storage clean
+				await this.pruneResourceNodesToCap(/*broadcast*/ true);
 				const resIntervalMs = this.gameState.resourceConfig.degradationCheckInterval * 60 * 1000;
 				resAt = new Date(now.getTime() + resIntervalMs);
 				await this.ctx.storage.put('nextResourceAlarmAt', resAt.toISOString());
@@ -1696,7 +1707,7 @@ export class GameDO extends DurableObject {
 	/**
 	 * Perform resource management: degradation, cleanup, and spawning
 	 */
-	private async performResourceManagement() {
+private async performResourceManagement() {
 		console.log('[GameDO] Starting resource degradation cycle');
 
 		const config = this.gameState.resourceConfig;
@@ -1777,10 +1788,9 @@ export class GameDO extends DurableObject {
 			`[GameDO] Current active node counts: ore=${nodeCountsByType.ore}, scrap=${nodeCountsByType.scrap}, organic=${nodeCountsByType.organic}, total=${totalActiveNodes}`,
 		);
 
-		// 5. Spawn replacement nodes to maintain target counts (influenced by Prosperity)
+		// 5. Spawn replacement nodes to maintain target counts (influenced by Prosperity), respecting global cap
 		const nodesToSpawn: { type: ResourceType; count: number }[] = [];
 
-		// Check each resource type against its effective target (apply prosperity multiplier)
 		for (const [type, targetCountBase] of Object.entries(config.targetNodesPerType) as [ResourceType, number][]) {
 			const targetCount = Math.max(1, Math.round(targetCountBase * cappedSpawnMult));
 			const currentCount = nodeCountsByType[type];
@@ -1789,9 +1799,13 @@ export class GameDO extends DurableObject {
 			}
 		}
 
-		// Spawn the needed nodes
 		for (const { type, count } of nodesToSpawn) {
 			for (let i = 0; i < count; i++) {
+				// Respect global cap while spawning
+				const remainingCapacity = Math.max(0, RESOURCE_NODE_CAP - this.gameState.resourceNodes.size);
+				if (remainingCapacity <= 0) {
+					break;
+				}
 				const newNode = this.createRandomResourceNodeWithAntiOverlap(type);
 				// Scale new node yields by prosperity multiplier (cap 1.5x)
 				const yieldScale = cappedSpawnMult; // same cap applied
@@ -1822,6 +1836,7 @@ export class GameDO extends DurableObject {
 		}
 
 		if (changesMade) {
+			await this.pruneResourceNodesToCap(/*broadcast*/ false);
 			await this.saveGameState();
 			await this.broadcastWorldStateUpdate();
 			await this.broadcastLeaderboardsUpdate();
@@ -1972,8 +1987,81 @@ export class GameDO extends DurableObject {
 		return { success: true, summary };
 	}
 
-	// =============================================================================
-	// Drifter Progression Helpers
+// =============================================================================
+// Resource Node Cap Enforcement Helpers
+// =============================================================================
+
+	/** Collect node IDs referenced by active missions to protect them from pruning */
+	private getLockedNodeIdsForActiveMissions(): Set<string> {
+		const locked = new Set<string>();
+		for (const mission of this.gameState.missions.values()) {
+			if (mission.status === 'active' && mission.targetNodeId) {
+				locked.add(mission.targetNodeId);
+			}
+		}
+		return locked;
+	}
+
+	/** Prune stored nodes down to RESOURCE_NODE_CAP, keeping active-mission nodes and highest currentYield */
+	private async pruneResourceNodesToCap(broadcast: boolean = true): Promise<{ pruned: number; total: number }> {
+		const total = this.gameState.resourceNodes.size;
+		if (total <= RESOURCE_NODE_CAP) {
+			return { pruned: 0, total };
+		}
+		const locked = this.getLockedNodeIdsForActiveMissions();
+		const keepBudgetForUnlocked = Math.max(0, RESOURCE_NODE_CAP - locked.size);
+		if (locked.size > RESOURCE_NODE_CAP) {
+			console.warn(
+				`[GameDO] Locked nodes (${locked.size}) exceed cap (${RESOURCE_NODE_CAP}); will not prune locked nodes. No new nodes will spawn until below cap.`,
+			);
+		}
+		// Build arrays
+		const entries: Array<{ id: string; node: ResourceNode }> = Array.from(this.gameState.resourceNodes.entries()).map(
+			([id, node]) => ({ id, node }),
+		);
+		const lockedEntries = entries.filter((e) => locked.has(e.id));
+		const unlockedEntries = entries.filter((e) => !locked.has(e.id));
+		// Sort unlocked by currentYield desc, tie-break by baseYield desc
+		unlockedEntries.sort((a, b) => {
+			if (b.node.currentYield !== a.node.currentYield) return b.node.currentYield - a.node.currentYield;
+			return b.node.baseYield - a.node.baseYield;
+		});
+		const keptUnlocked = unlockedEntries.slice(0, keepBudgetForUnlocked);
+		const keptSet = new Set<string>([...lockedEntries.map((e) => e.id), ...keptUnlocked.map((e) => e.id)]);
+		let pruned = 0;
+		for (const e of entries) {
+			if (!keptSet.has(e.id)) {
+				this.gameState.resourceNodes.delete(e.id);
+				pruned++;
+			}
+		}
+		if (pruned > 0) {
+			await this.ctx.storage.put('resourceNodes', Object.fromEntries(this.gameState.resourceNodes));
+			await this.addEvent({
+				type: 'node_removed',
+				message: `Pruned ${pruned} resource nodes to enforce cap ${RESOURCE_NODE_CAP}`,
+			});
+			if (broadcast) {
+				await this.broadcastWorldStateUpdate();
+			}
+		}
+		return { pruned, total: this.gameState.resourceNodes.size };
+	}
+
+	/** Debug helper to trigger pruning */
+	public async triggerPruneResourceNodes(): Promise<{ success: boolean; pruned: number; total: number; cap: number }> {
+		try {
+			const res = await this.pruneResourceNodesToCap(true);
+			await this.saveGameState();
+			return { success: true, pruned: res.pruned, total: this.gameState.resourceNodes.size, cap: RESOURCE_NODE_CAP };
+		} catch (e) {
+			console.error('[GameDO] triggerPruneResourceNodes error:', e);
+			return { success: false, pruned: 0, total: this.gameState.resourceNodes.size, cap: RESOURCE_NODE_CAP };
+		}
+	}
+
+// =============================================================================
+// Drifter Progression Helpers
 	// =============================================================================
 
 	private XP_BASE = 100;
