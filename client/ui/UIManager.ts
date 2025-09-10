@@ -60,11 +60,11 @@ export class UIManager {
 		this.createUIElements();
 		this.setupEventListeners();
 
-		// Reflow on window resize
-		window.addEventListener('resize', () => this.layoutOpenPanels());
+		// Reflow on window resize (throttled)
+		window.addEventListener('resize', () => this.scheduleLayout());
 
-		// Reflow when panels change visibility outside of gameState (e.g., DrifterInfoPanel)
-		window.addEventListener('ui:reflow-panels' as any, () => this.layoutOpenPanels());
+		// Reflow when panels change visibility outside of gameState (e.g., DrifterInfoPanel) — throttled
+		window.addEventListener('ui:reflow-panels' as any, () => this.scheduleLayout());
 		// Listen to game state changes
 		gameState.onStateChange((state) => {
 			this.updateUI(state);
@@ -439,29 +439,47 @@ export class UIManager {
 		});
 	}
 
+	private layoutScheduled: boolean = false;
+	private scheduleLayout() {
+		if (this.layoutScheduled) return;
+		this.layoutScheduled = true;
+		requestAnimationFrame(() => {
+			this.layoutScheduled = false;
+			this.layoutOpenPanels();
+		});
+	}
+
 	private updateUI(state: GameState) {
-		// Update panel visibility
+		// Update panel visibility (track changes to decide layout)
+		let requiresLayout = false;
+		const flip = (el: HTMLElement | null, show: boolean, onShow?: () => void) => {
+			if (!el) return;
+			const prev = el.style.display;
+			const next = show ? 'block' : 'none';
+			if (prev !== next) {
+				requiresLayout = true;
+				el.style.display = next;
+			}
+			if (show && onShow) onShow();
+		};
+
 		if (this.missionPanel) {
-			this.missionPanel.style.display = state.showMissionPanel ? 'block' : 'none';
-			MissionPanel.updateMissionPanel(state);
+			flip(this.missionPanel, state.showMissionPanel, () => MissionPanel.updateMissionPanel(state));
+			if (state.showMissionPanel) MissionPanel.updateMissionPanel(state);
 		}
 
 		if (this.driftersPanel) {
-			this.driftersPanel.style.display = state.showDriftersPanel ? 'block' : 'none';
-			if (state.showDriftersPanel) {
-				DriftersPanel.updateDriftersPanel(state);
-			}
+			flip(this.driftersPanel, state.showDriftersPanel, () => DriftersPanel.updateDriftersPanel(state));
+			if (state.showDriftersPanel) DriftersPanel.updateDriftersPanel(state);
 		}
 
 		if (this.profilePanel) {
-			this.profilePanel.style.display = state.showProfilePanel ? 'block' : 'none';
-			if (state.showProfilePanel) {
-				ProfilePanel.updateProfilePanel(state);
-			}
+			flip(this.profilePanel, state.showProfilePanel, () => ProfilePanel.updateProfilePanel(state));
+			if (state.showProfilePanel) ProfilePanel.updateProfilePanel(state);
 		}
 
 		if (this.activeMissionsPanel) {
-			this.activeMissionsPanel.style.display = state.showActiveMissionsPanel ? 'block' : 'none';
+			flip(this.activeMissionsPanel, state.showActiveMissionsPanel);
 			if (state.showActiveMissionsPanel) {
 				// Merge player-specific missions with any missing ones from global list filtered by player
 				const fromPlayer = state.playerMissions || [];
@@ -489,14 +507,12 @@ export class UIManager {
 		}
 
 		if (this.marketPanel) {
-			this.marketPanel.style.display = state.showMarketPanel ? 'block' : 'none';
-			if (state.showMarketPanel) {
-				MarketPanel.updateMarketPanel(state.availableVehicles, state.isLoadingMarket);
-			}
+			flip(this.marketPanel, state.showMarketPanel, () => MarketPanel.updateMarketPanel(state.availableVehicles, state.isLoadingMarket));
+			if (state.showMarketPanel) MarketPanel.updateMarketPanel(state.availableVehicles, state.isLoadingMarket);
 		}
 
 		if (this.townPanel) {
-			this.townPanel.style.display = state.showTownPanel ? 'block' : 'none';
+			flip(this.townPanel, state.showTownPanel);
 			if (state.showTownPanel) {
 				TownPanel.updateTownPanel(state);
 				TownPanel.startLiveTimer(() => gameState.getState());
@@ -506,21 +522,21 @@ export class UIManager {
 		}
 
 		if (this.vehiclePanel) {
-			this.vehiclePanel.style.display = state.showVehiclePanel ? 'block' : 'none';
+			flip(this.vehiclePanel, state.showVehiclePanel, () => { if (state.profile) VehiclePanel.updateVehiclePanel(state.profile.vehicles); });
 			if (state.showVehiclePanel && state.profile) {
 				VehiclePanel.updateVehiclePanel(state.profile.vehicles);
 			}
 		}
 
 		if (this.leaderboardsPanel) {
-			this.leaderboardsPanel.style.display = state.showLeaderboardsPanel ? 'block' : 'none';
+			flip(this.leaderboardsPanel, state.showLeaderboardsPanel, () => LeaderboardsPanel.updateLeaderboardsPanel(state));
 			if (state.showLeaderboardsPanel) {
 				LeaderboardsPanel.updateLeaderboardsPanel(state);
 			}
 		}
 
 		if (this.logPanel) {
-			this.logPanel.style.display = state.showLogPanel ? 'block' : 'none';
+			flip(this.logPanel, state.showLogPanel);
 			if (state.showLogPanel) {
 				LogPanel.updateLogPanel(state.eventLog);
 				// Start live timer to refresh relative timestamps while open
@@ -537,8 +553,10 @@ export class UIManager {
 		// Update top bar info
 		this.updateTopBar(state);
 
-		// Reflow panels in a tiled layout
-		this.layoutOpenPanels();
+		// Reflow panels in a tiled layout (only when needed)
+		if (requiresLayout) {
+			this.scheduleLayout();
+		}
 	}
 
 	private updateNotifications(notifications: GameNotification[]) {
@@ -567,10 +585,7 @@ export class UIManager {
 		const creditsDisplay = document.getElementById('credits-amount');
 		if (creditsDisplay && state.profile) {
 			const credits = state.profile.balance || 0;
-			console.log('Updating credits display:', credits, 'Profile:', state.profile);
 			creditsDisplay.textContent = credits.toString();
-		} else {
-			console.log('Credits update failed - creditsDisplay:', !!creditsDisplay, 'profile:', !!state.profile);
 		}
 
 		// Update wallet info

@@ -121,6 +121,8 @@ class GameStateManager extends EventTarget {
 		isLoadingMarket: false,
 	};
 
+	private periodicIntervalId: number | null = null;
+
 	constructor() {
 		super();
 		this.setupAuthListener();
@@ -176,12 +178,9 @@ class GameStateManager extends EventTarget {
 	}
 
 	private setupWebSocketListeners() {
-		console.log('[GameState] Setting up WebSocket listeners');
-
 		// Listen for connection status changes
 		webSocketManager.addEventListener('connectionStatus', (event) => {
 			const { status, authenticated } = event.detail;
-			console.log('[GameState] WebSocket connection status changed:', { status, authenticated });
 
 			// Capture previous WS auth state to detect downgrades
 			const prevWsConnected = this.state.wsConnected;
@@ -222,7 +221,6 @@ class GameStateManager extends EventTarget {
 
 				// Subscribe to events once authenticated
 				if (authenticated) {
-					console.log('[GameState] WebSocket authenticated, subscribing to events');
 					webSocketManager.subscribe([
 						'player_state',
 						'world_state',
@@ -262,10 +260,8 @@ class GameStateManager extends EventTarget {
 		// Listen for player state updates
 		webSocketManager.addEventListener('playerStateUpdate', (event) => {
 			const update = event.detail as PlayerStateUpdate['data'];
-			console.log('[GameState] Received player state update:', update);
 
 			if (update.profile) {
-				console.log('[GameState] Updating profile from WebSocket:', update.profile);
 				this.setState({ profile: update.profile });
 			}
 
@@ -277,31 +273,25 @@ class GameStateManager extends EventTarget {
 		// Listen for world state updates
 		webSocketManager.addEventListener('worldStateUpdate', (event) => {
 			const update = event.detail as WorldStateUpdate['data'];
-			console.log('[GameState] Received world state update:', update);
 
 			if (update.resourceNodes) {
-				console.log('[GameState] Updating resource nodes from WebSocket:', update.resourceNodes);
 				this.setState({ resourceNodes: update.resourceNodes });
 			}
 
 			if (update.monsters) {
-				console.log('[GameState] Updating monsters from WebSocket:', update.monsters);
 				const filtered = (update.monsters || []).filter((m: any) => m && m.state !== 'dead');
 				this.setState({ monsters: filtered });
 			}
 
 			if (update.town) {
-				console.log('[GameState] Updating town from WebSocket:', update.town);
 				this.setState({ town: update.town });
 			}
 
 			if (update.missions) {
-				console.log('[GameState] Updating missions from WebSocket:', update.missions);
 				this.setState({ activeMissions: update.missions });
 			}
 
 			if (update.worldMetrics) {
-				console.log('[GameState] Updating world metrics from WebSocket:', update.worldMetrics);
 				this.setState({ worldMetrics: update.worldMetrics });
 			}
 		});
@@ -309,7 +299,6 @@ class GameStateManager extends EventTarget {
 		// Listen for mission updates
 		webSocketManager.addEventListener('missionUpdate', (event) => {
 			const update = event.detail; // This is the data field from the WebSocket message
-			console.log('[GameState] Received mission update:', update);
 
 			// Update specific mission in player missions
 			if (update.mission && this.state.playerMissions) {
@@ -341,11 +330,11 @@ class GameStateManager extends EventTarget {
 		// Listen for leaderboards updates
 		webSocketManager.addEventListener('leaderboardsUpdate', (event: any) => {
 			try {
-				const boards = event.detail;
-				this.setState({ leaderboards: boards, leaderboardsLoadedAt: Date.now(), isLoadingLeaderboards: false });
-			} catch (e) {
-				console.warn('[GameState] Failed processing leaderboardsUpdate', e);
-			}
+			const boards = event.detail;
+			this.setState({ leaderboards: boards, leaderboardsLoadedAt: Date.now(), isLoadingLeaderboards: false });
+		} catch (e) {
+			console.warn('[GameState] Failed processing leaderboardsUpdate', e);
+		}
 		});
 
 		// Listen for event log append messages
@@ -370,7 +359,6 @@ class GameStateManager extends EventTarget {
 		// Listen for direct notifications from server
 		webSocketManager.addEventListener('notification', (event) => {
 			const notification = event.detail; // This is the notification data from the server
-			console.log('[GameState] Received server notification:', notification);
 
 			// Use server notification system with ACK
 			this.handleServerNotification({
@@ -960,14 +948,16 @@ class GameStateManager extends EventTarget {
 
 	// Periodic updates (every 30 seconds) - only when WebSocket is not connected
 	private startPeriodicUpdates() {
-		setInterval(() => {
+		if (this.periodicIntervalId) {
+			clearInterval(this.periodicIntervalId as any);
+		}
+		this.periodicIntervalId = setInterval(() => {
 			if (this.state.isAuthenticated && !this.state.realTimeMode) {
-				console.log('[GameState] Periodic update (WebSocket disconnected)');
 				this.loadPlayerProfile();
 				this.loadWorldState();
 				this.loadPlayerMissions();
 			}
-		}, 30000);
+		}, 30000) as any;
 	}
 
 	// Event listener helpers
@@ -981,6 +971,17 @@ class GameStateManager extends EventTarget {
 		callback(this.getState());
 
 		return () => this.removeEventListener('statechange', handler);
+	}
+
+	// Dev/HMR teardown to avoid duplicate timers and sockets
+	teardownForHMR() {
+		try {
+			if (this.periodicIntervalId) {
+				clearInterval(this.periodicIntervalId as any);
+				this.periodicIntervalId = null;
+			}
+			this.disconnectWebSocket();
+		} catch {}
 	}
 }
 

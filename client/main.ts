@@ -37,6 +37,63 @@ const _uiManager = new UIManager();
 
 // Initialize CRT theme (grungy CRT visuals with accessibility toggle)
 initCrtTheme({ enableToggleButton: false });
+
+// Live FPS indicator (top-right)
+(function startFpsIndicator() {
+	try {
+		const existing = document.getElementById('fps-indicator');
+		if (!existing) {
+			const el = document.createElement('div');
+			el.id = 'fps-indicator';
+			el.style.cssText = [
+				'position:fixed',
+				'top:6px',
+				'right:6px',
+				'padding:2px 6px',
+				'font:12px/1.2 monospace',
+				'color:#0f0',
+				'background:rgba(0,0,0,0.6)',
+				'border:1px solid #0a0',
+				'border-radius:4px',
+				'z-index:10001',
+				'pointer-events:none',
+			].join(';');
+			el.textContent = 'FPS —';
+			document.body.appendChild(el);
+		}
+		let frames = 0;
+		let last = performance.now();
+		let rafId = 0;
+		const loop = () => {
+			rafId = requestAnimationFrame(loop);
+			frames++;
+			const now = performance.now();
+			if (now - last >= 500) { // update twice per second
+				const fps = Math.round((frames * 1000) / (now - last));
+				const el = document.getElementById('fps-indicator');
+				if (el) el.textContent = `FPS ${fps}`;
+				frames = 0;
+				last = now;
+			}
+		};
+		rafId = requestAnimationFrame(loop);
+		// HMR: cancel on dispose
+		if (import.meta.env.DEV && (import.meta as any).hot) {
+			(import.meta as any).hot.dispose(() => {
+				try { cancelAnimationFrame(rafId); } catch {}
+				try { document.getElementById('fps-indicator')?.remove(); } catch {}
+			});
+		}
+	} catch {}
+})();
+
+// HMR: clean up on hot replace
+if (import.meta.env.DEV && (import.meta as any).hot) {
+	(import.meta as any).hot.dispose(() => {
+		try { (_game as any)?.destroy?.(true); } catch {}
+		try { (gameState as any)?.teardownForHMR?.(); } catch {}
+	});
+}
 // Import authentication system
 import { auth } from './auth';
 

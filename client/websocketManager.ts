@@ -123,6 +123,10 @@ export class WebSocketManager extends EventTarget {
 			this.reconnectTimeout = null;
 		}
 
+		if (this.pingInterval) {
+			clearInterval(this.pingInterval);
+			this.pingInterval = null;
+		}
 		if (this.websocket) {
 			this.websocket.close(1000, 'Client disconnect');
 			this.websocket = null;
@@ -199,7 +203,7 @@ export class WebSocketManager extends EventTarget {
 			if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
 				this.send({ type: 'ping' });
 			}
-		}, 30000); // Ping every 30 seconds
+		}, 30000) as any; // Ping every 30 seconds
 	}
 
 	/**
@@ -208,7 +212,6 @@ export class WebSocketManager extends EventTarget {
 	private handleMessage(data: string): void {
 		try {
 			const message: GameWebSocketMessage = JSON.parse(data);
-			console.log('[WS Client] Received message:', message.type, message);
 
 			// Handle specific message types
 			switch (message.type) {
@@ -230,7 +233,6 @@ export class WebSocketManager extends EventTarget {
 
 				case 'player_state':
 					const playerMsg = message as PlayerStateUpdate;
-					console.log('[WS Client] Player state update:', playerMsg.data);
 					// Dispatch custom event for GameStateManager
 					this.dispatchEvent(
 						new CustomEvent('playerStateUpdate', {
@@ -241,7 +243,6 @@ export class WebSocketManager extends EventTarget {
 
 				case 'world_state':
 					const worldMsg = message as WorldStateUpdate;
-					console.log('[WS Client] World state update:', worldMsg.data);
 					// Dispatch custom event for GameStateManager
 					this.dispatchEvent(
 						new CustomEvent('worldStateUpdate', {
@@ -252,7 +253,6 @@ export class WebSocketManager extends EventTarget {
 
 				case 'mission_update':
 					const missionMsg = message as MissionUpdate;
-					console.log('[WS Client] Mission update:', missionMsg.data);
 					// Dispatch custom event for GameStateManager
 					this.dispatchEvent(
 						new CustomEvent('missionUpdate', {
@@ -262,7 +262,6 @@ export class WebSocketManager extends EventTarget {
 					break;
 
 				case 'event_log_append':
-					console.log('[WS Client] Event log append:', message.data);
 					this.dispatchEvent(
 						new CustomEvent('eventLogAppend', {
 							detail: message.data,
@@ -271,7 +270,6 @@ export class WebSocketManager extends EventTarget {
 					break;
 
 				case 'leaderboards_update':
-					console.log('[WS Client] Leaderboards update:', (message as any).data);
 					this.dispatchEvent(
 						new CustomEvent('leaderboardsUpdate', {
 							detail: (message as any).data,
@@ -280,7 +278,6 @@ export class WebSocketManager extends EventTarget {
 					break;
 
 				case 'event_log_snapshot':
-					console.log('[WS Client] Event log snapshot:', message.data);
 					this.dispatchEvent(
 						new CustomEvent('eventLogSnapshot', {
 							detail: message.data,
@@ -289,7 +286,6 @@ export class WebSocketManager extends EventTarget {
 					break;
 
 				case 'notification':
-					console.log('[WS Client] Received notification:', message.data);
 					// Dispatch custom event for GameStateManager
 					this.dispatchEvent(
 						new CustomEvent('notification', {

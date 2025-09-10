@@ -31,6 +31,7 @@ const DEPTH_TOWN = 100;
 const DEPTH_ROUTES = 200;
 const DEPTH_DRIFTERS = 300;
 const DEPTH_MONSTERS = 320;
+const DEPTH_INDICATORS = DEPTH_ROUTES + 1;
 
 export class GameScene extends Phaser.Scene {
 	private resourceNodes = new Map<string, Phaser.GameObjects.Image>();
@@ -38,12 +39,20 @@ export class GameScene extends Phaser.Scene {
 	private selectedNode: string | null = null;
 	private nodeLabels = new Map<string, Phaser.GameObjects.Text>();
 	private nodeGlows = new Map<string, Phaser.GameObjects.Arc>(); // Track glow circles
+	// Deprecated per-mission indicators; replaced by batched layer
 	private missionIndicators = new Map<string, Phaser.GameObjects.Graphics>();
 	private missionIndicatorGlows = new Map<string, Phaser.GameObjects.Graphics>();
+	// Batched indicators layer
+	private missionIndicatorLayer: Phaser.GameObjects.Graphics | null = null;
+	private missionIndicatorItems: { x: number; y: number; color: number; isCompleted: boolean }[] = [];
 	private missionRoutes = new Map<string, Phaser.GameObjects.Graphics>();
 	private missionDrifters = new Map<string, Phaser.GameObjects.Container>();
 	private battleMarkers = new Map<string, Phaser.GameObjects.Graphics>();
 	private monsterIcons = new Map<string, Phaser.GameObjects.Container>();
+	// Batched route layers
+	private routeStaticLayer: Phaser.GameObjects.Graphics | null = null;
+	private routeAnimatedLayer: Phaser.GameObjects.Graphics | null = null;
+	private animatedRoutes: { x1: number; y1: number; x2: number; y2: number; color: number; phase: number; dash: number; gap: number; startTs: number; endTs: number }[] = [];
 	private pendingTinyLoads = new Map<string, Promise<string>>();
 	private townMarker: Phaser.GameObjects.Container | null = null;
 	private missionRenderVersion = 0;
@@ -60,6 +69,13 @@ export class GameScene extends Phaser.Scene {
 	private dragStart = { x: 0, y: 0 };
 	private cameraStart = { x: 0, y: 0 };
 	private cursorKeys!: Phaser.Types.Input.Keyboard.CursorKeys;
+	private onResize = (gameSize: any) => {
+		try {
+			if (this.bgTile && gameSize) {
+				this.bgTile.setSize(gameSize.width, gameSize.height);
+			}
+		} catch {}
+	};
 
 	// Window event handler to center/pan the camera to a given world position
 	private onMapCenterOn = (ev: Event) => {
@@ -93,11 +109,7 @@ export class GameScene extends Phaser.Scene {
 			.setDepth(DEPTH_BG);
 
 		// Resize background to always cover the viewport
-		this.scale.on('resize', (gameSize: any) => {
-			if (this.bgTile) {
-				this.bgTile.setSize(gameSize.width, gameSize.height);
-			}
-		});
+		this.scale.on('resize', this.onResize as any);
 
 		// Center camera on town at startup
 		this.cameras.main.centerOn(TOWN_X, TOWN_Y);
@@ -145,6 +157,16 @@ export class GameScene extends Phaser.Scene {
 		// Create town marker
 		this.createTownMarker();
 
+		// Create batched mission indicator layer
+		this.missionIndicatorLayer = this.add.graphics();
+		this.missionIndicatorLayer.setDepth(DEPTH_INDICATORS);
+
+		// Create batched route layers
+		this.routeStaticLayer = this.add.graphics();
+		this.routeStaticLayer.setDepth(DEPTH_ROUTES);
+		this.routeAnimatedLayer = this.add.graphics();
+		this.routeAnimatedLayer.setDepth(DEPTH_ROUTES);
+
 		// Resource nodes will be loaded from server via gameState
 
 		console.log('Game Scene initialized');
@@ -152,7 +174,25 @@ export class GameScene extends Phaser.Scene {
 		// Listen for external UI requests to center/pan the map
 		window.addEventListener('map:center-on' as any, this.onMapCenterOn as EventListener);
 		this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-			window.removeEventListener('map:center-on' as any, this.onMapCenterOn as EventListener);
+			// Detach global listeners
+			try { window.removeEventListener('map:center-on' as any, this.onMapCenterOn as EventListener); } catch {}
+			try { this.scale.off('resize', this.onResize as any); } catch {}
+			// Stop timers/tweens registered in this scene
+			try { this.time.removeAllEvents(); } catch {}
+			try { this.tweens.killAll(); } catch {}
+			// Input listeners
+			try { this.input?.keyboard?.removeAllListeners(); } catch {}
+			try { (this.input as any)?.removeAllListeners?.(); } catch {}
+			// Scene event listeners
+			try { this.events.removeAllListeners(); } catch {}
+			// Camera listeners
+			try { this.cameras?.main?.removeAllListeners(); } catch {}
+			// Destroy display objects we manage
+			try { this.cleanupAllDisplayObjects(); } catch {}
+		});
+
+		this.events.once(Phaser.Scenes.Events.DESTROY, () => {
+			try { this.cleanupAllDisplayObjects(); } catch {}
 		});
 
 		// Keyboard controls (arrows) and Shift for faster pan
@@ -286,10 +326,6 @@ export class GameScene extends Phaser.Scene {
 	private updateResourceNodes(serverNodes: ResourceNode[]) {
 		const serverNodeMap = new Map(serverNodes.map((node) => [node.id, node]));
 
-		console.log(`[GameScene] 🔄 Processing resource node updates:`);
-		console.log(`[GameScene]   - Server has ${serverNodes.length} nodes`);
-		console.log(`[GameScene]   - Client has ${this.resourceNodes.size} nodes`);
-
 		// AGGRESSIVE CLEANUP: Remove any nodes that either:
 		// 1. No longer exist on server, OR
 		// 2. Have 0 yield (even if server still has them)
@@ -298,12 +334,8 @@ export class GameScene extends Phaser.Scene {
 		for (const [nodeId] of this.resourceNodes) {
 			const serverNode = serverNodeMap.get(nodeId);
 			if (!serverNode) {
-				// Node no longer exists on server
-				console.log(`[GameScene] ❌ Removing server-deleted node: ${nodeId}`);
 				nodesToRemove.push(nodeId);
 			} else if (serverNode.currentYield <= 0 || !serverNode.isActive) {
-				// Node has 0 yield or is inactive - remove from client immediately
-				console.log(`[GameScene] 💀 Removing depleted node: ${nodeId} (yield: ${serverNode.currentYield}, active: ${serverNode.isActive})`);
 				nodesToRemove.push(nodeId);
 			}
 		}
@@ -318,9 +350,6 @@ export class GameScene extends Phaser.Scene {
 		for (const serverNode of serverNodes) {
 			if (serverNode.currentYield <= 0 || !serverNode.isActive) {
 				// Skip depleted/inactive nodes - they should not be displayed
-				console.log(
-					`[GameScene] 🚫 Skipping depleted/inactive node: ${serverNode.id} (yield: ${serverNode.currentYield}, active: ${serverNode.isActive})`,
-				);
 				continue;
 			}
 
@@ -328,7 +357,6 @@ export class GameScene extends Phaser.Scene {
 
 			if (!existingNode) {
 				// Create new node (only if it has yield and is active)
-				console.log(`[GameScene] ✨ Creating new resource node: ${serverNode.id} (${serverNode.type}, ${serverNode.currentYield} yield)`);
 				this.createResourceNodeFromServerData(serverNode);
 			} else {
 				// Update existing node if changed
@@ -336,9 +364,7 @@ export class GameScene extends Phaser.Scene {
 			}
 		}
 
-		console.log(`[GameScene] 🏁 Resource update complete. Client now has ${this.resourceNodes.size} nodes`);
-
-		// Final validation - log any remaining nodes with 0 yield (this shouldn't happen)
+		// Final validation - nodes with 0 yield should not remain
 		for (const [nodeId] of this.resourceNodes) {
 			const serverNode = serverNodeMap.get(nodeId);
 			if (serverNode && serverNode.currentYield <= 0) {
@@ -363,7 +389,6 @@ export class GameScene extends Phaser.Scene {
 		const newLabelText = `${resource.type.toUpperCase()}${rarityText}\n${resource.currentYield}`;
 
 		if (nodeLabel.text !== newLabelText) {
-			console.log(`[GameScene] Updating node ${resource.id} yield: ${resource.currentYield}`);
 			nodeLabel.setText(newLabelText);
 
 			// Add visual feedback for resource changes
@@ -508,74 +533,43 @@ export class GameScene extends Phaser.Scene {
 	}
 
 	private updateMissionIndicators(missions: any[]) {
-		console.log(`[GameScene] 🎯 Updating mission indicators for ${missions.length} missions`);
-
-		// Clear existing indicators completely for a clean redraw
-		this.missionIndicators.forEach((indicator, missionId) => {
-			indicator.destroy();
-			const glow = this.missionIndicatorGlows.get(missionId);
-			if (glow) {
-				try {
-					glow.destroy();
-				} catch {}
-				this.missionIndicatorGlows.delete(missionId);
-			}
-		});
-		this.missionIndicators.clear();
-
-		const _stateNow = gameState.getState();
-
+		// Compute which missions to render as indicators (no per-indicator objects)
 		const playerAddressNow = gameState.getState().playerAddress;
-		// Determine which missions should be drawn and with what color
+		const items: { x: number; y: number; color: number; isCompleted: boolean }[] = [];
 		const toRender = missions
 			.filter((m: Mission) => !!m.targetNodeId)
 			.map((m: Mission) => ({ mission: m, color: this.getMissionRenderColor(m, playerAddressNow) }))
 			.filter((e) => e.color !== null) as { mission: Mission; color: number }[];
-		console.log(`[GameScene] 🎯 Creating indicators for ${toRender.length} missions (colored by owner/status)`);
 
-		toRender.forEach(({ mission, color }) => {
-			const node = this.resourceNodes.get(mission.targetNodeId);
-			if (!node) {
-				console.warn(`[GameScene] ⚠️ Cannot create indicator - node ${mission.targetNodeId} not found`);
-				return;
-			}
+		for (const { mission, color } of toRender) {
+			const node = this.resourceNodes.get(mission.targetNodeId!);
+			if (!node) continue;
+			const isCompleted = color === COLOR_COMPLETED;
+			items.push({ x: node.x, y: node.y, color: color as number, isCompleted });
+		}
 
-			const indicator = this.add.graphics();
-			indicator.lineStyle(3, color as number, 1);
-			indicator.strokeCircle(node.x, node.y, 40);
-
-			// Animate the indicator pulse (subtle for all)
-			this.tweens.add({
-				targets: indicator,
-				alpha: { from: 1, to: 0.3 },
-				duration: 1000,
-				yoyo: true,
-				repeat: -1,
-			});
-
-			// Add glow for ready-to-collect (green) missions
-			if (color === COLOR_COMPLETED) {
-				const glow = this.add.graphics();
-				glow.fillStyle(COLOR_COMPLETED, 0.18);
-				glow.fillCircle(node.x, node.y, 46);
-				glow.setBlendMode(Phaser.BlendModes.ADD);
-				glow.setScale(1);
-				this.tweens.add({
-					targets: glow,
-					scale: { from: 1, to: 1.25 },
-					alpha: { from: 0.18, to: 0 },
-					duration: 1200,
-					yoyo: false,
-					repeat: -1,
-				});
-				this.missionIndicatorGlows.set(mission.id, glow);
-			}
-
-			this.missionIndicators.set(mission.id, indicator);
-		});
-
-		console.log(`[GameScene] 🎯 Mission indicators update complete. Rendered: ${this.missionIndicators.size}`);
+		this.missionIndicatorItems = items;
+		this.drawMissionIndicators();
 	}
+
+	private drawMissionIndicators() {
+		if (!this.missionIndicatorLayer) return;
+		const g = this.missionIndicatorLayer;
+		g.clear();
+		// Time-based pulse for completed indicators (green)
+		const t = this.time.now;
+		const pulseAlpha = 0.1 + 0.08 * (0.5 + 0.5 * Math.sin(t * 0.006));
+		for (const it of this.missionIndicatorItems) {
+			if (it.isCompleted) {
+				g.fillStyle(COLOR_COMPLETED, pulseAlpha);
+				g.fillCircle(it.x, it.y, 46);
+			}
+			g.lineStyle(3, it.color, 1);
+			g.strokeCircle(it.x, it.y, 40);
+		}
+	}
+
+		// Old per-indicator objects removed; batched items computed and drawn instead
 
 	private selectResourceNode(nodeId: string, nodeData: any) {
 		console.log(`Selected resource node: ${nodeId}`, nodeData);
@@ -689,12 +683,14 @@ export class GameScene extends Phaser.Scene {
 				if (loadedKey === key) {
 					this.load.off(Phaser.Loader.Events.FILE_COMPLETE, onComplete);
 					this.load.off(Phaser.Loader.Events.LOAD_ERROR, onError as any);
+					this.pendingTinyLoads.delete(key);
 					resolve(key);
 				}
 			};
 			const onError = () => {
 				this.load.off(Phaser.Loader.Events.FILE_COMPLETE, onComplete);
 				this.load.off(Phaser.Loader.Events.LOAD_ERROR, onError as any);
+				this.pendingTinyLoads.delete(key);
 				resolve('generic-drifter');
 			};
 
@@ -709,59 +705,72 @@ export class GameScene extends Phaser.Scene {
 	}
 
 	private updateMissionRoutes(missions: Mission[]) {
-		console.log(`[GameScene] 🎬 updateMissionRoutes called with ${missions.length} missions`);
-		console.log(
-			`[GameScene]   ALL mission statuses:`,
-			missions.map((m) => `${m.id.slice(-6)}:${m.status}`),
-		);
-
 		// Bump render version to invalidate any in-flight async icon loads
 		this.missionRenderVersion++;
 		const renderVersion = this.missionRenderVersion;
 
-		console.log(
-			`[GameScene] 🧹 Cleaning up existing routes and drifters (${this.missionRoutes.size} routes, ${this.missionDrifters.size} drifters)`,
-		);
-
-		// Clear existing routes and drifters
-		this.missionRoutes.forEach((route, _missionId) => {
-			route.destroy();
-		});
-		this.missionDrifters.forEach((container, _missionId) => {
-			// Ensure children are destroyed to prevent ghost images
-			try {
-				(container as any).removeAll?.(true);
-			} catch {}
-			container.destroy();
-		});
+		// Clear old per-route Graphics and drifters
+		this.missionRoutes.forEach((route) => { try { this.tweens.killTweensOf(route); } catch {}; route.destroy(); });
 		this.missionRoutes.clear();
+		this.missionDrifters.forEach((container) => { try { (container as any).removeAll?.(true); } catch {}; container.destroy(); });
 		this.missionDrifters.clear();
 
-		const playerAddressNow = gameState.getState().playerAddress;
-		// Create color-coded routes for all missions that should be visible
-		const routeMissions = missions
-			.filter((m) => !!(m as any).targetNodeId || !!(m as any).targetMonsterId)
-			.map((m) => ({ mission: m, color: this.getMissionRenderColor(m, playerAddressNow) }))
-			.filter((e) => e.color !== null) as { mission: Mission; color: number }[];
-		console.log(`[GameScene] 🚀 Creating routes for ${routeMissions.length} missions (visible states)`);
+		// Prepare layers
+		if (this.routeStaticLayer) this.routeStaticLayer.clear();
+		if (this.routeAnimatedLayer) this.routeAnimatedLayer.clear();
+		this.animatedRoutes = [];
 
-		routeMissions.forEach(({ mission, color }) => {
-			this.createMissionRoute(mission, color);
-		});
+		const stateNow = gameState.getState();
+		const playerAddr = stateNow.playerAddress?.toLowerCase() || '';
+		const dashLen = 12;
+		const gapLen = 8;
+
+		for (const m of missions) {
+			// Determine endpoint
+			let nodeX: number | undefined, nodeY: number | undefined;
+			let color: number | null = this.getMissionRenderColor(m, stateNow.playerAddress);
+			if (color === null) {
+				continue;
+			}
+			if (m.targetNodeId) {
+				const targetNode = stateNow.resourceNodes?.find((r: ResourceNode) => r.id === m.targetNodeId);
+				if (!targetNode) continue;
+				({ x: nodeX, y: nodeY } = targetNode.coordinates);
+			} else if (m.targetMonsterId) {
+				const mid = m.targetMonsterId as string;
+				let monster = (stateNow.monsters || []).find((mm: any) => mm.id === mid);
+				if (!monster && m.engagementApplied && m.battleLocation) {
+					monster = { coordinates: m.battleLocation } as any;
+				}
+				if (!monster) continue;
+				nodeX = monster.coordinates.x; nodeY = monster.coordinates.y;
+				// Monster missions purple while active
+				if (m.status === 'active') color = 0x9c27b0;
+			} else {
+				continue;
+			}
+			if (typeof nodeX !== 'number' || typeof nodeY !== 'number') continue;
+
+			const x1 = TOWN_X, y1 = TOWN_Y, x2 = nodeX, y2 = nodeY;
+			const isSelfActive = m.status === 'active' && (m.playerAddress || '').toLowerCase() === playerAddr;
+
+			if (isSelfActive) {
+				const startTs = m.startTime instanceof Date ? m.startTime.getTime() : new Date(m.startTime).getTime();
+				const endTs = m.completionTime instanceof Date ? m.completionTime.getTime() : new Date(m.completionTime).getTime();
+				this.animatedRoutes.push({ x1, y1, x2, y2, color: color!, phase: 0, dash: dashLen, gap: gapLen, startTs, endTs });
+			} else {
+				// Draw once onto static layer
+				if (this.routeStaticLayer) {
+					this.drawDashedLine(this.routeStaticLayer, x1, y1, x2, y2, color!, 0, dashLen, gapLen);
+				}
+			}
+		}
 
 		// Create drifters only for the current user's ACTIVE missions
-		const stateNow = gameState.getState();
-		const selfActive = missions.filter(
-			(m) => m.status === 'active' && !!stateNow.playerAddress && m.playerAddress?.toLowerCase() === stateNow.playerAddress.toLowerCase(),
-		);
-		console.log(`[GameScene] 👤 Creating drifters for ${selfActive.length} self active missions`);
+		const selfActive = missions.filter((m) => m.status === 'active' && (m.playerAddress || '').toLowerCase() === playerAddr);
 		selfActive.forEach((mission) => {
 			this.createMissionDrifter(mission, renderVersion);
 		});
-
-		console.log(
-			`[GameScene] 🏁 updateMissionRoutes complete. Now have ${this.missionRoutes.size} routes and ${this.missionDrifters.size} drifters`,
-		);
 	}
 
 	private createMissionRoute(mission: Mission, color: number) {
@@ -875,9 +884,6 @@ export class GameScene extends Phaser.Scene {
 		missionIndicator.strokeCircle(0, 0, 14);
 		// Stash reference for live updates
 		drifterContainer.setData('indicatorRing', missionIndicator);
-		console.log(
-			`[GameScene] 🟢 Created mission indicator ring for mission ${mission.id.slice(-6)} at container position (0, 0) - will be positioned later`,
-		);
 
 		// Add tiny images for each drifter
 		const iconSize = 16;
@@ -1043,9 +1049,6 @@ export class GameScene extends Phaser.Scene {
 			}
 
 			// Log when we move container from (0,0) to its proper position
-			if (drifterContainer.x === 0 && drifterContainer.y === 0) {
-				console.log(`[GameScene] 📍 Moving drifter container for mission ${mission.id.slice(-6)} from (0,0) to (${finalX}, ${finalY})`);
-			}
 
 			// Make sure container is visible and set position
 			drifterContainer.setVisible(true);
@@ -1165,70 +1168,25 @@ export class GameScene extends Phaser.Scene {
 			this.checkForOrphanedContainers();
 		}
 
-		// Animate mission routes (amber in-progress)
-		const dashLen = 12;
-		const gapLen = 8;
-		const cycle = dashLen + gapLen;
-		const speed = 12; // px/s (slower to match drifter movement)
-		const playerAddr = gameState.getState().playerAddress;
-		this.missionRoutes.forEach((route, missionId) => {
-			const m = (gameState.getState().activeMissions || []).find((mm) => mm.id === missionId);
-			if (!m) {
-				return;
+		// Animate mission routes (only self-active) on a single layer
+		if (this.routeAnimatedLayer) {
+			const cycle = 12 + 8;
+			const speed = 12; // px/s
+			const nowMs = Date.now();
+			this.routeAnimatedLayer.clear();
+			for (const r of this.animatedRoutes) {
+				// Determine direction based on mission progress
+				let dir = 1;
+				if (Number.isFinite(r.startTs) && Number.isFinite(r.endTs) && r.endTs > r.startTs) {
+					const prog = Math.max(0, Math.min(1, (nowMs - r.startTs) / (r.endTs - r.startTs)));
+					dir = prog <= 0.5 ? 1 : -1;
+				}
+				r.phase += dir * speed * dt;
+				if (r.phase >= cycle) r.phase -= cycle;
+				if (r.phase < 0) r.phase += cycle;
+				this.drawDashedLine(this.routeAnimatedLayer, r.x1, r.y1, r.x2, r.y2, r.color, r.phase, r.dash, r.gap);
 			}
-			const newColor = this.getMissionRenderColor(m, playerAddr) ?? COLOR_SELF_ACTIVE;
-			const x1 = route.getData('x1') as number;
-			const y1 = route.getData('y1') as number;
-			const x2 = route.getData('x2') as number;
-			const y2 = route.getData('y2') as number;
-			let phase = (route.getData('phase') as number) || 0;
-			const nowAnimated = newColor !== COLOR_COMPLETED; // amber moves, green pulses
-			route.setData('animated', nowAnimated);
-			route.setData('color', newColor);
-			// Manage pulse tween for ready-to-collect (green) routes
-			const isReady = newColor === COLOR_COMPLETED;
-			let pulseTween = route.getData('pulseTween') as Phaser.Tweens.Tween | null;
-			if (isReady) {
-				if (!pulseTween) {
-					pulseTween = this.tweens.add({
-						targets: route,
-						alpha: { from: 1, to: 0.5 },
-						duration: 900,
-						yoyo: true,
-						repeat: -1,
-					});
-					route.setData('pulseTween', pulseTween);
-				}
-			} else {
-				if (pulseTween) {
-					pulseTween.stop();
-					route.setData('pulseTween', null);
-					route.setAlpha(1);
-				}
-			}
-
-			// Animate dash phase for amber in-progress
-			if (nowAnimated) {
-				// Determine mission progress (0..1) to reverse direction on return leg
-				const startTs = m.startTime instanceof Date ? m.startTime.getTime() : new Date(m.startTime).getTime();
-				const endTs = m.completionTime instanceof Date ? m.completionTime.getTime() : new Date(m.completionTime).getTime();
-				let prog = 0.0;
-				if (Number.isFinite(startTs) && Number.isFinite(endTs) && endTs > startTs) {
-					prog = Math.max(0, Math.min(1, (Date.now() - startTs) / (endTs - startTs)));
-				}
-				const dir = prog <= 0.5 ? 1 : -1; // outward first half, inward second half
-				phase += dir * speed * dt;
-				if (phase >= cycle) {
-					phase -= cycle;
-				}
-				if (phase < 0) {
-					phase += cycle;
-				}
-				route.setData('phase', phase);
-			}
-			route.clear();
-			this.drawDashedLine(route, x1, y1, x2, y2, newColor, nowAnimated ? phase : 0, dashLen, gapLen);
-		});
+		}
 
 		// Sync tiled background with camera scroll/zoom
 		if (this.bgTile) {
@@ -1236,6 +1194,58 @@ export class GameScene extends Phaser.Scene {
 			this.bgTile.tilePositionY = cam.scrollY * cam.zoom;
 			this.bgTile.setTileScale(cam.zoom);
 		}
+
+		// Redraw batched mission indicators each frame for pulse effect
+		this.drawMissionIndicators();
+	}
+
+	private cleanupAllDisplayObjects() {
+		// Resource nodes and labels/glows
+		try { this.resourceNodes.forEach((s) => { try { this.tweens.killTweensOf(s); } catch {}; s.destroy(); }); } catch {}
+		try { this.nodeLabels.forEach((t) => t.destroy()); } catch {}
+		try { this.nodeGlows.forEach((g) => { try { this.tweens.killTweensOf(g); } catch {}; g.destroy(); }); } catch {}
+		this.resourceNodes.clear();
+		this.nodeLabels.clear();
+		this.nodeGlows.clear();
+		// Mission indicators and glows
+		try { this.missionIndicators.forEach((g) => { try { this.tweens.killTweensOf(g); } catch {}; g.destroy(); }); } catch {}
+		try { this.missionIndicatorGlows.forEach((g) => { try { this.tweens.killTweensOf(g); } catch {}; g.destroy(); }); } catch {}
+		this.missionIndicators.clear();
+		this.missionIndicatorGlows.clear();
+		// Routes
+		try {
+			this.missionRoutes.forEach((r) => {
+				try {
+					const tw = r.getData('pulseTween') as Phaser.Tweens.Tween | null;
+					if (tw) tw.stop();
+					this.tweens.killTweensOf(r);
+				} catch {}
+				r.destroy();
+			});
+		} catch {}
+		this.missionRoutes.clear();
+		// Drifter containers
+		try { this.missionDrifters.forEach((c) => { try { this.tweens.killTweensOf(c); } catch {}; (c as any).removeAll?.(true); c.destroy(); }); } catch {}
+		this.missionDrifters.clear();
+		// Battle markers
+		try { this.battleMarkers.forEach((g) => { try { const tw = g.getData('pulseTween') as Phaser.Tweens.Tween | null; if (tw) tw.stop(); this.tweens.killTweensOf(g); } catch {}; g.destroy(); }); } catch {}
+		this.battleMarkers.clear();
+		// Monsters
+		try { this.monsterIcons.forEach((c) => { try { this.tweens.killTweensOf(c); } catch {}; c.destroy(true); }); } catch {}
+		this.monsterIcons.clear();
+		// Planning overlay
+		try { this.planningRoute?.destroy(); this.planningRoute = null; } catch {}
+		try { this.planningCircle?.destroy(); this.planningCircle = null; } catch {}
+		// Background tile
+		try { this.tweens.killTweensOf(this.bgTile as any); } catch {}
+		try { this.bgTile?.destroy(); this.bgTile = null; } catch {}
+		// Batched indicators layer
+		try { this.missionIndicatorLayer?.destroy(); this.missionIndicatorLayer = null; } catch {}
+		this.missionIndicatorItems = [];
+		// Batched routes layers
+		try { this.routeStaticLayer?.destroy(); this.routeStaticLayer = null; } catch {}
+		try { this.routeAnimatedLayer?.destroy(); this.routeAnimatedLayer = null; } catch {}
+		this.animatedRoutes = [];
 	}
 
 	private drawDashedLine(
@@ -1429,9 +1439,11 @@ export class GameScene extends Phaser.Scene {
 		// Remove any indicator/route still present for fully expired completed missions
 		const stateNow = gameState.getState();
 		const missions = stateNow.activeMissions || [];
+		// With batched indicators, nothing to destroy per-mission here; keep old cleanup for safety
 		for (const [id, indicator] of this.missionIndicators) {
 			const m = missions.find((mm) => mm.id === id);
 			if (!m) {
+				try { this.tweens.killTweensOf(indicator); } catch {}
 				indicator.destroy();
 				this.missionIndicators.delete(id);
 				continue;
@@ -1441,6 +1453,7 @@ export class GameScene extends Phaser.Scene {
 				const completionTs = m.completionTime instanceof Date ? m.completionTime.getTime() : new Date(m.completionTime).getTime();
 				const shouldExpire = now > (expiresAt || completionTs + RECENT_COMPLETED_MS);
 				if (shouldExpire) {
+					try { this.tweens.killTweensOf(indicator); } catch {}
 					indicator.destroy();
 					this.missionIndicators.delete(id);
 				}
@@ -1449,6 +1462,11 @@ export class GameScene extends Phaser.Scene {
 		for (const [id, route] of this.missionRoutes) {
 			const m = missions.find((mm) => mm.id === id);
 			if (!m) {
+				try {
+					const tw = route.getData('pulseTween') as Phaser.Tweens.Tween | null;
+					if (tw) tw.stop();
+					this.tweens.killTweensOf(route);
+				} catch {}
 				route.destroy();
 				this.missionRoutes.delete(id);
 				continue;
@@ -1458,6 +1476,11 @@ export class GameScene extends Phaser.Scene {
 				const completionTs = m.completionTime instanceof Date ? m.completionTime.getTime() : new Date(m.completionTime).getTime();
 				const shouldExpire = now > (expiresAt || completionTs + RECENT_COMPLETED_MS);
 				if (shouldExpire) {
+					try {
+						const tw = route.getData('pulseTween') as Phaser.Tweens.Tween | null;
+						if (tw) tw.stop();
+						this.tweens.killTweensOf(route);
+					} catch {}
 					route.destroy();
 					this.missionRoutes.delete(id);
 				}
@@ -1486,6 +1509,7 @@ export class GameScene extends Phaser.Scene {
 						if (tw) {
 							tw.stop();
 						}
+						this.tweens.killTweensOf(g);
 						g.destroy();
 					} catch {}
 					this.battleMarkers.delete(id);
@@ -1533,10 +1557,11 @@ export class GameScene extends Phaser.Scene {
 		// Remove stale monsters
 		const currentIds = new Set(monsters.map((m) => m.id));
 		for (const [id, cnt] of this.monsterIcons) {
-			if (!currentIds.has(id)) {
-				cnt.destroy(true);
-				this.monsterIcons.delete(id);
-			}
+				if (!currentIds.has(id)) {
+					try { this.tweens.killTweensOf(cnt); } catch {}
+					cnt.destroy(true);
+					this.monsterIcons.delete(id);
+				}
 		}
 
 		// Create/update
