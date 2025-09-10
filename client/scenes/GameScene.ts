@@ -652,6 +652,16 @@ export class GameScene extends Phaser.Scene {
 			})
 			.setOrigin(0.5);
 
+		// Make the town image clickable to toggle the Town panel (same as pressing 'T')
+		townImage.setInteractive({ cursor: 'pointer' });
+		townImage.on('pointerdown', () => {
+			try {
+				gameState.toggleTownPanel();
+			} catch (e) {
+				console.warn('[GameScene] Failed to toggle TownPanel from town click', e);
+			}
+		});
+
 		townContainer.add([townImage, townLabel]);
 		this.townMarker = townContainer;
 	}
@@ -1562,6 +1572,19 @@ export class GameScene extends Phaser.Scene {
 				const sprite = this.add.image(0, 0, texKey).setOrigin(0.5);
 				// Reasonable default scale; tweak as art warrants
 				sprite.setScale(0.3);
+				// Make monster clickable to open combat planning targeting this monster
+				sprite.setInteractive({ cursor: 'pointer' });
+				sprite.on('pointerdown', () => {
+					try {
+						gameState.setMissionType('combat');
+						gameState.setSelectedTargetMonster(m.id);
+						if (!gameState.getState().showMissionPanel) {
+							gameState.toggleMissionPanel();
+						}
+					} catch (e) {
+						console.warn('[GameScene] Failed to open combat planning from monster click', e);
+					}
+				});
 				const label = this.add
 					.text(0, 48, `${m.kind}\nHP ${m.hp}/${m.maxHp}`, {
 						fontSize: '11px',
