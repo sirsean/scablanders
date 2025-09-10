@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { RESOURCE_TYPES, RARITIES_WITH_TEXTURE } from '../utils/resourceTextures';
+import { MONSTER_KINDS, getMonsterTextureKey, getMonsterAssetPath } from '../utils/monsterTextures';
 
 export class BootScene extends Phaser.Scene {
 	constructor() {
@@ -44,6 +45,13 @@ export class BootScene extends Phaser.Scene {
 			for (const rarity of RARITIES_WITH_TEXTURE) {
 				this.load.image(`${type}-${rarity}`, `assets/images/resources/${type}-${rarity}.png`);
 			}
+		}
+
+		// Preload monster textures
+		for (const kind of MONSTER_KINDS as any) {
+			const key = getMonsterTextureKey(kind as string);
+			const path = getMonsterAssetPath(kind as string);
+			this.load.image(key, path);
 		}
 
 		// Generate UI textures

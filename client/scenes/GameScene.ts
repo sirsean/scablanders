@@ -3,6 +3,7 @@ import type { ResourceNode, Mission } from '@shared/models';
 import { gameState, GameState } from '../gameState';
 import { getResourceTextureKey } from '../utils/resourceTextures';
 import { getVehicleData } from '../utils/vehicleUtils';
+import { getMonsterTextureKey } from '../utils/monsterTextures';
 
 // Town coordinates - world origin
 const TOWN_X = 0;
@@ -1544,10 +1545,13 @@ export class GameScene extends Phaser.Scene {
 			if (!container) {
 				container = this.add.container(m.coordinates.x, m.coordinates.y);
 				container.setDepth(DEPTH_MONSTERS);
-				const circle = this.add.circle(0, 0, 10, 0xdc143c, 0.9);
-				circle.setStrokeStyle(2, 0x000000, 1);
+				// Monster sprite image
+				const texKey = getMonsterTextureKey(m.kind as string);
+				const sprite = this.add.image(0, 0, texKey).setOrigin(0.5);
+				// Reasonable default scale; tweak as art warrants
+				sprite.setScale(0.3);
 				const label = this.add
-					.text(0, -24, `${m.kind}\nHP ${m.hp}/${m.maxHp}`, {
+					.text(0, 48, `${m.kind}\nHP ${m.hp}/${m.maxHp}`, {
 						fontSize: '11px',
 						color: '#ffdddd',
 						fontFamily: 'Courier New',
@@ -1556,7 +1560,7 @@ export class GameScene extends Phaser.Scene {
 						padding: { x: 4, y: 2 },
 					})
 					.setOrigin(0.5);
-				container.add(circle);
+				container.add(sprite);
 				container.add(label);
 				this.monsterIcons.set(m.id, container);
 			} else {

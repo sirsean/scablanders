@@ -1,4 +1,5 @@
 import { gameState, type GameState } from '../gameState';
+import { getMonsterPublicPath } from '../utils/monsterTextures';
 
 export class TownPanel {
 	private static liveTimer: number | null = null;
@@ -165,10 +166,15 @@ export class TownPanel {
 <button class="target-monster-btn" data-monster-id="${m.id}">Target</button>
                 </div>
               </div>
-              <div>HP: <b>${m.hp}</b> / <b>${m.maxHp}</b></div>
-              <div>State: <b>${m.state}</b></div>
-              ${coords ? `<div>Coords: (${coords.x}, ${coords.y})</div>` : ''}
-              ${etaText ? `<div>ETA: ${etaText}</div>` : ''}
+              <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
+                <div>
+                  <div>HP: <b>${m.hp}</b> / <b>${m.maxHp}</b></div>
+                  <div>State: <b>${m.state}</b></div>
+                  ${coords ? `<div>Coords: (${coords.x}, ${coords.y})</div>` : ''}
+                  ${etaText ? `<div>ETA: ${etaText}</div>` : ''}
+                </div>
+                <img src="${getMonsterPublicPath(m.kind)}" alt="${m.kind}" style="width:56px;height:56px;object-fit:contain;" />
+              </div>
             </div>`;
 						})
 						.join('')}

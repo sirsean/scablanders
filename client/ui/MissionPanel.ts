@@ -12,6 +12,7 @@ import {
 	BASE_SPEED,
 } from '../../shared/mission-utils';
 import { DriftersList } from './components/DriftersList';
+import { getMonsterPublicPath } from '../utils/monsterTextures';
 
 export class MissionPanel {
 	static createMissionPanel(): HTMLElement {
@@ -111,11 +112,16 @@ export class MissionPanel {
 			  <div style="display:flex; gap: 20px; height:100%;">
 			    <div style="flex:1; display:flex; flex-direction:column;">
 			      <div style="margin-bottom: 16px; border: 2px solid #444; border-radius: 8px; padding: 16px; background: rgba(255, 255, 255, 0.02);">
-			        <h4 style="color:#FFD700; margin:0 0 12px 0;">Combat Mission (Monster)</h4>
-        <div>Monster: <b>${monster.kind}</b></div>
-			        <div>HP: <b style="color:#ff6666;">${monster.hp}</b> / <b>${monster.maxHp}</b></div>
-			        <div>Coords: (${monster.coordinates.x}, ${monster.coordinates.y})</div>
-			        <div>State: ${monster.state}</div>
+        <h4 style=\"color:#FFD700; margin:0 0 12px 0;\">Combat Mission (Monster)</h4>
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
+          <div>
+            <div>Monster: <b>${monster.kind}</b></div>
+            <div>HP: <b style="color:#ff6666;">${monster.hp}</b> / <b>${monster.maxHp}</b></div>
+            <div>Coords: (${monster.coordinates.x}, ${monster.coordinates.y})</div>
+            <div>State: ${monster.state}</div>
+          </div>
+          <img src="${getMonsterPublicPath(monster.kind)}" alt="${monster.kind}" style="width:56px;height:56px;object-fit:contain;"/>
+        </div>
 			      </div>
 			      <div style="margin-bottom: 16px;">
 			        <h4 style="color:#FFD700; margin: 0 0 8px 0;">Vehicle</h4>
