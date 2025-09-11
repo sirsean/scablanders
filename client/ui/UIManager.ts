@@ -11,6 +11,9 @@ import { ProfilePanel } from './ProfilePanel';
 import { TownPanel } from './TownPanel';
 import { LeaderboardsPanel } from './LeaderboardsPanel';
 import { buildNotificationStyle } from './utils/notificationStyles';
+import { WelcomePanel } from './WelcomePanel';
+import { ConnectWalletPanel } from './ConnectWalletPanel';
+import { auth } from '../auth';
 
 export class UIManager {
 	private notificationContainer: HTMLElement | null = null;
@@ -25,6 +28,8 @@ export class UIManager {
 	private townPanel: HTMLElement | null = null;
 	private leaderboardsPanel: HTMLElement | null = null;
 	private drifterInfoPanel: HTMLElement | null = null;
+	private welcomePanel: HTMLElement | null = null;
+	private connectWalletPanel: HTMLElement | null = null;
 	private buttonUpdateInterval: number | null = null;
 
 	/**
@@ -105,6 +110,7 @@ export class UIManager {
 		this.createNotificationContainer();
 		this.createActionMenu();
 		this.createMissionTooltip();
+		// Panels (order of creation doesn't affect layout; it's handled later)
 		this.createMissionPanel();
 		this.createDriftersPanel();
 		this.createProfilePanel();
@@ -115,6 +121,9 @@ export class UIManager {
 		this.createTownPanel();
 		this.createLeaderboardsPanel();
 		this.createDrifterInfoPanel();
+		// No-auth panels
+		this.createWelcomePanel();
+		this.createConnectWalletPanel();
 	}
 
 	private createActionMenu() {
@@ -280,6 +289,18 @@ export class UIManager {
 		this.swallowPointerEvents(this.leaderboardsPanel);
 	}
 
+	private createWelcomePanel() {
+		this.welcomePanel = WelcomePanel.createWelcomePanel();
+		document.body.appendChild(this.welcomePanel);
+		this.swallowPointerEvents(this.welcomePanel);
+	}
+
+	private createConnectWalletPanel() {
+		this.connectWalletPanel = ConnectWalletPanel.createConnectWalletPanel();
+		document.body.appendChild(this.connectWalletPanel);
+		this.swallowPointerEvents(this.connectWalletPanel);
+	}
+
 	private createDrifterInfoPanel() {
 		this.drifterInfoPanel = DrifterInfoPanel.createDrifterInfoPanel();
 		document.body.appendChild(this.drifterInfoPanel);
@@ -386,6 +407,10 @@ export class UIManager {
 
 		// Keyboard shortcuts
 		document.addEventListener('keydown', (e) => {
+			// Disable panel shortcuts when not authenticated
+			if (!gameState.getState().isAuthenticated) {
+				return;
+			}
 			switch (e.key) {
 				case 'Escape':
 					// Close all panels
@@ -450,6 +475,16 @@ export class UIManager {
 	}
 
 	private updateUI(state: GameState) {
+		// Update visibility of auth-dependent HUD elements first
+		const actionMenu = document.getElementById('action-menu');
+		const creditsHud = document.getElementById('credits-display');
+		if (actionMenu) {
+			actionMenu.style.display = state.isAuthenticated ? 'flex' : 'none';
+		}
+		if (creditsHud) {
+			creditsHud.style.display = state.isAuthenticated ? 'block' : 'none';
+		}
+
 		// Update panel visibility (track changes to decide layout)
 		let requiresLayout = false;
 		const flip = (el: HTMLElement | null, show: boolean, onShow?: () => void) => {
@@ -463,24 +498,31 @@ export class UIManager {
 			if (show && onShow) onShow();
 		};
 
+		// Gate normal panels behind authentication
+		const canShow = state.isAuthenticated;
+
 		if (this.missionPanel) {
-			flip(this.missionPanel, state.showMissionPanel, () => MissionPanel.updateMissionPanel(state));
-			if (state.showMissionPanel) MissionPanel.updateMissionPanel(state);
+			const want = canShow && state.showMissionPanel;
+			flip(this.missionPanel, want, () => MissionPanel.updateMissionPanel(state));
+			if (want) MissionPanel.updateMissionPanel(state);
 		}
 
 		if (this.driftersPanel) {
-			flip(this.driftersPanel, state.showDriftersPanel, () => DriftersPanel.updateDriftersPanel(state));
-			if (state.showDriftersPanel) DriftersPanel.updateDriftersPanel(state);
+			const want = canShow && state.showDriftersPanel;
+			flip(this.driftersPanel, want, () => DriftersPanel.updateDriftersPanel(state));
+			if (want) DriftersPanel.updateDriftersPanel(state);
 		}
 
 		if (this.profilePanel) {
-			flip(this.profilePanel, state.showProfilePanel, () => ProfilePanel.updateProfilePanel(state));
-			if (state.showProfilePanel) ProfilePanel.updateProfilePanel(state);
+			const want = canShow && state.showProfilePanel;
+			flip(this.profilePanel, want, () => ProfilePanel.updateProfilePanel(state));
+			if (want) ProfilePanel.updateProfilePanel(state);
 		}
 
 		if (this.activeMissionsPanel) {
-			flip(this.activeMissionsPanel, state.showActiveMissionsPanel);
-			if (state.showActiveMissionsPanel) {
+			const want = canShow && state.showActiveMissionsPanel;
+			flip(this.activeMissionsPanel, want);
+			if (want) {
 				// Merge player-specific missions with any missing ones from global list filtered by player
 				const fromPlayer = state.playerMissions || [];
 				const fromGlobal = (state.activeMissions || []).filter(
@@ -507,13 +549,15 @@ export class UIManager {
 		}
 
 		if (this.marketPanel) {
-			flip(this.marketPanel, state.showMarketPanel, () => MarketPanel.updateMarketPanel(state.availableVehicles, state.isLoadingMarket));
-			if (state.showMarketPanel) MarketPanel.updateMarketPanel(state.availableVehicles, state.isLoadingMarket);
+			const want = canShow && state.showMarketPanel;
+			flip(this.marketPanel, want, () => MarketPanel.updateMarketPanel(state.availableVehicles, state.isLoadingMarket));
+			if (want) MarketPanel.updateMarketPanel(state.availableVehicles, state.isLoadingMarket);
 		}
 
 		if (this.townPanel) {
-			flip(this.townPanel, state.showTownPanel);
-			if (state.showTownPanel) {
+			const want = canShow && state.showTownPanel;
+			flip(this.townPanel, want);
+			if (want) {
 				TownPanel.updateTownPanel(state);
 				TownPanel.startLiveTimer(() => gameState.getState());
 			} else {
@@ -522,22 +566,25 @@ export class UIManager {
 		}
 
 		if (this.vehiclePanel) {
-			flip(this.vehiclePanel, state.showVehiclePanel, () => { if (state.profile) VehiclePanel.updateVehiclePanel(state.profile.vehicles); });
-			if (state.showVehiclePanel && state.profile) {
+			const want = canShow && state.showVehiclePanel;
+			flip(this.vehiclePanel, want, () => { if (state.profile) VehiclePanel.updateVehiclePanel(state.profile.vehicles); });
+			if (want && state.profile) {
 				VehiclePanel.updateVehiclePanel(state.profile.vehicles);
 			}
 		}
 
 		if (this.leaderboardsPanel) {
-			flip(this.leaderboardsPanel, state.showLeaderboardsPanel, () => LeaderboardsPanel.updateLeaderboardsPanel(state));
-			if (state.showLeaderboardsPanel) {
+			const want = canShow && state.showLeaderboardsPanel;
+			flip(this.leaderboardsPanel, want, () => LeaderboardsPanel.updateLeaderboardsPanel(state));
+			if (want) {
 				LeaderboardsPanel.updateLeaderboardsPanel(state);
 			}
 		}
 
 		if (this.logPanel) {
-			flip(this.logPanel, state.showLogPanel);
-			if (state.showLogPanel) {
+			const want = canShow && state.showLogPanel;
+			flip(this.logPanel, want);
+			if (want) {
 				LogPanel.updateLogPanel(state.eventLog);
 				// Start live timer to refresh relative timestamps while open
 				LogPanel.startLiveTimer(() => gameState.getState().eventLog);
@@ -545,6 +592,14 @@ export class UIManager {
 				// Stop live timer when hidden
 				LogPanel.stopLiveTimer();
 			}
+		}
+
+		// Show or hide the special unauth panels
+		if (this.welcomePanel) {
+			flip(this.welcomePanel, !state.isAuthenticated);
+		}
+		if (this.connectWalletPanel) {
+			flip(this.connectWalletPanel, !state.isAuthenticated);
 		}
 
 		// Update notifications
@@ -688,6 +743,10 @@ export class UIManager {
 
 		// Explicit ordering (left-to-right) per spec
 		const order: (HTMLElement | null)[] = [
+			// Unauth panels first so they tile from the left when visible
+			this.welcomePanel,
+			this.connectWalletPanel,
+			// Auth-only panels follow
 			this.profilePanel,
 			this.logPanel,
 			this.activeMissionsPanel,
