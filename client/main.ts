@@ -97,14 +97,6 @@ if (import.meta.env.DEV && (import.meta as any).hot) {
 // Import authentication system
 import { auth } from './auth';
 
-// Add welcome notification
-gameState.addNotification({
-	type: 'info',
-	title: 'Welcome to Scablanders!',
-	message: 'Connect your wallet to start exploring the wasteland.',
-	duration: 8000,
-});
-
 // SIWE Authentication handlers
 document.getElementById('connect-wallet')?.addEventListener('click', async () => {
 	await auth.connect();
@@ -269,13 +261,3 @@ async function testResourceManagement() {
 console.log('\n🔧 Debug Functions Available:');
 console.log('  • debugResourceFlow() - Check current resource state');
 console.log('  • testResourceManagement() - Test complete degradation flow');
-
-// Add some demo notifications for testing
-setTimeout(() => {
-	gameState.addNotification({
-		type: 'info',
-		title: 'Tutorial',
-		message: 'Click on resource nodes to start missions!',
-		duration: 6000,
-	});
-}, 3000);
