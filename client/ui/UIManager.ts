@@ -13,6 +13,7 @@ import { LeaderboardsPanel } from './LeaderboardsPanel';
 import { buildNotificationStyle } from './utils/notificationStyles';
 import { WelcomePanel } from './WelcomePanel';
 import { ConnectWalletPanel } from './ConnectWalletPanel';
+import { UnauthImagePanel } from './UnauthImagePanel';
 import { auth } from '../auth';
 
 export class UIManager {
@@ -30,6 +31,7 @@ export class UIManager {
 	private drifterInfoPanel: HTMLElement | null = null;
 	private welcomePanel: HTMLElement | null = null;
 	private connectWalletPanel: HTMLElement | null = null;
+	private unauthImagePanel: HTMLElement | null = null;
 	private buttonUpdateInterval: number | null = null;
 
 	/**
@@ -124,6 +126,7 @@ export class UIManager {
 		// No-auth panels
 		this.createWelcomePanel();
 		this.createConnectWalletPanel();
+		this.createUnauthImagePanel();
 	}
 
 	private createActionMenu() {
@@ -299,6 +302,12 @@ export class UIManager {
 		this.connectWalletPanel = ConnectWalletPanel.createConnectWalletPanel();
 		document.body.appendChild(this.connectWalletPanel);
 		this.swallowPointerEvents(this.connectWalletPanel);
+	}
+
+	private createUnauthImagePanel() {
+		this.unauthImagePanel = UnauthImagePanel.createUnauthImagePanel();
+		document.body.appendChild(this.unauthImagePanel);
+		this.swallowPointerEvents(this.unauthImagePanel);
 	}
 
 	private createDrifterInfoPanel() {
@@ -601,6 +610,9 @@ export class UIManager {
 		if (this.connectWalletPanel) {
 			flip(this.connectWalletPanel, !state.isAuthenticated);
 		}
+		if (this.unauthImagePanel) {
+			flip(this.unauthImagePanel, !state.isAuthenticated);
+		}
 
 		// Update notifications
 		this.updateNotifications(state.notifications);
@@ -744,6 +756,7 @@ export class UIManager {
 		// Explicit ordering (left-to-right) per spec
 		const order: (HTMLElement | null)[] = [
 			// Unauth panels first so they tile from the left when visible
+			this.unauthImagePanel,
 			this.welcomePanel,
 			this.connectWalletPanel,
 			// Auth-only panels follow
