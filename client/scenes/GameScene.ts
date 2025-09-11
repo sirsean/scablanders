@@ -15,7 +15,7 @@ const MAX_ZOOM = 1.0; // max zoom in
 // Resource node display constants
 const RESOURCE_NODE_BASE_SCALE = 0.15; // Base scale for resource nodes (adjust to resize all nodes)
 const RESOURCE_NODE_RARITY_SCALE_MULTIPLIER = 1.2; // How much bigger rare/epic/legendary nodes are
-const RESOURCE_NODE_LABEL_OFFSET = 30; // Distance above the node to place the label
+const RESOURCE_NODE_LABEL_OFFSET = -30; // Distance below the node to place the label
 
 // Mission color palette (Material-inspired)
 const COLOR_OTHER_ACTIVE = 0xe53935; // red 600
@@ -480,20 +480,11 @@ export class GameScene extends Phaser.Scene {
 			rarity === 'rare' || rarity === 'epic' || rarity === 'legendary'
 				? RESOURCE_NODE_BASE_SCALE * RESOURCE_NODE_RARITY_SCALE_MULTIPLIER
 				: RESOURCE_NODE_BASE_SCALE;
-		let glowColor = this.getRarityColor(rarity);
 
 		// Create the main node sprite
 		const node = this.add.image(x, y, textureKey);
 		node.setScale(scale);
 		node.setInteractive({ cursor: 'pointer' });
-
-		// Add glow effect for rare nodes and store reference
-		let glow: Phaser.GameObjects.Arc | null = null;
-		if (rarity !== 'common') {
-			glow = this.add.circle(x, y, 35, glowColor, 0.3);
-			glow.setBlendMode(Phaser.BlendModes.ADD);
-			this.nodeGlows.set(id, glow); // Store for cleanup
-		}
 
 		// Create hover effects
 		node.on('pointerover', () => {
