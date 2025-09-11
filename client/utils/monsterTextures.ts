@@ -21,17 +21,29 @@ export function getMonsterSlug(kind: string): string {
   return MONSTER_KIND_TO_SLUG[kind] || 'skitterling';
 }
 
+// Eagerly import URLs for monster images via Vite
+const MONSTER_URL_MAP = import.meta.glob('../assets/images/monsters/*.png', {
+  eager: true,
+  as: 'url',
+}) as Record<string, string>;
+
+function getMonsterUrlBySlug(slug: string): string {
+  // Keys in the map are relative to this file
+  const key = `../assets/images/monsters/${slug}.png`;
+  return MONSTER_URL_MAP[key] || MONSTER_URL_MAP['../assets/images/monsters/skitterling.png'];
+}
+
 // Key used for Phaser textures
 export function getMonsterTextureKey(kind: string): string {
   return `monster-${getMonsterSlug(kind)}`;
 }
 
-// Path to use with Phaser loader (relative to client root)
+// URL to use with Phaser loader (resolved by Vite)
 export function getMonsterAssetPath(kind: string): string {
-  return `assets/images/monsters/${getMonsterSlug(kind)}.png`;
+  return getMonsterUrlBySlug(getMonsterSlug(kind));
 }
 
-// Path to use in DOM <img> tags (absolute from site root)
+// URL to use in DOM <img> tags
 export function getMonsterPublicPath(kind: string): string {
-  return `/assets/images/monsters/${getMonsterSlug(kind)}.png`;
+  return getMonsterUrlBySlug(getMonsterSlug(kind));
 }

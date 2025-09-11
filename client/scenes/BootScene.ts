@@ -37,16 +37,24 @@ export class BootScene extends Phaser.Scene {
 			'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
 		);
 
+		// Resolve image URLs via Vite import.meta.glob
+		const miscUrlMap = import.meta.glob('../assets/images/*.{png,jpg,jpeg,webp,svg}', { eager: true, as: 'url' }) as Record<string, string>;
+		const resourceUrlMap = import.meta.glob('../assets/images/resources/*.png', { eager: true, as: 'url' }) as Record<string, string>;
+
 		// Load the world map background image
-		this.load.image('tile-bg', 'assets/images/map-tile.png');
+		this.load.image('tile-bg', miscUrlMap['../assets/images/map-tile.png']);
 
 		// Load town marker image
-		this.load.image('town', 'assets/images/town.png');
+		this.load.image('town', miscUrlMap['../assets/images/town.png']);
 
 		// Load resource node textures by type and rarity
 		for (const type of RESOURCE_TYPES) {
 			for (const rarity of RARITIES_WITH_TEXTURE) {
-				this.load.image(`${type}-${rarity}`, `assets/images/resources/${type}-${rarity}.png`);
+				const fileKey = `../assets/images/resources/${type}-${rarity}.png`;
+				const url = resourceUrlMap[fileKey];
+				if (url) {
+					this.load.image(`${type}-${rarity}`, url);
+				}
 			}
 		}
 
