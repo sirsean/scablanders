@@ -92,7 +92,7 @@ export class UIManager {
 
 		this.buttonUpdateInterval = setInterval(() => {
 			const state = gameState.getState();
-			if (state.isAuthenticated && state.playerMissions) {
+			if (state.isAuthenticated) {
 				this.updateActiveMissionsButton(state);
 			}
 		}, 5000) as any; // Check every 5 seconds
@@ -686,21 +686,38 @@ export class UIManager {
 	}
 
 	/**
+	 * Build a merged list of the current player's missions by combining:
+	 * - state.playerMissions (player-specific list)
+	 * - state.activeMissions filtered by player (global snapshot)
+	 * Global entries are added first, then player entries override by id.
+	 */
+	private getMissionsForCurrentPlayer(state: GameState): any[] {
+		const fromPlayer = state.playerMissions || [];
+		const fromGlobal = (state.activeMissions || []).filter(
+			(m) => state.playerAddress && m.playerAddress?.toLowerCase() === state.playerAddress.toLowerCase(),
+		);
+		const mergedMap = new Map<string, any>();
+		for (const m of fromGlobal) mergedMap.set(m.id, m);
+		for (const m of fromPlayer) mergedMap.set(m.id, m);
+		return Array.from(mergedMap.values());
+	}
+
+	/**
 	 * Check if there are completed missions ready for reward collection
 	 */
 	private hasCompletedMissions(state: GameState): boolean {
-		if (!state.playerMissions || state.playerMissions.length === 0) {
+		const missions = this.getMissionsForCurrentPlayer(state);
+		if (!missions || missions.length === 0) {
 			return false;
 		}
 
 		const now = new Date();
-		return state.playerMissions.some((mission) => {
+		return missions.some((mission) => {
 			if (mission.status !== 'active') {
 				return false;
 			}
 
 			const completionTime = mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime);
-
 			return now >= completionTime;
 		});
 	}
@@ -732,18 +749,18 @@ export class UIManager {
 	 * Get the count of completed missions ready for collection
 	 */
 	private getCompletedMissionsCount(state: GameState): number {
-		if (!state.playerMissions || state.playerMissions.length === 0) {
+		const missions = this.getMissionsForCurrentPlayer(state);
+		if (!missions || missions.length === 0) {
 			return 0;
 		}
 
 		const now = new Date();
-		return state.playerMissions.filter((mission) => {
+		return missions.filter((mission) => {
 			if (mission.status !== 'active') {
 				return false;
 			}
 
 			const completionTime = mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime);
-
 			return now >= completionTime;
 		}).length;
 	}
