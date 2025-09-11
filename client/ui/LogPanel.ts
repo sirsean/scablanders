@@ -48,22 +48,45 @@ export class LogPanel {
 			return '<p class="muted">No events yet.</p>';
 		}
 		return `
-      <div class="log-items" style="display:flex; flex-direction:column; gap:8px;">
-        ${events
+	      <div class="log-items" style="display:flex; flex-direction:column; gap:8px;">
+	        ${events
 					.map((ev) => {
 						const time = LogPanel.formatTime(ev.timestamp as any as Date);
 						const who = ev.playerAddress ? `<span class=\"muted\">${ev.playerAddress.slice(0, 6)}…</span> ` : '';
 						const style = buildEventBorderStyle((ev as any).type);
+						const msg = LogPanel.renderMessageWithCenter(ev);
 						return `
-              <div style=\"${style}\">
-                <div style=\"font-size:11px;\">${time}</div>
-                <div style=\"font-size:13px;\">${who}${ev.message}</div>
-              </div>
-            `;
+	              <div style=\"${style}\">
+	                <div style=\"font-size:11px;\">${time}</div>
+	                <div style=\"font-size:13px;\">${who}${msg}</div>
+	              </div>
+	            `;
 					})
 					.join('')}
-      </div>
-    `;
+	      </div>
+	    `;
+	}
+
+	/**
+	 * Only append a Center button when explicit coordinates are provided in ev.data.
+	 * This avoids parsing message text and keeps the client simple and consistent.
+	 */
+	private static renderMessageWithCenter(ev: GameEvent): string {
+		try {
+			const dx = (ev as any)?.data?.x;
+			const dy = (ev as any)?.data?.y;
+			if (typeof dx === 'number' && typeof dy === 'number') {
+				return `${LogPanel.escapeHtml(ev.message)} <button style="margin-left:8px; padding:2px 6px; font-size:11px;" onclick="centerOnMap(${dx}, ${dy})">Center</button>`;
+			}
+		} catch {}
+		return LogPanel.escapeHtml(ev.message || '');
+	}
+
+	private static escapeHtml(s: string): string {
+		return (s || '')
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;');
 	}
 
 	static updateLogPanel(allEvents: GameEvent[]) {

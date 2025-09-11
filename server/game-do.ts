@@ -1227,14 +1227,15 @@ private async initializeResourceNodes() {
 					console.log(`[GameDO] Node ${mission.targetNodeId} is now fully depleted and inactive`);
 
 					// Log resource depleted
-					await this.addEvent({
-						type: 'resource_depleted',
-						playerAddress: mission.playerAddress,
-						nodeId: mission.targetNodeId,
-						resourceType: resourceType,
-						rarity: node.rarity,
-						message: `${resourceType.toUpperCase()} (${node.rarity.toUpperCase()}) node depleted by ${mission.playerAddress.slice(0, 6)}…`,
-					});
+				await this.addEvent({
+					type: 'resource_depleted',
+					playerAddress: mission.playerAddress,
+					nodeId: mission.targetNodeId,
+					resourceType: resourceType,
+					rarity: node.rarity,
+					message: `${resourceType.toUpperCase()} (${node.rarity.toUpperCase()}) node depleted by ${mission.playerAddress.slice(0, 6)}…`,
+					data: { x: node.coordinates.x, y: node.coordinates.y },
+				});
 
 					// Add depletion notification to player
 					await this.addNotification(mission.playerAddress, {
@@ -1765,6 +1766,7 @@ private async performResourceManagement() {
 					resourceType: removed?.type,
 					rarity: removed?.rarity,
 					message: `Fully depleted ${removed?.type?.toUpperCase() || 'resource'} (${removed?.rarity?.toUpperCase() || 'UNKNOWN'}) node removed`,
+					data: removed?.coordinates ? { x: removed.coordinates.x, y: removed.coordinates.y } : undefined,
 				});
 			}
 			changesMade = true;
@@ -1821,6 +1823,7 @@ private async performResourceManagement() {
 					resourceType: newNode.type,
 					rarity: newNode.rarity,
 					message: `New ${type.toUpperCase()} (${newNode.rarity.toUpperCase()}) node spawned (${newNode.coordinates.x}, ${newNode.coordinates.y})`,
+					data: { x: newNode.coordinates.x, y: newNode.coordinates.y },
 				});
 				changesMade = true;
 			}
