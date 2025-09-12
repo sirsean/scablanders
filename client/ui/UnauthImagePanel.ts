@@ -1,5 +1,3 @@
-import scablandersUrl from '../assets/images/scablanders.png';
-
 export class UnauthImagePanel {
 	static createUnauthImagePanel(): HTMLElement {
 		const panel = document.createElement('div');
@@ -34,7 +32,8 @@ export class UnauthImagePanel {
 		wrapper.style.cssText = 'display:flex; align-items:center; justify-content:center;';
 
 		const img = document.createElement('img');
-		img.src = scablandersUrl;
+		// Use the public static asset so it’s also available for meta tags at /images/scablanders.png
+		img.src = '/images/scablanders.png';
 		img.alt = 'Scablanders key art';
 		img.style.cssText =
 			'width:100%; height:auto; max-height: calc(80vh - 84px); border-radius:6px; border:1px solid #333; object-fit:contain;';
