@@ -1747,14 +1747,13 @@ async alarm() {
 			}
 		} catch (error) {
 			console.error('[GameDO] Error during scheduled alarm processing:', error);
-		}
-
-		// Schedule next alarm to the earliest due time (only the lease holder does this)
-		await this.scheduleNextAlarm();
-	} finally {
+		} finally {
+			// Schedule next alarm to the earliest due time (only the lease holder does this)
+			await this.scheduleNextAlarm();
 			if (leaseAcquired) {
 				await this.releaseAlarmLease();
 			}
+		}
 		}
 
 /**
