@@ -71,7 +71,7 @@ initCrtTheme({ enableToggleButton: false });
 			if (now - last >= 500) { // update twice per second
 				const fps = Math.round((frames * 1000) / (now - last));
 				const el = document.getElementById('fps-indicator');
-				if (el) el.textContent = `FPS ${fps}`;
+				if (el) { el.textContent = `FPS ${fps}`; }
 				frames = 0;
 				last = now;
 			}

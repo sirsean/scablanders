@@ -1,5 +1,5 @@
 import { defaultForSlice, type SliceKey, type SliceMap } from './slices';
-import { defaultBroadcastMapping, type BroadcastPlan, type BroadcastJob } from './broadcast-map';
+import { defaultBroadcastMapping, type BroadcastPlan } from './broadcast-map';
 import { createConsoleLogger, type MutationLogger, type MutationEvent } from './event-log';
 
 // Minimal facade for Durable Object storage used by RMW
@@ -42,7 +42,7 @@ function deepClone<T>(obj: T): T {
   // Workers env supports structuredClone; provide a fallback
   try {
     // @ts-ignore
-    if (typeof structuredClone === 'function') return structuredClone(obj);
+    if (typeof structuredClone === 'function') { return structuredClone(obj); }
   } catch {}
   return JSON.parse(JSON.stringify(obj));
 }
@@ -89,7 +89,7 @@ export async function rmw<K extends SliceKey, TResult = unknown>(
     const before = prev[key];
     const after = draft[key];
     const same = JSON.stringify(before) === JSON.stringify(after);
-    if (!same) changed.push(key);
+    if (!same) { changed.push(key); }
   }
 
   // 5) Persist only changed slices

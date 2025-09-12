@@ -398,11 +398,11 @@ private async initializeResourceNodes() {
 			read: ['resourceNodes'],
 			async mutate(draft) {
 				const nodesObj = (draft.resourceNodes as any as Record<string, ResourceNode>) || {};
-				let changed = false;
+				let _changed = false;
 				// If version changed and any nodes exist, clear for regeneration
 				if (storedVer !== CURRENT_VER && Object.keys(nodesObj).length > 0) {
-					for (const k of Object.keys(nodesObj)) delete nodesObj[k];
-					changed = true;
+					for (const k of Object.keys(nodesObj)) { delete nodesObj[k]; }
+					_changed = true;
 				}
 				// If nodes already exist after migration check, no-op
 				if (Object.keys(nodesObj).length > 0) {
@@ -412,7 +412,7 @@ private async initializeResourceNodes() {
 				const nodesToCreate: ResourceType[] = ['ore', 'ore', 'ore', 'scrap', 'scrap', 'scrap', 'organic', 'organic'];
 				let created = 0;
 				for (let i = 0; i < nodesToCreate.length; i++) {
-					if (Object.keys(nodesObj).length >= RESOURCE_NODE_CAP) break;
+					if (Object.keys(nodesObj).length >= RESOURCE_NODE_CAP) { break; }
 					const type = nodesToCreate[i];
 					const newNode = this.createRandomResourceNode(type);
 					nodesObj[newNode.id] = newNode;
@@ -806,7 +806,7 @@ private async incrementCombatDamage(address: string, dmg: number) {
 		}
 		await this.updatePlayerRmw(address, async ({ players }) => {
 			const p = players[address];
-			if (!p) return { result: undefined };
+			if (!p) { return { result: undefined }; }
 			p.balance += amount;
 			players[address] = p;
 			return { result: { success: true, newBalance: p.balance }, broadcastAddresses: [address] } as any;
@@ -831,7 +831,7 @@ private async incrementCombatDamage(address: string, dmg: number) {
 		}
 		await this.updatePlayerRmw(address, async ({ players }) => {
 			const p = players[address];
-			if (!p) return { result: undefined };
+			if (!p) { return { result: undefined }; }
 			p.balance -= amount;
 			players[address] = p;
 			return { result: { success: true, newBalance: p.balance }, broadcastAddresses: [address] } as any;
@@ -850,7 +850,7 @@ private async incrementCombatDamage(address: string, dmg: number) {
 		}
 		await this.updatePlayerRmw(address, async ({ players }) => {
 			const p = players[address];
-			if (!p) return { result: { success: false, error: 'Player not found' } } as any;
+			if (!p) { return { result: { success: false, error: 'Player not found' } } as any; }
 			p.ownedDrifters = drifters;
 			players[address] = p;
 			return { result: { success: true }, broadcastAddresses: [address] } as any;
@@ -869,8 +869,8 @@ private async incrementCombatDamage(address: string, dmg: number) {
 		let newBal = player.balance;
 		await this.updatePlayerRmw(playerAddress, async ({ players }) => {
 			const p = players[playerAddress];
-			if (!p) return { result: { success: false, error: 'Player not found' } } as any;
-			if (!Array.isArray(p.vehicles)) p.vehicles = [] as any;
+			if (!p) { return { result: { success: false, error: 'Player not found' } } as any; }
+			if (!Array.isArray(p.vehicles)) { p.vehicles = [] as any; }
 			p.balance -= vehicle.cost;
 			newBal = p.balance;
 			p.vehicles.push({ instanceId: crypto.randomUUID(), vehicleId: vehicle.id, status: 'idle' as const });
@@ -957,7 +957,7 @@ private async incrementCombatDamage(address: string, dmg: number) {
 					const missionsObj = draft.missions as any as Record<string, Mission>;
 					const world = draft.worldMetrics as any as GameState['worldMetrics'];
 					const p = playersObj[playerAddress];
-					if (!p) return { result: { success: false, error: 'Player not found' } } as any;
+					if (!p) { return { result: { success: false, error: 'Player not found' } } as any; }
 					const missionId = `mission-${crypto.randomUUID()}`;
 					const mission: Mission = {
 						id: missionId,
@@ -994,7 +994,6 @@ private async incrementCombatDamage(address: string, dmg: number) {
 				return { success: false, error: 'Failed to start monster combat mission' };
 			}
 			const missionId = (rmwRes.result as any).missionId as string;
-			const mission: Mission = this.gameState.missions.get(missionId)!;
 
 			await this.addEvent({
 				type: 'mission_started',
@@ -1049,7 +1048,7 @@ private async incrementCombatDamage(address: string, dmg: number) {
 				// Check drifter availability across active missions
 				const activeDrifters = new Set<number>();
 				for (const m of Object.values(missionsObj)) {
-					if (m.status === 'active') m.drifterIds.forEach((id) => activeDrifters.add(id));
+					if (m.status === 'active') { m.drifterIds.forEach((id) => activeDrifters.add(id)); }
 				}
 				const busy = drifterIds.filter((id) => activeDrifters.has(id));
 				if (busy.length > 0) {
@@ -1168,15 +1167,15 @@ private async incrementCombatDamage(address: string, dmg: number) {
 				const world = draft.worldMetrics as any as GameState['worldMetrics'];
 				const town = draft.town as TownState;
 				const mission = missionsObj[missionId];
-				if (!mission) return { result: { success: false, error: 'Mission not found' } } as any;
-				if (mission.status !== 'active') return { result: { success: false, error: 'Mission not active' } } as any;
+				if (!mission) { return { result: { success: false, error: 'Mission not found' } } as any; }
+				if (mission.status !== 'active') { return { result: { success: false, error: 'Mission not active' } } as any; }
 				if (!forceComplete) {
 					const now = new Date();
 					const end = mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime);
-					if (now < end) return { result: { success: false, error: 'Mission not yet complete' } } as any;
+					if (now < end) { return { result: { success: false, error: 'Mission not yet complete' } } as any; }
 				}
 				const player = playersObj[mission.playerAddress];
-				if (!player) return { result: { success: false, error: 'Player not found' } } as any;
+				if (!player) { return { result: { success: false, error: 'Player not found' } } as any; }
 				// Credit rewards
 				player.balance = (player.balance || 0) + (mission.rewards?.credits || 0);
 				// Resource node depletion for resource missions
@@ -1214,7 +1213,7 @@ private async incrementCombatDamage(address: string, dmg: number) {
 				// Reset vehicle if any
 				if (mission.vehicleInstanceId) {
 					const v = (player.vehicles || []).find((v) => v.instanceId === mission.vehicleInstanceId);
-					if (v) v.status = 'idle';
+					if (v) { v.status = 'idle'; }
 				}
 				// Update world metrics
 				world.totalActiveMissions = Math.max(0, (world.totalActiveMissions || 1) - 1);
@@ -1396,7 +1395,7 @@ const notifMessage = isMonsterMission
 		const stuckVehicles: string[] = [];
 		await this.updatePlayerRmw(playerAddress, async ({ players }) => {
 			const p = players[playerAddress];
-			if (!p) return { result: { success: false, resetCount: 0, stuckVehicles: [] } } as any;
+			if (!p) { return { result: { success: false, resetCount: 0, stuckVehicles: [] } } as any; }
 			for (const v of p.vehicles || []) {
 				if (v.status === 'on_mission' && !activeVehicleIds.has(v.instanceId)) {
 					v.status = 'idle';
@@ -1446,7 +1445,7 @@ const notifMessage = isMonsterMission
 			console.log(`[GameDO] Cleaning up ${orphanedMissionIds.length} orphaned missions from player ${address}`);
 			await this.updatePlayerRmw(address, async ({ players }) => {
 				const p = players[address];
-				if (!p) return {} as any;
+				if (!p) { return {} as any; }
 				p.activeMissions = p.activeMissions.filter((id) => !orphanedMissionIds.includes(id));
 				players[address] = p;
 				return { broadcastAddresses: [address] } as any;
@@ -1690,7 +1689,7 @@ private async performResourceManagement() {
 
 		const config = this.gameState.resourceConfig;
 		const now = new Date();
-		let changesMade = false;
+		let _changesMade = false;
 
 		// Prosperity multiplier influences spawn targets and new node yields
 		const town = await this.getTownState();
@@ -1720,7 +1719,7 @@ private async performResourceManagement() {
 				node.currentYield = Math.max(0, node.currentYield - degradationAmount);
 
 				console.log(`[GameDO] Node ${nodeId} degraded: ${oldYield} -> ${node.currentYield} (-${oldYield - node.currentYield})`);
-				changesMade = true;
+				_changesMade = true;
 
 				// Mark as inactive if fully degraded
 				if (node.currentYield <= 0) {
@@ -1746,7 +1745,7 @@ private async performResourceManagement() {
 					data: removed?.coordinates ? { x: removed.coordinates.x, y: removed.coordinates.y } : undefined,
 				});
 			}
-			changesMade = true;
+			_changesMade = true;
 		}
 
 		// 4. Count current active nodes by type
@@ -1802,7 +1801,7 @@ private async performResourceManagement() {
 					message: `New ${type.toUpperCase()} (${newNode.rarity.toUpperCase()}) node spawned (${newNode.coordinates.x}, ${newNode.coordinates.y})`,
 					data: { x: newNode.coordinates.x, y: newNode.coordinates.y },
 				});
-				changesMade = true;
+				_changesMade = true;
 			}
 		}
 
@@ -2049,7 +2048,7 @@ private async pruneResourceNodesToCap(broadcast: boolean = true): Promise<{ prun
 				const missionsObj = draft.missions as any as Record<string, Mission>;
 				const locked = new Set<string>();
 				for (const m of Object.values(missionsObj)) {
-					if ((m as any).status === 'active' && (m as any).targetNodeId) locked.add((m as any).targetNodeId);
+					if ((m as any).status === 'active' && (m as any).targetNodeId) { locked.add((m as any).targetNodeId); }
 				}
 				const total = Object.keys(nodesObj).length;
 				if (total <= RESOURCE_NODE_CAP) {
@@ -2060,7 +2059,7 @@ private async pruneResourceNodesToCap(broadcast: boolean = true): Promise<{ prun
 				const lockedEntries = entries.filter((e) => locked.has(e.id));
 				const unlockedEntries = entries.filter((e) => !locked.has(e.id));
 				unlockedEntries.sort((a, b) => {
-					if (b.node.currentYield !== a.node.currentYield) return b.node.currentYield - a.node.currentYield;
+					if (b.node.currentYield !== a.node.currentYield) { return b.node.currentYield - a.node.currentYield; }
 					return b.node.baseYield - a.node.baseYield;
 				});
 				const keptUnlocked = unlockedEntries.slice(0, keepBudgetForUnlocked);
@@ -2362,13 +2361,13 @@ private async setTownState(state: TownState) {
 			}
 
 			// Debit credits up-front via RMW
-			await this.updatePlayerRmw(playerAddress, async ({ players }) => {
-				const p = players[playerAddress];
-				if (!p) return { result: { success: false, error: 'Player not found' } } as any;
-				p.balance -= remaining;
-				players[playerAddress] = p;
-				return { result: undefined, broadcastAddresses: [playerAddress] } as any;
-			});
+		await this.updatePlayerRmw(playerAddress, async ({ players }) => {
+			const p = players[playerAddress];
+			if (!p) { return { result: { success: false, error: 'Player not found' } } as any; }
+			p.balance -= remaining;
+			players[playerAddress] = p;
+			return { result: undefined, broadcastAddresses: [playerAddress] } as any;
+		});
 
 			// Track full contribution amount toward upgrade credits leaderboard
 			await this.incrementUpgradeCredits(playerAddress, amountCredits);
@@ -2551,9 +2550,9 @@ await this.incrementCombatDamage(mission.playerAddress, dmgApplied);
 
 				// Persist engagement state to mission and recompute return leg using RMW
 				const completionTime = new Date(now.getTime() + calculateOneWayTravelDuration(battleCoords as any, dStats, vehicleData as any));
-				await this.updateMissionsRmw(async ({ missions }) => {
+		await this.updateMissionsRmw(async ({ missions }) => {
 					const m = missions[mission.id];
-					if (!m) return {} as any;
+					if (!m) { return {} as any; }
 					(m as any).engagementApplied = true;
 					(m as any).combatDamageDealt = dmgApplied;
 					(m as any).battleLocation = battleCoords;
@@ -2638,18 +2637,18 @@ await this.incrementCombatDamage(mission.playerAddress, dmgApplied);
 					const adjustList: { id: string; newEnd: number }[] = [];
 					for (const mission of this.gameState.missions.values()) {
 						const targetMonsterId = (mission as any).targetMonsterId as string | undefined;
-						if (!targetMonsterId) continue;
-						if (mission.status !== 'active') continue;
-						if ((mission as any).engagementApplied) continue;
+					if (!targetMonsterId) { continue; }
+						if (mission.status !== 'active') { continue; }
+						if ((mission as any).engagementApplied) { continue; }
 						const monsterNow = monsters.find((mm) => mm.id === targetMonsterId);
-						if (!monsterNow) continue;
-						if (monsterNow.state !== 'traveling' && monsterNow.state !== 'attacking') continue;
+						if (!monsterNow) { continue; }
+						if (monsterNow.state !== 'traveling' && monsterNow.state !== 'attacking') { continue; }
 						try {
 							const player = this.gameState.players.get(mission.playerAddress);
 							let vehicleData: any = undefined;
 							if (mission.vehicleInstanceId && player) {
 								const vInst = player.vehicles?.find((v) => v.instanceId === mission.vehicleInstanceId) || null;
-								if (vInst) vehicleData = getVehicle(vInst.vehicleId);
+							if (vInst) { vehicleData = getVehicle(vInst.vehicleId); }
 							}
 							const dStats: DrifterStats[] = [];
 							for (const id of mission.drifterIds) {
@@ -2678,7 +2677,7 @@ await this.incrementCombatDamage(mission.playerAddress, dmgApplied);
 							const toBroadcast: Mission[] = [];
 							for (const adj of adjustList) {
 								const m = missions[adj.id];
-								if (!m) continue;
+				if (!m) { continue; }
 								(m as any).completionTime = new Date(adj.newEnd);
 								toBroadcast.push(m);
 							}
@@ -2739,7 +2738,7 @@ await this.incrementCombatDamage(mission.playerAddress, dmgApplied);
 				console.log(
 					`[Monsters] Attack: ${m.id} dealt ${totalDamage} (walls:${outcome.wallsDamage} other:${outcome.attrDamage} prosperity:${outcome.prosperityDamage})`,
 				);
-				if (outcome.changed) {
+			if (outcome.changed) {
 					townChanged = true;
 					await this.addEvent({
 						type: 'town_damaged',
@@ -3365,7 +3364,7 @@ private async updatePlayerRmw<T = void>(
   const res = await this.runRmw({
     read: ['players'],
     context: { correlationId },
-    async mutate(draft, helpers, prev) {
+		async mutate(draft, _helpers, _prev) {
       const r = await mutate({ players: draft.players });
       let result: T | undefined;
       let addresses: string[] | undefined;
@@ -3415,7 +3414,7 @@ private async updateMissionsRmw<T = void>(
       } else {
         result = r as T;
       }
-const jobs: BroadcastJob[] = [];
+		const jobs: BroadcastJob[] = [];
       if (missionList && missionList.length > 0) {
         jobs.push({ kind: 'mission_update', missions: missionList });
       }
@@ -3455,8 +3454,8 @@ private async updateResourcesRmw<T = void>(
       } else {
         result = r as T;
       }
-const jobs: BroadcastJob[] = [];
-      if (broadcastWorld) jobs.push({ kind: 'world_state' });
+		const jobs: BroadcastJob[] = [];
+      if (broadcastWorld) { jobs.push({ kind: 'world_state' }); }
       return {
         result,
         broadcast: { jobs },
@@ -3494,7 +3493,7 @@ private async updateTownRmw<T = void>(
         result = r as T;
       }
       const jobs: import('./state/broadcast-map').BroadcastJob[] = [];
-      if (broadcastWorld) jobs.push({ kind: 'world_state' });
+      if (broadcastWorld) { jobs.push({ kind: 'world_state' }); }
       return {
         result,
         broadcast: { jobs },
@@ -3532,7 +3531,7 @@ private async updateMonstersRmw<T = void>(
         result = r as T;
       }
       const jobs: import('./state/broadcast-map').BroadcastJob[] = [];
-      if (broadcastWorld) jobs.push({ kind: 'world_state' });
+      if (broadcastWorld) { jobs.push({ kind: 'world_state' }); }
       return {
         result,
         broadcast: { jobs },
@@ -3570,7 +3569,7 @@ private async updateContributionStatsRmw<T = void>(
         result = r as T;
       }
       const jobs: import('./state/broadcast-map').BroadcastJob[] = [];
-      if (broadcastLeaderboards) jobs.push({ kind: 'leaderboards_update' });
+      if (broadcastLeaderboards) { jobs.push({ kind: 'leaderboards_update' }); }
       return {
         result,
         broadcast: { jobs },

@@ -14,7 +14,7 @@ import { buildNotificationStyle } from './utils/notificationStyles';
 import { WelcomePanel } from './WelcomePanel';
 import { ConnectWalletPanel } from './ConnectWalletPanel';
 import { UnauthImagePanel } from './UnauthImagePanel';
-import { auth } from '../auth';
+import { auth as _auth } from '../auth';
 
 export class UIManager {
 	private notificationContainer: HTMLElement | null = null;
@@ -475,7 +475,7 @@ export class UIManager {
 
 	private layoutScheduled: boolean = false;
 	private scheduleLayout() {
-		if (this.layoutScheduled) return;
+		if (this.layoutScheduled) { return; }
 		this.layoutScheduled = true;
 		requestAnimationFrame(() => {
 			this.layoutScheduled = false;
@@ -497,14 +497,14 @@ export class UIManager {
 		// Update panel visibility (track changes to decide layout)
 		let requiresLayout = false;
 		const flip = (el: HTMLElement | null, show: boolean, onShow?: () => void) => {
-			if (!el) return;
+			if (!el) { return; }
 			const prev = el.style.display;
 			const next = show ? 'block' : 'none';
 			if (prev !== next) {
 				requiresLayout = true;
 				el.style.display = next;
 			}
-			if (show && onShow) onShow();
+			if (show && onShow) { onShow(); }
 		};
 
 		// Gate normal panels behind authentication
@@ -513,19 +513,19 @@ export class UIManager {
 		if (this.missionPanel) {
 			const want = canShow && state.showMissionPanel;
 			flip(this.missionPanel, want, () => MissionPanel.updateMissionPanel(state));
-			if (want) MissionPanel.updateMissionPanel(state);
+			if (want) { MissionPanel.updateMissionPanel(state); }
 		}
 
 		if (this.driftersPanel) {
 			const want = canShow && state.showDriftersPanel;
 			flip(this.driftersPanel, want, () => DriftersPanel.updateDriftersPanel(state));
-			if (want) DriftersPanel.updateDriftersPanel(state);
+			if (want) { DriftersPanel.updateDriftersPanel(state); }
 		}
 
 		if (this.profilePanel) {
 			const want = canShow && state.showProfilePanel;
 			flip(this.profilePanel, want, () => ProfilePanel.updateProfilePanel(state));
-			if (want) ProfilePanel.updateProfilePanel(state);
+			if (want) { ProfilePanel.updateProfilePanel(state); }
 		}
 
 		if (this.activeMissionsPanel) {
@@ -560,7 +560,7 @@ export class UIManager {
 		if (this.marketPanel) {
 			const want = canShow && state.showMarketPanel;
 			flip(this.marketPanel, want, () => MarketPanel.updateMarketPanel(state.availableVehicles, state.isLoadingMarket));
-			if (want) MarketPanel.updateMarketPanel(state.availableVehicles, state.isLoadingMarket);
+			if (want) { MarketPanel.updateMarketPanel(state.availableVehicles, state.isLoadingMarket); }
 		}
 
 		if (this.townPanel) {
@@ -576,7 +576,7 @@ export class UIManager {
 
 		if (this.vehiclePanel) {
 			const want = canShow && state.showVehiclePanel;
-			flip(this.vehiclePanel, want, () => { if (state.profile) VehiclePanel.updateVehiclePanel(state.profile.vehicles); });
+			flip(this.vehiclePanel, want, () => { if (state.profile) { VehiclePanel.updateVehiclePanel(state.profile.vehicles); } });
 			if (want && state.profile) {
 				VehiclePanel.updateVehiclePanel(state.profile.vehicles);
 			}
@@ -697,8 +697,8 @@ export class UIManager {
 			(m) => state.playerAddress && m.playerAddress?.toLowerCase() === state.playerAddress.toLowerCase(),
 		);
 		const mergedMap = new Map<string, any>();
-		for (const m of fromGlobal) mergedMap.set(m.id, m);
-		for (const m of fromPlayer) mergedMap.set(m.id, m);
+		for (const m of fromGlobal) { mergedMap.set(m.id, m); }
+		for (const m of fromPlayer) { mergedMap.set(m.id, m); }
 		return Array.from(mergedMap.values());
 	}
 
