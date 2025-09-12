@@ -9,7 +9,7 @@
 	"compatibility_date": "2025-08-13",
 	"compatibility_flags": ["nodejs_compat"],
 	"routes": [
-		{ "pattern": "scablanders.sirsean.me/*", "zone_name": "sirsean.me" }
+		{ "pattern": "scablanders.sirsean.me", "custom_domain": true }
 	],
 	"migrations": [
 		{
