@@ -19,7 +19,7 @@
 	],
 	"assets": {
 		// The path to the directory containing the `index.html` file to be served at `/`
-		"directory": "./public",
+		"directory": "./public/client",
 		"binding": "ASSETS",
 	},
 	"build": {
