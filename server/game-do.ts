@@ -129,6 +129,7 @@ export class GameDO extends DurableObject {
 	private playerReplayQueues: Map<string, PendingNotification[]>; // playerAddress -> notification queue
 	private contributionStats: Map<string, PlayerContributionStats>; // address -> contribution totals
 	private env: Env;
+	private instanceToken: string;
 
 	// --- Diagnostics helpers (gated by DEBUG_RESOURCES env) ---
 	private debugResources(): boolean {
@@ -154,6 +155,7 @@ export class GameDO extends DurableObject {
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 		this.env = env;
+		this.instanceToken = crypto.randomUUID();
 
 		// Initialize WebSocket sessions and notification tracking
 		this.webSocketSessions = new Map();
@@ -194,6 +196,10 @@ export class GameDO extends DurableObject {
 		// Initialize subsystems independently
 		this.initializeResourceManagement();
 		this.initializeMonsterManagement();
+
+		// Kick off the initial alarm scheduling once at instantiation.
+		// We don't await to avoid blocking construction; alarm() will own subsequent scheduling.
+		void this.scheduleNextAlarm();
 	}
 
 	/**
@@ -1623,8 +1629,7 @@ private async initializeResourceNodes() {
 			changed = true;
 		}
 		if (changed) {
-			console.log('[GameDO] Initialized missing alarm keys; scheduling next alarm');
-			await this.scheduleNextAlarm();
+			console.log('[GameDO] Initialized missing alarm keys');
 		}
 	}
 
@@ -1645,7 +1650,6 @@ private async initializeResourceNodes() {
 		}
 		const now = Date.now();
 		await this.ctx.storage.put('nextMonsterAlarmAt', new Date(now + this.monsterTickIntervalMs).toISOString());
-		await this.scheduleNextAlarm();
 	}
 
 private async initializeResourceManagement() {
@@ -1674,8 +1678,7 @@ private async initializeResourceManagement() {
 		const resIntervalMs = this.gameState.resourceConfig.degradationCheckInterval * 60 * 1000;
 		await this.ctx.storage.put('nextResourceAlarmAt', new Date(now + resIntervalMs).toISOString());
 
-		// Schedule earliest alarm across systems
-		await this.scheduleNextAlarm();
+		// Scheduling is consolidated in alarm(); initial schedule will be set once at construction.
 	}
 
 	/** Schedule the next alarm trigger based on the earliest of resource/monster needs */
@@ -1694,14 +1697,21 @@ private async initializeResourceManagement() {
 		await this.ctx.storage.setAlarm(next);
 	}
 
-	/**
+/**
 	 * Handle alarm - run whichever systems are due and reschedule
 	 */
 async alarm() {
 		console.log('[GameDO] Alarm triggered');
 
+		let leaseAcquired = false;
 		try {
 			const now = new Date();
+			// Attempt to acquire a short alarm lease to avoid duplicate processing across instances
+			leaseAcquired = await this.tryAcquireAlarmLease(now, 15_000);
+			if (!leaseAcquired) {
+				console.log('[GameDO] Alarm: another instance holds the lease, exiting');
+				return;
+			}
 			this.resLog('[Res] alarm: entry size/sample', { size: this.gameState.resourceNodes.size, sample: this.sampleResourceIds() });
 
 			// Monster tick: run when due
@@ -1739,9 +1749,13 @@ async alarm() {
 			console.error('[GameDO] Error during scheduled alarm processing:', error);
 		}
 
-		// Schedule next alarm to the earliest due time
+		// Schedule next alarm to the earliest due time (only the lease holder does this)
 		await this.scheduleNextAlarm();
-	}
+	} finally {
+			if (leaseAcquired) {
+				await this.releaseAlarmLease();
+			}
+		}
 
 /**
 	 * Perform resource management: degradation, cleanup, and spawning
@@ -1882,7 +1896,8 @@ private async performResourceManagement() {
 
 		if (changesMade) {
 			await this.pruneResourceNodesToCap(/*broadcast*/ false);
-			await this.saveGameState();
+			// Save only resource-related state to avoid clobbering missions on fresh instances
+			await this.saveResourceState();
 			this.resLog('[Res] perform: after save size/sample', { size: this.gameState.resourceNodes.size, sample: this.sampleResourceIds() });
 			await this.broadcastWorldStateUpdate();
 			await this.broadcastLeaderboardsUpdate();
@@ -2058,6 +2073,55 @@ private async performResourceManagement() {
 // =============================================================================
 // Resource Node Cap Enforcement Helpers
 // =============================================================================
+
+	/** Attempt to acquire an alarm lease. Compare-and-verify to reduce races. */
+	private async tryAcquireAlarmLease(now: Date, leaseMs: number): Promise<boolean> {
+		try {
+			const key = 'alarmLease';
+			const current = (await this.ctx.storage.get<{ token: string; expiresAt: string }>(key)) || null;
+			if (current) {
+				const exp = new Date(current.expiresAt);
+				if (exp.getTime() > now.getTime()) {
+					return false; // someone else holds lease
+				}
+			}
+			const mine = { token: this.instanceToken, expiresAt: new Date(now.getTime() + leaseMs).toISOString() };
+			await this.ctx.storage.put(key, mine);
+			const check = (await this.ctx.storage.get<{ token: string; expiresAt: string }>(key)) || null;
+			return !!check && check.token === this.instanceToken;
+		} catch (e) {
+			console.warn('[GameDO] tryAcquireAlarmLease error', e);
+			return false;
+		}
+	}
+
+	/** Release our alarm lease if we still own it */
+	private async releaseAlarmLease() {
+		try {
+			const key = 'alarmLease';
+			const current = (await this.ctx.storage.get<{ token: string; expiresAt: string }>(key)) || null;
+			if (current && current.token === this.instanceToken) {
+				await this.ctx.storage.delete(key);
+			}
+		} catch (e) {
+			console.warn('[GameDO] releaseAlarmLease error', e);
+		}
+	}
+
+	/**
+	 * Persist only resource-related state for resource ticks to avoid overwriting missions.
+	 */
+	private async saveResourceState() {
+		try {
+			await Promise.all([
+				this.ctx.storage.put('resourceNodes', Object.fromEntries(this.gameState.resourceNodes)),
+				this.ctx.storage.put('worldMetrics', this.gameState.worldMetrics),
+			]);
+			console.log('[GameDO] Resource state saved');
+		} catch (e) {
+			console.error('[GameDO] Error saving resource state:', e);
+		}
+	}
 
 	/** Collect node IDs referenced by active missions to protect them from pruning */
 	private getLockedNodeIdsForActiveMissions(): Set<string> {

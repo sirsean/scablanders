@@ -426,9 +426,31 @@ export class WebSocketManager extends EventTarget {
 	}
 }
 
+// Resolve WS URL based on environment
+function computeWebSocketUrl(): string {
+	// 1) Explicit override via Vite env
+	try {
+		const envUrl = (import.meta as any)?.env?.VITE_WS_URL;
+		if (envUrl && typeof envUrl === 'string' && envUrl.length > 0) {
+			return envUrl;
+		}
+	} catch {}
+
+	// 2) Use current origin host and scheme
+	if (typeof window !== 'undefined' && window.location) {
+		const isSecure = window.location.protocol === 'https:';
+		const proto = isSecure ? 'wss' : 'ws';
+		const host = window.location.host; // includes hostname:port if any
+		return `${proto}://${host}/ws`;
+	}
+
+	// 3) Fallback to local dev default
+	return 'ws://localhost:5173/ws';
+}
+
 // Export singleton instance
 export const webSocketManager = new WebSocketManager({
-	url: 'ws://localhost:5173/ws', // Dev server port
+	url: computeWebSocketUrl(),
 	reconnectInterval: 5000,
 	maxReconnectAttempts: 5,
 });
