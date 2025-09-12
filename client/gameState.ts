@@ -330,11 +330,11 @@ class GameStateManager extends EventTarget {
 		// Listen for leaderboards updates
 		webSocketManager.addEventListener('leaderboardsUpdate', (event: any) => {
 			try {
-			const boards = event.detail;
-			this.setState({ leaderboards: boards, leaderboardsLoadedAt: Date.now(), isLoadingLeaderboards: false });
-		} catch (e) {
-			console.warn('[GameState] Failed processing leaderboardsUpdate', e);
-		}
+				const boards = event.detail;
+				this.setState({ leaderboards: boards, leaderboardsLoadedAt: Date.now(), isLoadingLeaderboards: false });
+			} catch (e) {
+				console.warn('[GameState] Failed processing leaderboardsUpdate', e);
+			}
 		});
 
 		// Listen for event log append messages

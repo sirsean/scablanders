@@ -41,4 +41,3 @@ API safety: /api/world/state trims the resourceNodes array to at most 80 entries
 - Lint: npm run lint
 - Format: npm run format
 - Tests (Vitest): npm test
-

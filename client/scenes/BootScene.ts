@@ -164,16 +164,46 @@ export class BootScene extends Phaser.Scene {
 
 		// Scene cleanup guards
 		this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-			try { this.time.removeAllEvents(); } catch {}
-			try { this.tweens.killAll(); } catch {}
-			try { this.input?.keyboard?.removeAllListeners(); } catch {}
-			try { (this.input as any)?.removeAllListeners?.(); } catch {}
-			try { this.events.removeAllListeners(); } catch {}
-			try { this.cameras?.main?.removeAllListeners(); } catch {}
-			try { this.children?.each?.((c: any) => { try { c?.removeAllListeners?.(); } catch {}; try { c?.destroy?.(); } catch {}; }); } catch {}
+			try {
+				this.time.removeAllEvents();
+			} catch {}
+			try {
+				this.tweens.killAll();
+			} catch {}
+			try {
+				this.input?.keyboard?.removeAllListeners();
+			} catch {}
+			try {
+				(this.input as any)?.removeAllListeners?.();
+			} catch {}
+			try {
+				this.events.removeAllListeners();
+			} catch {}
+			try {
+				this.cameras?.main?.removeAllListeners();
+			} catch {}
+			try {
+				this.children?.each?.((c: any) => {
+					try {
+						c?.removeAllListeners?.();
+					} catch {}
+					try {
+						c?.destroy?.();
+					} catch {}
+				});
+			} catch {}
 		});
 		this.events.once(Phaser.Scenes.Events.DESTROY, () => {
-			try { this.children?.each?.((c: any) => { try { c?.removeAllListeners?.(); } catch {}; try { c?.destroy?.(); } catch {}; }); } catch {}
+			try {
+				this.children?.each?.((c: any) => {
+					try {
+						c?.removeAllListeners?.();
+					} catch {}
+					try {
+						c?.destroy?.();
+					} catch {}
+				});
+			} catch {}
 		});
 
 		// Start the main game scene

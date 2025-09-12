@@ -1,9 +1,9 @@
 export class WelcomePanel {
-  static createWelcomePanel(): HTMLElement {
-    const panel = document.createElement('div');
-    panel.id = 'welcome-panel';
-    panel.className = 'game-panel';
-    panel.style.cssText = `
+	static createWelcomePanel(): HTMLElement {
+		const panel = document.createElement('div');
+		panel.id = 'welcome-panel';
+		panel.className = 'game-panel';
+		panel.style.cssText = `
       position: fixed;
       width: 640px;
       max-height: 600px;
@@ -18,11 +18,11 @@ export class WelcomePanel {
       z-index: 1050;
     `;
 
-    // Base width and unified z-index for tiled layout
-    (panel as any).dataset.baseWidth = '640';
-    panel.style.zIndex = '1050';
+		// Base width and unified z-index for tiled layout
+		(panel as any).dataset.baseWidth = '640';
+		panel.style.zIndex = '1050';
 
-    panel.innerHTML = `
+		panel.innerHTML = `
       <div style="display:flex; align-items:center; gap:8px; margin-bottom: 12px;">
         <h3 style="margin:0;">Welcome to The Fringe</h3>
         <!-- No close button on purpose -->
@@ -51,9 +51,9 @@ export class WelcomePanel {
       </div>
     `;
 
-    // Ensure clicks inside don’t bubble to the map
-    panel.addEventListener('click', (e) => e.stopPropagation());
+		// Ensure clicks inside don’t bubble to the map
+		panel.addEventListener('click', (e) => e.stopPropagation());
 
-    return panel;
-  }
+		return panel;
+	}
 }

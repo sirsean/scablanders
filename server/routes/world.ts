@@ -22,7 +22,7 @@ world.get('/state', async (c) => {
 			gameStub.getMonsters(),
 		]);
 
-// Trim nodes to the hard cap for response safety: prefer active nodes by highest currentYield
+		// Trim nodes to the hard cap for response safety: prefer active nodes by highest currentYield
 		const active = (resourceNodes || []).filter((r: any) => r?.isActive && (r?.currentYield || 0) > 0);
 		const inactive = (resourceNodes || []).filter((r: any) => !active.includes(r));
 		const sortByYieldDesc = (arr: any[]) => arr.sort((a, b) => (b.currentYield || 0) - (a.currentYield || 0));
@@ -120,7 +120,13 @@ world.post('/debug/prune-resource-nodes', async (c) => {
 		const gameStub = c.env.GAME_DO.get(gameId);
 		console.log('[DEBUG] Manually triggering prune to resource cap');
 		const result = await gameStub.triggerPruneResourceNodes();
-		return c.json({ success: result.success, pruned: result.pruned, total: result.total, cap: result.cap, timestamp: new Date().toISOString() });
+		return c.json({
+			success: result.success,
+			pruned: result.pruned,
+			total: result.total,
+			cap: result.cap,
+			timestamp: new Date().toISOString(),
+		});
 	} catch (error) {
 		console.error('Debug prune error:', error);
 		return c.json({ error: 'Failed to prune resource nodes' }, 500);

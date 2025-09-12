@@ -136,7 +136,7 @@ export class GameDO extends DurableObject {
 	private instanceToken: string;
 
 	// RMW infrastructure adapters
-private async runRmw<K extends SliceKey, TResult = unknown>(
+	private async runRmw<K extends SliceKey, TResult = unknown>(
 		options: RmwOptions<K, TResult> & { event?: Partial<MutationEvent> },
 	): Promise<RmwResult<K, TResult>> {
 		const storageFacade: StorageFacade = {
@@ -150,7 +150,7 @@ private async runRmw<K extends SliceKey, TResult = unknown>(
 				console.log('[GameDO RMW]', JSON.stringify({ ...ev, timestamp: ev.timestamp.toISOString?.() || new Date().toISOString() }));
 			},
 		};
-const res = await rmw(storageFacade, logger, options as any);
+		const res = await rmw(storageFacade, logger, options as any);
 		// Synchronize in-memory mirrors for changed slices
 		for (const key of res.changed as K[]) {
 			const nextSlice: any = (res.next as any)[key];
@@ -188,7 +188,7 @@ const res = await rmw(storageFacade, logger, options as any);
 		return res as any;
 	}
 
-private async dispatchBroadcastPlan(plan: BroadcastPlan) {
+	private async dispatchBroadcastPlan(plan: BroadcastPlan) {
 		for (const job of plan.jobs) {
 			try {
 				switch (job.kind) {
@@ -292,7 +292,7 @@ private async dispatchBroadcastPlan(plan: BroadcastPlan) {
 	/**
 	 * Initialize game state by loading from storage and setting up defaults
 	 */
-private async initializeGameState() {
+	private async initializeGameState() {
 		await this.loadGameState();
 		await this.initializeResourceNodes();
 		// Enforce a hard cap on total stored nodes on startup/hydration
@@ -385,11 +385,10 @@ private async initializeGameState() {
 		}
 	}
 
-
 	/**
 	 * Initialize resource nodes if they don't exist
 	 */
-private async initializeResourceNodes() {
+	private async initializeResourceNodes() {
 		// Migration: if existing nodes are present but coordinate system version changed, regenerate via RMW
 		const storedVer = (await this.ctx.storage.get<number>('coordSystemVersion')) ?? 0;
 		const CURRENT_VER = 2;
@@ -401,18 +400,26 @@ private async initializeResourceNodes() {
 				let _changed = false;
 				// If version changed and any nodes exist, clear for regeneration
 				if (storedVer !== CURRENT_VER && Object.keys(nodesObj).length > 0) {
-					for (const k of Object.keys(nodesObj)) { delete nodesObj[k]; }
+					for (const k of Object.keys(nodesObj)) {
+						delete nodesObj[k];
+					}
 					_changed = true;
 				}
 				// If nodes already exist after migration check, no-op
 				if (Object.keys(nodesObj).length > 0) {
-					return { result: { initialized: false, count: Object.keys(nodesObj).length }, broadcast: { jobs: [] }, event: { op: 'init_resource_nodes_noop' } } as any;
+					return {
+						result: { initialized: false, count: Object.keys(nodesObj).length },
+						broadcast: { jobs: [] },
+						event: { op: 'init_resource_nodes_noop' },
+					} as any;
 				}
 				// Initial creation
 				const nodesToCreate: ResourceType[] = ['ore', 'ore', 'ore', 'scrap', 'scrap', 'scrap', 'organic', 'organic'];
 				let created = 0;
 				for (let i = 0; i < nodesToCreate.length; i++) {
-					if (Object.keys(nodesObj).length >= RESOURCE_NODE_CAP) { break; }
+					if (Object.keys(nodesObj).length >= RESOURCE_NODE_CAP) {
+						break;
+					}
 					const type = nodesToCreate[i];
 					const newNode = this.createRandomResourceNode(type);
 					nodesObj[newNode.id] = newNode;
@@ -686,7 +693,7 @@ private async initializeResourceNodes() {
 		return stats;
 	}
 
-private async incrementUpgradeCredits(address: string, amount: number) {
+	private async incrementUpgradeCredits(address: string, amount: number) {
 		const amt = Math.floor(Number(amount) || 0);
 		if (amt <= 0) {
 			return;
@@ -702,7 +709,7 @@ private async incrementUpgradeCredits(address: string, amount: number) {
 		});
 	}
 
-private async incrementProsperityFromMissions(address: string, delta: number) {
+	private async incrementProsperityFromMissions(address: string, delta: number) {
 		const d = Number(delta) || 0;
 		if (d <= 0) {
 			return;
@@ -718,7 +725,7 @@ private async incrementProsperityFromMissions(address: string, delta: number) {
 		});
 	}
 
-private async incrementCombatDamage(address: string, dmg: number) {
+	private async incrementCombatDamage(address: string, dmg: number) {
 		const d = Math.floor(Number(dmg) || 0);
 		if (d <= 0) {
 			return;
@@ -806,7 +813,9 @@ private async incrementCombatDamage(address: string, dmg: number) {
 		}
 		await this.updatePlayerRmw(address, async ({ players }) => {
 			const p = players[address];
-			if (!p) { return { result: undefined }; }
+			if (!p) {
+				return { result: undefined };
+			}
 			p.balance += amount;
 			players[address] = p;
 			return { result: { success: true, newBalance: p.balance }, broadcastAddresses: [address] } as any;
@@ -831,7 +840,9 @@ private async incrementCombatDamage(address: string, dmg: number) {
 		}
 		await this.updatePlayerRmw(address, async ({ players }) => {
 			const p = players[address];
-			if (!p) { return { result: undefined }; }
+			if (!p) {
+				return { result: undefined };
+			}
 			p.balance -= amount;
 			players[address] = p;
 			return { result: { success: true, newBalance: p.balance }, broadcastAddresses: [address] } as any;
@@ -850,7 +861,9 @@ private async incrementCombatDamage(address: string, dmg: number) {
 		}
 		await this.updatePlayerRmw(address, async ({ players }) => {
 			const p = players[address];
-			if (!p) { return { result: { success: false, error: 'Player not found' } } as any; }
+			if (!p) {
+				return { result: { success: false, error: 'Player not found' } } as any;
+			}
 			p.ownedDrifters = drifters;
 			players[address] = p;
 			return { result: { success: true }, broadcastAddresses: [address] } as any;
@@ -869,8 +882,12 @@ private async incrementCombatDamage(address: string, dmg: number) {
 		let newBal = player.balance;
 		await this.updatePlayerRmw(playerAddress, async ({ players }) => {
 			const p = players[playerAddress];
-			if (!p) { return { result: { success: false, error: 'Player not found' } } as any; }
-			if (!Array.isArray(p.vehicles)) { p.vehicles = [] as any; }
+			if (!p) {
+				return { result: { success: false, error: 'Player not found' } } as any;
+			}
+			if (!Array.isArray(p.vehicles)) {
+				p.vehicles = [] as any;
+			}
 			p.balance -= vehicle.cost;
 			newBal = p.balance;
 			p.vehicles.push({ instanceId: crypto.randomUUID(), vehicleId: vehicle.id, status: 'idle' as const });
@@ -957,7 +974,9 @@ private async incrementCombatDamage(address: string, dmg: number) {
 					const missionsObj = draft.missions as any as Record<string, Mission>;
 					const world = draft.worldMetrics as any as GameState['worldMetrics'];
 					const p = playersObj[playerAddress];
-					if (!p) { return { result: { success: false, error: 'Player not found' } } as any; }
+					if (!p) {
+						return { result: { success: false, error: 'Player not found' } } as any;
+					}
 					const missionId = `mission-${crypto.randomUUID()}`;
 					const mission: Mission = {
 						id: missionId,
@@ -980,11 +999,13 @@ private async incrementCombatDamage(address: string, dmg: number) {
 					(draft as any).worldMetrics = world;
 					return {
 						result: { success: true, missionId } as any,
-						broadcast: { jobs: [
-							{ kind: 'player_state', addresses: [playerAddress] },
-							{ kind: 'world_state' },
-							{ kind: 'mission_update', missions: [mission] },
-						] },
+						broadcast: {
+							jobs: [
+								{ kind: 'player_state', addresses: [playerAddress] },
+								{ kind: 'world_state' },
+								{ kind: 'mission_update', missions: [mission] },
+							],
+						},
 						event: { op: 'mission_started_combat', details: { missionId } },
 					};
 				},
@@ -1048,12 +1069,19 @@ private async incrementCombatDamage(address: string, dmg: number) {
 				// Check drifter availability across active missions
 				const activeDrifters = new Set<number>();
 				for (const m of Object.values(missionsObj)) {
-					if (m.status === 'active') { m.drifterIds.forEach((id) => activeDrifters.add(id)); }
+					if (m.status === 'active') {
+						m.drifterIds.forEach((id) => activeDrifters.add(id));
+					}
 				}
 				const busy = drifterIds.filter((id) => activeDrifters.has(id));
 				if (busy.length > 0) {
 					const busyList = busy.map((id) => `#${id}`).join(', ');
-					return { result: { success: false, error: `Drifter${busy.length > 1 ? 's' : ''} ${busyList} ${busy.length > 1 ? 'are' : 'is'} currently on another mission` } } as any;
+					return {
+						result: {
+							success: false,
+							error: `Drifter${busy.length > 1 ? 's' : ''} ${busyList} ${busy.length > 1 ? 'are' : 'is'} currently on another mission`,
+						},
+					} as any;
 				}
 				// Vehicle validation
 				let vehicle: ReturnType<typeof getVehicle> | undefined;
@@ -1088,7 +1116,12 @@ private async incrementCombatDamage(address: string, dmg: number) {
 					}
 				}
 				if (vehicle) {
-					teamStats.push({ combat: (vehicle as any).combat ?? 0, scavenging: (vehicle as any).scavenging ?? 0, tech: (vehicle as any).tech ?? 0, speed: (vehicle as any).speed });
+					teamStats.push({
+						combat: (vehicle as any).combat ?? 0,
+						scavenging: (vehicle as any).scavenging ?? 0,
+						tech: (vehicle as any).tech ?? 0,
+						speed: (vehicle as any).speed,
+					});
 				}
 				const duration = calculateMissionDuration(targetNode, teamStats, vehicle || undefined, missionType);
 				const rewards = calculateMissionRewards(targetNode, missionType, duration, teamStats);
@@ -1146,7 +1179,13 @@ private async incrementCombatDamage(address: string, dmg: number) {
 			resourceType: targetNode.type,
 			rarity: targetNode.rarity,
 			drifterIds,
-			vehicleName: vehicleInstanceId ? ((getVehicle(this.gameState.players.get(playerAddress)?.vehicles.find(v=>v.instanceId===vehicleInstanceId)?.vehicleId||'') as any)?.name || 'On Foot') : 'On Foot',
+			vehicleName: vehicleInstanceId
+				? (
+						getVehicle(
+							this.gameState.players.get(playerAddress)?.vehicles.find((v) => v.instanceId === vehicleInstanceId)?.vehicleId || '',
+						) as any
+					)?.name || 'On Foot'
+				: 'On Foot',
 			message: `${playerAddress.slice(0, 6)}… started ${missionType.toUpperCase()} at ${targetNode.type.toUpperCase()} (${targetNode.rarity.toUpperCase()}) node with drifters ${drifterIds.map((id) => `#${id}`).join(', ')} ${vehicleInstanceId ? 'in vehicle' : 'on foot'}`,
 		});
 
@@ -1167,15 +1206,23 @@ private async incrementCombatDamage(address: string, dmg: number) {
 				const world = draft.worldMetrics as any as GameState['worldMetrics'];
 				const town = draft.town as TownState;
 				const mission = missionsObj[missionId];
-				if (!mission) { return { result: { success: false, error: 'Mission not found' } } as any; }
-				if (mission.status !== 'active') { return { result: { success: false, error: 'Mission not active' } } as any; }
+				if (!mission) {
+					return { result: { success: false, error: 'Mission not found' } } as any;
+				}
+				if (mission.status !== 'active') {
+					return { result: { success: false, error: 'Mission not active' } } as any;
+				}
 				if (!forceComplete) {
 					const now = new Date();
 					const end = mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime);
-					if (now < end) { return { result: { success: false, error: 'Mission not yet complete' } } as any; }
+					if (now < end) {
+						return { result: { success: false, error: 'Mission not yet complete' } } as any;
+					}
 				}
 				const player = playersObj[mission.playerAddress];
-				if (!player) { return { result: { success: false, error: 'Player not found' } } as any; }
+				if (!player) {
+					return { result: { success: false, error: 'Player not found' } } as any;
+				}
 				// Credit rewards
 				player.balance = (player.balance || 0) + (mission.rewards?.credits || 0);
 				// Resource node depletion for resource missions
@@ -1213,7 +1260,9 @@ private async incrementCombatDamage(address: string, dmg: number) {
 				// Reset vehicle if any
 				if (mission.vehicleInstanceId) {
 					const v = (player.vehicles || []).find((v) => v.instanceId === mission.vehicleInstanceId);
-					if (v) { v.status = 'idle'; }
+					if (v) {
+						v.status = 'idle';
+					}
 				}
 				// Update world metrics
 				world.totalActiveMissions = Math.max(0, (world.totalActiveMissions || 1) - 1);
@@ -1246,16 +1295,16 @@ private async incrementCombatDamage(address: string, dmg: number) {
 		}
 
 		// Post-commit: events and XP notifications largely as before (non-persistent effects handled with addEvent and addNotification)
-const afterMission = this.gameState.missions.get(missionId)!;
+		const afterMission = this.gameState.missions.get(missionId)!;
 		const afterPlayer = this.gameState.players.get(afterMission.playerAddress)!;
-// Compute total combat XP awarded for monster missions when engagement applied at battle time
+		// Compute total combat XP awarded for monster missions when engagement applied at battle time
 		let totalCombatXpAwarded = 0;
 		if (afterMission.targetMonsterId) {
 			const engaged = !!(afterMission as any).engagementApplied;
 			if (engaged) {
 				const dmgStored = Math.max(0, Number((afterMission as any).combatDamageDealt) || 0);
 				const xpGain = Math.max(1, Math.floor(dmgStored * 0.25));
-				totalCombatXpAwarded = xpGain * ((afterMission.drifterIds?.length) || 0);
+				totalCombatXpAwarded = xpGain * (afterMission.drifterIds?.length || 0);
 			}
 		}
 		// Resolve monster kind (optional) for message clarity
@@ -1282,8 +1331,8 @@ const afterMission = this.gameState.missions.get(missionId)!;
 					? getVehicle(afterPlayer.vehicles.find((v) => v.instanceId === afterMission.vehicleInstanceId)!.vehicleId)?.name
 					: 'On Foot'
 				: 'On Foot',
-message: `${afterMission.playerAddress.slice(0, 6)}… completed ${afterMission.type.toUpperCase()} ${
-afterMission.targetMonsterId
+			message: `${afterMission.playerAddress.slice(0, 6)}… completed ${afterMission.type.toUpperCase()} ${
+				afterMission.targetMonsterId
 					? `vs ${targetMonsterKind ?? 'MONSTER'}`
 					: `at ${(this.gameState.resourceNodes.get(afterMission.targetNodeId!)?.type ?? '').toString().toUpperCase()}`
 			} with drifters ${afterMission.drifterIds.map((id) => `#${id}`).join(', ')} ${
@@ -1293,9 +1342,13 @@ afterMission.targetMonsterId
 							return vi ? getVehicle(vi.vehicleId)?.name || 'On Foot' : 'On Foot';
 						})()}`
 					: 'on foot'
-			} ${afterMission.targetMonsterId
-				? (totalCombatXpAwarded > 0 ? `(+${totalCombatXpAwarded} XP)` : '')
-				: `(+${afterMission.rewards.credits} cr)`}`
+			} ${
+				afterMission.targetMonsterId
+					? totalCombatXpAwarded > 0
+						? `(+${totalCombatXpAwarded} XP)`
+						: ''
+					: `(+${afterMission.rewards.credits} cr)`
+			}`,
 		});
 
 		// Award XP to participating drifters based on credits earned
@@ -1322,7 +1375,7 @@ afterMission.targetMonsterId
 						data: { tokenId: drifterId, level: newLevel },
 					};
 					for (const [sessionId, session] of this.webSocketSessions) {
-if (
+						if (
 							session.playerAddress === afterMission.playerAddress &&
 							session.authenticated &&
 							session.websocket.readyState === WebSocket.READY_STATE_OPEN
@@ -1339,8 +1392,10 @@ if (
 
 		// Send mission completion notification to player's sessions
 		const isMonsterMission = !!afterMission.targetMonsterId;
-const notifMessage = isMonsterMission
-			? (totalCombatXpAwarded > 0 ? `Combat mission complete! Gained +${totalCombatXpAwarded} XP.` : 'Combat mission complete!')
+		const notifMessage = isMonsterMission
+			? totalCombatXpAwarded > 0
+				? `Combat mission complete! Gained +${totalCombatXpAwarded} XP.`
+				: 'Combat mission complete!'
 			: `Mission completed! Earned ${afterMission.rewards.credits} credits.`;
 		const notification: PendingNotification = {
 			id: crypto.randomUUID(),
@@ -1395,7 +1450,9 @@ const notifMessage = isMonsterMission
 		const stuckVehicles: string[] = [];
 		await this.updatePlayerRmw(playerAddress, async ({ players }) => {
 			const p = players[playerAddress];
-			if (!p) { return { result: { success: false, resetCount: 0, stuckVehicles: [] } } as any; }
+			if (!p) {
+				return { result: { success: false, resetCount: 0, stuckVehicles: [] } } as any;
+			}
 			for (const v of p.vehicles || []) {
 				if (v.status === 'on_mission' && !activeVehicleIds.has(v.instanceId)) {
 					v.status = 'idle';
@@ -1445,7 +1502,9 @@ const notifMessage = isMonsterMission
 			console.log(`[GameDO] Cleaning up ${orphanedMissionIds.length} orphaned missions from player ${address}`);
 			await this.updatePlayerRmw(address, async ({ players }) => {
 				const p = players[address];
-				if (!p) { return {} as any; }
+				if (!p) {
+					return {} as any;
+				}
 				p.activeMissions = p.activeMissions.filter((id) => !orphanedMissionIds.includes(id));
 				players[address] = p;
 				return { broadcastAddresses: [address] } as any;
@@ -1573,7 +1632,7 @@ const notifMessage = isMonsterMission
 		await this.ctx.storage.put('nextMonsterAlarmAt', new Date(now + this.monsterTickIntervalMs).toISOString());
 	}
 
-private async initializeResourceManagement() {
+	private async initializeResourceManagement() {
 		console.log('[GameDO] Initializing resource management');
 
 		try {
@@ -1618,10 +1677,10 @@ private async initializeResourceManagement() {
 		await this.ctx.storage.setAlarm(next);
 	}
 
-/**
+	/**
 	 * Handle alarm - run whichever systems are due and reschedule
 	 */
-async alarm() {
+	async alarm() {
 		console.log('[GameDO] Alarm triggered');
 
 		let leaseAcquired = false;
@@ -1675,12 +1734,12 @@ async alarm() {
 				await this.releaseAlarmLease();
 			}
 		}
-		}
+	}
 
-/**
+	/**
 	 * Perform resource management: degradation, cleanup, and spawning
 	 */
-private async performResourceManagement() {
+	private async performResourceManagement() {
 		console.log('[GameDO] Starting resource degradation cycle');
 
 		// Guard: ensure nodes are loaded from storage if in-memory map is empty
@@ -1805,7 +1864,7 @@ private async performResourceManagement() {
 			}
 		}
 
-// 6. Update world metrics handled in RMW path above
+		// 6. Update world metrics handled in RMW path above
 		// 7. Attempt monster spawn based on cadence and cap (scaffold)
 		const maybeSpawned = await this.maybeSpawnMonster(now, town.prosperity);
 		if (maybeSpawned) {
@@ -1981,9 +2040,9 @@ private async performResourceManagement() {
 		return { success: true, summary };
 	}
 
-// =============================================================================
-// Resource Node Cap Enforcement Helpers
-// =============================================================================
+	// =============================================================================
+	// Resource Node Cap Enforcement Helpers
+	// =============================================================================
 
 	/** Attempt to acquire an alarm lease. Compare-and-verify to reduce races. */
 	private async tryAcquireAlarmLease(now: Date, leaseMs: number): Promise<boolean> {
@@ -2035,7 +2094,7 @@ private async performResourceManagement() {
 	}
 
 	/** Prune stored nodes down to RESOURCE_NODE_CAP, keeping active-mission nodes and highest currentYield */
-private async pruneResourceNodesToCap(broadcast: boolean = true): Promise<{ pruned: number; total: number }> {
+	private async pruneResourceNodesToCap(broadcast: boolean = true): Promise<{ pruned: number; total: number }> {
 		// Fast path with in-memory check
 		if (this.gameState.resourceNodes.size <= RESOURCE_NODE_CAP) {
 			return { pruned: 0, total: this.gameState.resourceNodes.size };
@@ -2048,7 +2107,9 @@ private async pruneResourceNodesToCap(broadcast: boolean = true): Promise<{ prun
 				const missionsObj = draft.missions as any as Record<string, Mission>;
 				const locked = new Set<string>();
 				for (const m of Object.values(missionsObj)) {
-					if ((m as any).status === 'active' && (m as any).targetNodeId) { locked.add((m as any).targetNodeId); }
+					if ((m as any).status === 'active' && (m as any).targetNodeId) {
+						locked.add((m as any).targetNodeId);
+					}
 				}
 				const total = Object.keys(nodesObj).length;
 				if (total <= RESOURCE_NODE_CAP) {
@@ -2059,7 +2120,9 @@ private async pruneResourceNodesToCap(broadcast: boolean = true): Promise<{ prun
 				const lockedEntries = entries.filter((e) => locked.has(e.id));
 				const unlockedEntries = entries.filter((e) => !locked.has(e.id));
 				unlockedEntries.sort((a, b) => {
-					if (b.node.currentYield !== a.node.currentYield) { return b.node.currentYield - a.node.currentYield; }
+					if (b.node.currentYield !== a.node.currentYield) {
+						return b.node.currentYield - a.node.currentYield;
+					}
 					return b.node.baseYield - a.node.baseYield;
 				});
 				const keptUnlocked = unlockedEntries.slice(0, keepBudgetForUnlocked);
@@ -2088,7 +2151,7 @@ private async pruneResourceNodesToCap(broadcast: boolean = true): Promise<{ prun
 	/** Debug helper to trigger pruning */
 	public async triggerPruneResourceNodes(): Promise<{ success: boolean; pruned: number; total: number; cap: number }> {
 		try {
-const res = await this.pruneResourceNodesToCap(true);
+			const res = await this.pruneResourceNodesToCap(true);
 			return { success: true, pruned: res.pruned, total: this.gameState.resourceNodes.size, cap: RESOURCE_NODE_CAP };
 		} catch (e) {
 			console.error('[GameDO] triggerPruneResourceNodes error:', e);
@@ -2096,8 +2159,8 @@ const res = await this.pruneResourceNodesToCap(true);
 		}
 	}
 
-// =============================================================================
-// Drifter Progression Helpers
+	// =============================================================================
+	// Drifter Progression Helpers
 	// =============================================================================
 
 	private XP_BASE = 100;
@@ -2294,7 +2357,7 @@ const res = await this.pruneResourceNodesToCap(true);
 		};
 	}
 
-private async setTownState(state: TownState) {
+	private async setTownState(state: TownState) {
 		// Funnel through RMW to adhere to the new pattern
 		await this.updateTownRmw(async ({ town }) => {
 			// Replace entire town state
@@ -2361,13 +2424,15 @@ private async setTownState(state: TownState) {
 			}
 
 			// Debit credits up-front via RMW
-		await this.updatePlayerRmw(playerAddress, async ({ players }) => {
-			const p = players[playerAddress];
-			if (!p) { return { result: { success: false, error: 'Player not found' } } as any; }
-			p.balance -= remaining;
-			players[playerAddress] = p;
-			return { result: undefined, broadcastAddresses: [playerAddress] } as any;
-		});
+			await this.updatePlayerRmw(playerAddress, async ({ players }) => {
+				const p = players[playerAddress];
+				if (!p) {
+					return { result: { success: false, error: 'Player not found' } } as any;
+				}
+				p.balance -= remaining;
+				players[playerAddress] = p;
+				return { result: undefined, broadcastAddresses: [playerAddress] } as any;
+			});
 
 			// Track full contribution amount toward upgrade credits leaderboard
 			await this.incrementUpgradeCredits(playerAddress, amountCredits);
@@ -2428,7 +2493,7 @@ private async setTownState(state: TownState) {
 		return Array.isArray(raw) ? raw : [];
 	}
 
-private async setStoredMonsters(list: Monster[]) {
+	private async setStoredMonsters(list: Monster[]) {
 		await this.updateMonstersRmw(async ({ monsters }) => {
 			// Replace array contents in-place to ensure draft is updated
 			(monsters as any).splice(0, (monsters as any).length, ...(list as any));
@@ -2523,7 +2588,7 @@ private async setStoredMonsters(list: Monster[]) {
 					const variance = 0.15; // ±15%
 					dmgApplied = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
 					// Track combat damage for leaderboards (engagement path)
-await this.incrementCombatDamage(mission.playerAddress, dmgApplied);
+					await this.incrementCombatDamage(mission.playerAddress, dmgApplied);
 					const before = monster.hp;
 					monster.hp = Math.max(0, (monster.hp || 0) - dmgApplied);
 					killed = monster.hp <= 0;
@@ -2550,9 +2615,11 @@ await this.incrementCombatDamage(mission.playerAddress, dmgApplied);
 
 				// Persist engagement state to mission and recompute return leg using RMW
 				const completionTime = new Date(now.getTime() + calculateOneWayTravelDuration(battleCoords as any, dStats, vehicleData as any));
-		await this.updateMissionsRmw(async ({ missions }) => {
+				await this.updateMissionsRmw(async ({ missions }) => {
 					const m = missions[mission.id];
-					if (!m) { return {} as any; }
+					if (!m) {
+						return {} as any;
+					}
 					(m as any).engagementApplied = true;
 					(m as any).combatDamageDealt = dmgApplied;
 					(m as any).battleLocation = battleCoords;
@@ -2628,68 +2695,82 @@ await this.incrementCombatDamage(mission.playerAddress, dmgApplied);
 					changed = true;
 				}
 			}
-				if (changed) {
-					// Persist monster changes
-					await this.setStoredMonsters(monsters);
-					await this.ctx.storage.put('lastMonsterMoveAt', now.toISOString());
+			if (changed) {
+				// Persist monster changes
+				await this.setStoredMonsters(monsters);
+				await this.ctx.storage.put('lastMonsterMoveAt', now.toISOString());
 
-					// Recalculate and potentially shrink completionTime for active combat missions targeting moved monsters
-					const adjustList: { id: string; newEnd: number }[] = [];
-					for (const mission of this.gameState.missions.values()) {
-						const targetMonsterId = (mission as any).targetMonsterId as string | undefined;
-					if (!targetMonsterId) { continue; }
-						if (mission.status !== 'active') { continue; }
-						if ((mission as any).engagementApplied) { continue; }
-						const monsterNow = monsters.find((mm) => mm.id === targetMonsterId);
-						if (!monsterNow) { continue; }
-						if (monsterNow.state !== 'traveling' && monsterNow.state !== 'attacking') { continue; }
-						try {
-							const player = this.gameState.players.get(mission.playerAddress);
-							let vehicleData: any = undefined;
-							if (mission.vehicleInstanceId && player) {
-								const vInst = player.vehicles?.find((v) => v.instanceId === mission.vehicleInstanceId) || null;
-							if (vInst) { vehicleData = getVehicle(vInst.vehicleId); }
+				// Recalculate and potentially shrink completionTime for active combat missions targeting moved monsters
+				const adjustList: { id: string; newEnd: number }[] = [];
+				for (const mission of this.gameState.missions.values()) {
+					const targetMonsterId = (mission as any).targetMonsterId as string | undefined;
+					if (!targetMonsterId) {
+						continue;
+					}
+					if (mission.status !== 'active') {
+						continue;
+					}
+					if ((mission as any).engagementApplied) {
+						continue;
+					}
+					const monsterNow = monsters.find((mm) => mm.id === targetMonsterId);
+					if (!monsterNow) {
+						continue;
+					}
+					if (monsterNow.state !== 'traveling' && monsterNow.state !== 'attacking') {
+						continue;
+					}
+					try {
+						const player = this.gameState.players.get(mission.playerAddress);
+						let vehicleData: any = undefined;
+						if (mission.vehicleInstanceId && player) {
+							const vInst = player.vehicles?.find((v) => v.instanceId === mission.vehicleInstanceId) || null;
+							if (vInst) {
+								vehicleData = getVehicle(vInst.vehicleId);
 							}
-							const dStats: DrifterStats[] = [];
-							for (const id of mission.drifterIds) {
-								const base = await getDrifterStats(id, this.env);
-								const eff = this.getEffectiveDrifterStats(id, base);
-								dStats.push({ combat: eff.combat, scavenging: eff.scavenging, tech: eff.tech, speed: eff.speed });
-							}
-							const newDuration = calculateMonsterMissionDuration(monsterNow.coordinates as any, dStats, vehicleData as any);
-							const startTs = (mission.startTime instanceof Date ? mission.startTime : new Date(mission.startTime)).getTime();
-							const currentPlannedEnd = (
-								mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime)
-							).getTime();
-							const newEnd = startTs + newDuration;
-							if (Number.isFinite(startTs) && Number.isFinite(currentPlannedEnd) && Number.isFinite(newEnd)) {
-								if (newEnd + 1000 < currentPlannedEnd) {
-									adjustList.push({ id: mission.id, newEnd });
-								}
-							}
-						} catch (err) {
-							console.warn('[Monsters] Failed to recompute mission time for combat mission', mission.id, err);
 						}
-					}
-
-					if (adjustList.length > 0) {
-						await this.updateMissionsRmw(async ({ missions }) => {
-							const toBroadcast: Mission[] = [];
-							for (const adj of adjustList) {
-								const m = missions[adj.id];
-				if (!m) { continue; }
-								(m as any).completionTime = new Date(adj.newEnd);
-								toBroadcast.push(m);
+						const dStats: DrifterStats[] = [];
+						for (const id of mission.drifterIds) {
+							const base = await getDrifterStats(id, this.env);
+							const eff = this.getEffectiveDrifterStats(id, base);
+							dStats.push({ combat: eff.combat, scavenging: eff.scavenging, tech: eff.tech, speed: eff.speed });
+						}
+						const newDuration = calculateMonsterMissionDuration(monsterNow.coordinates as any, dStats, vehicleData as any);
+						const startTs = (mission.startTime instanceof Date ? mission.startTime : new Date(mission.startTime)).getTime();
+						const currentPlannedEnd = (
+							mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime)
+						).getTime();
+						const newEnd = startTs + newDuration;
+						if (Number.isFinite(startTs) && Number.isFinite(currentPlannedEnd) && Number.isFinite(newEnd)) {
+							if (newEnd + 1000 < currentPlannedEnd) {
+								adjustList.push({ id: mission.id, newEnd });
 							}
-							return { missionBroadcast: toBroadcast } as any;
-						});
-						console.log(`[Monsters] Adjusted completionTime for ${adjustList.length} combat mission(s) due to monster movement`);
+						}
+					} catch (err) {
+						console.warn('[Monsters] Failed to recompute mission time for combat mission', mission.id, err);
 					}
+				}
 
-					// Broadcast world update (includes missions and monsters)
-					await this.broadcastWorldStateUpdate();
-					console.log(`[Monsters] Movement: updated ${moved} moved, ${arrived} arrived, total=${monsters.length}`);
-				} else {
+				if (adjustList.length > 0) {
+					await this.updateMissionsRmw(async ({ missions }) => {
+						const toBroadcast: Mission[] = [];
+						for (const adj of adjustList) {
+							const m = missions[adj.id];
+							if (!m) {
+								continue;
+							}
+							(m as any).completionTime = new Date(adj.newEnd);
+							toBroadcast.push(m);
+						}
+						return { missionBroadcast: toBroadcast } as any;
+					});
+					console.log(`[Monsters] Adjusted completionTime for ${adjustList.length} combat mission(s) due to monster movement`);
+				}
+
+				// Broadcast world update (includes missions and monsters)
+				await this.broadcastWorldStateUpdate();
+				console.log(`[Monsters] Movement: updated ${moved} moved, ${arrived} arrived, total=${monsters.length}`);
+			} else {
 				console.log('[Monsters] Movement: no changes');
 			}
 			return changed;
@@ -2738,7 +2819,7 @@ await this.incrementCombatDamage(mission.playerAddress, dmgApplied);
 				console.log(
 					`[Monsters] Attack: ${m.id} dealt ${totalDamage} (walls:${outcome.wallsDamage} other:${outcome.attrDamage} prosperity:${outcome.prosperityDamage})`,
 				);
-			if (outcome.changed) {
+				if (outcome.changed) {
 					townChanged = true;
 					await this.addEvent({
 						type: 'town_damaged',
@@ -3346,242 +3427,251 @@ await this.incrementCombatDamage(mission.playerAddress, dmgApplied);
 	/**
 	 * Clean up session data when WebSocket closes
 	 */
-// =============================================================================
-// Domain-specific RMW helpers
-// =============================================================================
+	// =============================================================================
+	// Domain-specific RMW helpers
+	// =============================================================================
 
-/**
- * Update a single player's profile slice using RMW. Caller provides a mutator that
- * receives the draft players map and should modify only the intended player entry.
- */
-private async updatePlayerRmw<T = void>(
-  playerAddress: string,
-  mutate: (
-    draft: { players: Record<string, PlayerProfile> },
-  ) => Promise<{ result?: T; broadcastAddresses?: string[]; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
-  correlationId?: string,
-) {
-  const res = await this.runRmw({
-    read: ['players'],
-    context: { correlationId },
-		async mutate(draft, _helpers, _prev) {
-      const r = await mutate({ players: draft.players });
-      let result: T | undefined;
-      let addresses: string[] | undefined;
-      let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
-      if (r && typeof r === 'object' && ('result' in r || 'broadcastAddresses' in r || 'events' in r)) {
-        const rr = r as any;
-        result = rr.result as T | undefined;
-        addresses = rr.broadcastAddresses as string[] | undefined;
-        evs = rr.events as any;
-      } else {
-        result = r as T;
-      }
-const plan: BroadcastPlan = {
-        jobs: addresses && addresses.length > 0 ? [{ kind: 'player_state', addresses }] : [],
-      };
-      const event = evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'player_update' };
-      return { result, broadcast: plan, event };
-    },
-    event: { op: 'player_update' },
-  });
-  return res.result as T | undefined;
-}
+	/**
+	 * Update a single player's profile slice using RMW. Caller provides a mutator that
+	 * receives the draft players map and should modify only the intended player entry.
+	 */
+	private async updatePlayerRmw<T = void>(
+		playerAddress: string,
+		mutate: (draft: {
+			players: Record<string, PlayerProfile>;
+		}) => Promise<{ result?: T; broadcastAddresses?: string[]; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
+		correlationId?: string,
+	) {
+		const res = await this.runRmw({
+			read: ['players'],
+			context: { correlationId },
+			async mutate(draft, _helpers, _prev) {
+				const r = await mutate({ players: draft.players });
+				let result: T | undefined;
+				let addresses: string[] | undefined;
+				let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
+				if (r && typeof r === 'object' && ('result' in r || 'broadcastAddresses' in r || 'events' in r)) {
+					const rr = r as any;
+					result = rr.result as T | undefined;
+					addresses = rr.broadcastAddresses as string[] | undefined;
+					evs = rr.events as any;
+				} else {
+					result = r as T;
+				}
+				const plan: BroadcastPlan = {
+					jobs: addresses && addresses.length > 0 ? [{ kind: 'player_state', addresses }] : [],
+				};
+				const event = evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'player_update' };
+				return { result, broadcast: plan, event };
+			},
+			event: { op: 'player_update' },
+		});
+		return res.result as T | undefined;
+	}
 
-/**
- * Update missions slice (single mission or many). Caller mutator should change only mission entries
- * and optionally provide mission_update broadcast payload if desired.
- */
-private async updateMissionsRmw<T = void>(
-  mutate: (
-    draft: { missions: Record<string, Mission> },
-  ) => Promise<{ result?: T; missionBroadcast?: Mission[]; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
-  correlationId?: string,
-) {
-  const res = await this.runRmw({
-    read: ['missions'],
-    context: { correlationId },
-    async mutate(draft) {
-      const r = await mutate({ missions: draft.missions });
-      let result: T | undefined;
-      let missionList: Mission[] | undefined;
-      let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
-      if (r && typeof r === 'object' && ('result' in r || 'missionBroadcast' in r || 'events' in r)) {
-        const rr = r as any;
-        result = rr.result as T | undefined;
-        missionList = rr.missionBroadcast as Mission[] | undefined;
-        evs = rr.events as any;
-      } else {
-        result = r as T;
-      }
-		const jobs: BroadcastJob[] = [];
-      if (missionList && missionList.length > 0) {
-        jobs.push({ kind: 'mission_update', missions: missionList });
-      }
-      return {
-        result,
-        broadcast: { jobs },
-        event: evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'missions_update' },
-      };
-    },
-    event: { op: 'missions_update' },
-  });
-  return res.result as T | undefined;
-}
+	/**
+	 * Update missions slice (single mission or many). Caller mutator should change only mission entries
+	 * and optionally provide mission_update broadcast payload if desired.
+	 */
+	private async updateMissionsRmw<T = void>(
+		mutate: (draft: {
+			missions: Record<string, Mission>;
+		}) => Promise<{ result?: T; missionBroadcast?: Mission[]; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
+		correlationId?: string,
+	) {
+		const res = await this.runRmw({
+			read: ['missions'],
+			context: { correlationId },
+			async mutate(draft) {
+				const r = await mutate({ missions: draft.missions });
+				let result: T | undefined;
+				let missionList: Mission[] | undefined;
+				let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
+				if (r && typeof r === 'object' && ('result' in r || 'missionBroadcast' in r || 'events' in r)) {
+					const rr = r as any;
+					result = rr.result as T | undefined;
+					missionList = rr.missionBroadcast as Mission[] | undefined;
+					evs = rr.events as any;
+				} else {
+					result = r as T;
+				}
+				const jobs: BroadcastJob[] = [];
+				if (missionList && missionList.length > 0) {
+					jobs.push({ kind: 'mission_update', missions: missionList });
+				}
+				return {
+					result,
+					broadcast: { jobs },
+					event: evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'missions_update' },
+				};
+			},
+			event: { op: 'missions_update' },
+		});
+		return res.result as T | undefined;
+	}
 
-/**
- * Update resource-related slices. Use this for resourceNodes/worldMetrics combos typical of ticks.
- */
-private async updateResourcesRmw<T = void>(
-  mutate: (
-    draft: { resourceNodes: Record<string, ResourceNode>; worldMetrics: GameState['worldMetrics'] },
-  ) => Promise<{ result?: T; broadcastWorld?: boolean; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
-  correlationId?: string,
-) {
-  const res = await this.runRmw({
-    read: ['resourceNodes', 'worldMetrics'],
-    context: { correlationId },
-    async mutate(draft) {
-      const r = await mutate({ resourceNodes: draft.resourceNodes, worldMetrics: draft.worldMetrics });
-      let result: T | undefined;
-      let broadcastWorld = false;
-      let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
-      if (r && typeof r === 'object' && ('result' in r || 'broadcastWorld' in r || 'events' in r)) {
-        const rr = r as any;
-        result = rr.result as T | undefined;
-        broadcastWorld = !!rr.broadcastWorld;
-        evs = rr.events as any;
-      } else {
-        result = r as T;
-      }
-		const jobs: BroadcastJob[] = [];
-      if (broadcastWorld) { jobs.push({ kind: 'world_state' }); }
-      return {
-        result,
-        broadcast: { jobs },
-        event: evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'resources_update' },
-      };
-    },
-    event: { op: 'resources_update' },
-  });
-  return res.result as T | undefined;
-}
+	/**
+	 * Update resource-related slices. Use this for resourceNodes/worldMetrics combos typical of ticks.
+	 */
+	private async updateResourcesRmw<T = void>(
+		mutate: (draft: {
+			resourceNodes: Record<string, ResourceNode>;
+			worldMetrics: GameState['worldMetrics'];
+		}) => Promise<{ result?: T; broadcastWorld?: boolean; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
+		correlationId?: string,
+	) {
+		const res = await this.runRmw({
+			read: ['resourceNodes', 'worldMetrics'],
+			context: { correlationId },
+			async mutate(draft) {
+				const r = await mutate({ resourceNodes: draft.resourceNodes, worldMetrics: draft.worldMetrics });
+				let result: T | undefined;
+				let broadcastWorld = false;
+				let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
+				if (r && typeof r === 'object' && ('result' in r || 'broadcastWorld' in r || 'events' in r)) {
+					const rr = r as any;
+					result = rr.result as T | undefined;
+					broadcastWorld = !!rr.broadcastWorld;
+					evs = rr.events as any;
+				} else {
+					result = r as T;
+				}
+				const jobs: BroadcastJob[] = [];
+				if (broadcastWorld) {
+					jobs.push({ kind: 'world_state' });
+				}
+				return {
+					result,
+					broadcast: { jobs },
+					event: evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'resources_update' },
+				};
+			},
+			event: { op: 'resources_update' },
+		});
+		return res.result as T | undefined;
+	}
 
-/**
- * Update town slice using RMW.
- */
-private async updateTownRmw<T = void>(
-  mutate: (
-    draft: { town: TownState },
-  ) => Promise<{ result?: T; broadcastWorld?: boolean; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
-  correlationId?: string,
-) {
-  const res = await this.runRmw({
-    read: ['town'],
-    context: { correlationId },
-    async mutate(draft) {
-      const r = await mutate({ town: draft.town });
-      let result: T | undefined;
-      let broadcastWorld = false;
-      let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
-      if (r && typeof r === 'object' && ('result' in r || 'broadcastWorld' in r || 'events' in r)) {
-        const rr = r as any;
-        result = rr.result as T | undefined;
-        broadcastWorld = !!rr.broadcastWorld;
-        evs = rr.events as any;
-      } else {
-        result = r as T;
-      }
-      const jobs: import('./state/broadcast-map').BroadcastJob[] = [];
-      if (broadcastWorld) { jobs.push({ kind: 'world_state' }); }
-      return {
-        result,
-        broadcast: { jobs },
-        event: evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'town_update' },
-      };
-    },
-    event: { op: 'town_update' },
-  });
-  return res.result as T | undefined;
-}
+	/**
+	 * Update town slice using RMW.
+	 */
+	private async updateTownRmw<T = void>(
+		mutate: (draft: {
+			town: TownState;
+		}) => Promise<{ result?: T; broadcastWorld?: boolean; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
+		correlationId?: string,
+	) {
+		const res = await this.runRmw({
+			read: ['town'],
+			context: { correlationId },
+			async mutate(draft) {
+				const r = await mutate({ town: draft.town });
+				let result: T | undefined;
+				let broadcastWorld = false;
+				let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
+				if (r && typeof r === 'object' && ('result' in r || 'broadcastWorld' in r || 'events' in r)) {
+					const rr = r as any;
+					result = rr.result as T | undefined;
+					broadcastWorld = !!rr.broadcastWorld;
+					evs = rr.events as any;
+				} else {
+					result = r as T;
+				}
+				const jobs: import('./state/broadcast-map').BroadcastJob[] = [];
+				if (broadcastWorld) {
+					jobs.push({ kind: 'world_state' });
+				}
+				return {
+					result,
+					broadcast: { jobs },
+					event: evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'town_update' },
+				};
+			},
+			event: { op: 'town_update' },
+		});
+		return res.result as T | undefined;
+	}
 
-/**
- * Update monsters slice using RMW.
- */
-private async updateMonstersRmw<T = void>(
-  mutate: (
-    draft: { monsters: Monster[] },
-  ) => Promise<{ result?: T; broadcastWorld?: boolean; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
-  correlationId?: string,
-) {
-  const res = await this.runRmw({
-    read: ['monsters'],
-    context: { correlationId },
-    async mutate(draft) {
-      const r = await mutate({ monsters: draft.monsters });
-      let result: T | undefined;
-      let broadcastWorld = false;
-      let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
-      if (r && typeof r === 'object' && ('result' in r || 'broadcastWorld' in r || 'events' in r)) {
-        const rr = r as any;
-        result = rr.result as T | undefined;
-        broadcastWorld = !!rr.broadcastWorld;
-        evs = rr.events as any;
-      } else {
-        result = r as T;
-      }
-      const jobs: import('./state/broadcast-map').BroadcastJob[] = [];
-      if (broadcastWorld) { jobs.push({ kind: 'world_state' }); }
-      return {
-        result,
-        broadcast: { jobs },
-        event: evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'monsters_update' },
-      };
-    },
-    event: { op: 'monsters_update' },
-  });
-  return res.result as T | undefined;
-}
+	/**
+	 * Update monsters slice using RMW.
+	 */
+	private async updateMonstersRmw<T = void>(
+		mutate: (draft: {
+			monsters: Monster[];
+		}) => Promise<{ result?: T; broadcastWorld?: boolean; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
+		correlationId?: string,
+	) {
+		const res = await this.runRmw({
+			read: ['monsters'],
+			context: { correlationId },
+			async mutate(draft) {
+				const r = await mutate({ monsters: draft.monsters });
+				let result: T | undefined;
+				let broadcastWorld = false;
+				let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
+				if (r && typeof r === 'object' && ('result' in r || 'broadcastWorld' in r || 'events' in r)) {
+					const rr = r as any;
+					result = rr.result as T | undefined;
+					broadcastWorld = !!rr.broadcastWorld;
+					evs = rr.events as any;
+				} else {
+					result = r as T;
+				}
+				const jobs: import('./state/broadcast-map').BroadcastJob[] = [];
+				if (broadcastWorld) {
+					jobs.push({ kind: 'world_state' });
+				}
+				return {
+					result,
+					broadcast: { jobs },
+					event: evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'monsters_update' },
+				};
+			},
+			event: { op: 'monsters_update' },
+		});
+		return res.result as T | undefined;
+	}
 
-/**
- * Update contributionStats slice (and optionally trigger leaderboards broadcast).
- */
-private async updateContributionStatsRmw<T = void>(
-  mutate: (
-    draft: { contributionStats: Record<string, any> },
-  ) => Promise<{ result?: T; broadcastLeaderboards?: boolean; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
-  correlationId?: string,
-) {
-  const res = await this.runRmw({
-    read: ['contributionStats'],
-    context: { correlationId },
-    async mutate(draft) {
-      const r = await mutate({ contributionStats: draft.contributionStats });
-      let result: T | undefined;
-      let broadcastLeaderboards = false;
-      let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
-      if (r && typeof r === 'object' && ('result' in r || 'broadcastLeaderboards' in r || 'events' in r)) {
-        const rr = r as any;
-        result = rr.result as T | undefined;
-        broadcastLeaderboards = !!rr.broadcastLeaderboards;
-        evs = rr.events as any;
-      } else {
-        result = r as T;
-      }
-      const jobs: import('./state/broadcast-map').BroadcastJob[] = [];
-      if (broadcastLeaderboards) { jobs.push({ kind: 'leaderboards_update' }); }
-      return {
-        result,
-        broadcast: { jobs },
-        event: evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'contribution_stats_update' },
-      };
-    },
-    event: { op: 'contribution_stats_update' },
-  });
-  return res.result as T | undefined;
-}
+	/**
+	 * Update contributionStats slice (and optionally trigger leaderboards broadcast).
+	 */
+	private async updateContributionStatsRmw<T = void>(
+		mutate: (draft: {
+			contributionStats: Record<string, any>;
+		}) => Promise<{ result?: T; broadcastLeaderboards?: boolean; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
+		correlationId?: string,
+	) {
+		const res = await this.runRmw({
+			read: ['contributionStats'],
+			context: { correlationId },
+			async mutate(draft) {
+				const r = await mutate({ contributionStats: draft.contributionStats });
+				let result: T | undefined;
+				let broadcastLeaderboards = false;
+				let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
+				if (r && typeof r === 'object' && ('result' in r || 'broadcastLeaderboards' in r || 'events' in r)) {
+					const rr = r as any;
+					result = rr.result as T | undefined;
+					broadcastLeaderboards = !!rr.broadcastLeaderboards;
+					evs = rr.events as any;
+				} else {
+					result = r as T;
+				}
+				const jobs: import('./state/broadcast-map').BroadcastJob[] = [];
+				if (broadcastLeaderboards) {
+					jobs.push({ kind: 'leaderboards_update' });
+				}
+				return {
+					result,
+					broadcast: { jobs },
+					event: evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'contribution_stats_update' },
+				};
+			},
+			event: { op: 'contribution_stats_update' },
+		});
+		return res.result as T | undefined;
+	}
 
-private cleanupSession(sessionId: string) {
+	private cleanupSession(sessionId: string) {
 		const session = this.webSocketSessions.get(sessionId);
 		if (!session) {
 			return;

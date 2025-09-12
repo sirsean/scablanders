@@ -34,7 +34,9 @@ app.use(
 				.split(',')
 				.map((s) => s.trim())
 				.filter((s) => s.length > 0);
-			if (!origin) { return csv[0] || ''; }
+			if (!origin) {
+				return csv[0] || '';
+			}
 			return csv.includes(origin) ? origin : '';
 		},
 		allowHeaders: ['Content-Type', 'Authorization', 'Cookie'],

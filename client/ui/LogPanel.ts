@@ -50,19 +50,19 @@ export class LogPanel {
 		return `
 	      <div class="log-items" style="display:flex; flex-direction:column; gap:8px;">
 	        ${events
-					.map((ev) => {
-						const time = LogPanel.formatTime(ev.timestamp as any as Date);
-						const who = ev.playerAddress ? `<span class=\"muted\">${ev.playerAddress.slice(0, 6)}…</span> ` : '';
-						const style = buildEventBorderStyle((ev as any).type);
-						const msg = LogPanel.renderMessageWithCenter(ev);
-						return `
+						.map((ev) => {
+							const time = LogPanel.formatTime(ev.timestamp as any as Date);
+							const who = ev.playerAddress ? `<span class=\"muted\">${ev.playerAddress.slice(0, 6)}…</span> ` : '';
+							const style = buildEventBorderStyle((ev as any).type);
+							const msg = LogPanel.renderMessageWithCenter(ev);
+							return `
 	              <div style=\"${style}\">
 	                <div style=\"font-size:11px;\">${time}</div>
 	                <div style=\"font-size:13px;\">${who}${msg}</div>
 	              </div>
 	            `;
-					})
-					.join('')}
+						})
+						.join('')}
 	      </div>
 	    `;
 	}
@@ -83,10 +83,7 @@ export class LogPanel {
 	}
 
 	private static escapeHtml(s: string): string {
-		return (s || '')
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;');
+		return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 	}
 
 	static updateLogPanel(allEvents: GameEvent[]) {

@@ -52,7 +52,18 @@ export class GameScene extends Phaser.Scene {
 	// Batched route layers
 	private routeStaticLayer: Phaser.GameObjects.Graphics | null = null;
 	private routeAnimatedLayer: Phaser.GameObjects.Graphics | null = null;
-	private animatedRoutes: { x1: number; y1: number; x2: number; y2: number; color: number; phase: number; dash: number; gap: number; startTs: number; endTs: number }[] = [];
+	private animatedRoutes: {
+		x1: number;
+		y1: number;
+		x2: number;
+		y2: number;
+		color: number;
+		phase: number;
+		dash: number;
+		gap: number;
+		startTs: number;
+		endTs: number;
+	}[] = [];
 	private pendingTinyLoads = new Map<string, Promise<string>>();
 	private townMarker: Phaser.GameObjects.Container | null = null;
 	private missionRenderVersion = 0;
@@ -173,24 +184,44 @@ export class GameScene extends Phaser.Scene {
 		window.addEventListener('map:center-on' as any, this.onMapCenterOn as EventListener);
 		this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
 			// Detach global listeners
-			try { window.removeEventListener('map:center-on' as any, this.onMapCenterOn as EventListener); } catch {}
-			try { this.scale.off('resize', this.onResize as any); } catch {}
+			try {
+				window.removeEventListener('map:center-on' as any, this.onMapCenterOn as EventListener);
+			} catch {}
+			try {
+				this.scale.off('resize', this.onResize as any);
+			} catch {}
 			// Stop timers/tweens registered in this scene
-			try { this.time.removeAllEvents(); } catch {}
-			try { this.tweens.killAll(); } catch {}
+			try {
+				this.time.removeAllEvents();
+			} catch {}
+			try {
+				this.tweens.killAll();
+			} catch {}
 			// Input listeners
-			try { this.input?.keyboard?.removeAllListeners(); } catch {}
-			try { (this.input as any)?.removeAllListeners?.(); } catch {}
+			try {
+				this.input?.keyboard?.removeAllListeners();
+			} catch {}
+			try {
+				(this.input as any)?.removeAllListeners?.();
+			} catch {}
 			// Scene event listeners
-			try { this.events.removeAllListeners(); } catch {}
+			try {
+				this.events.removeAllListeners();
+			} catch {}
 			// Camera listeners
-			try { this.cameras?.main?.removeAllListeners(); } catch {}
+			try {
+				this.cameras?.main?.removeAllListeners();
+			} catch {}
 			// Destroy display objects we manage
-			try { this.cleanupAllDisplayObjects(); } catch {}
+			try {
+				this.cleanupAllDisplayObjects();
+			} catch {}
 		});
 
 		this.events.once(Phaser.Scenes.Events.DESTROY, () => {
-			try { this.cleanupAllDisplayObjects(); } catch {}
+			try {
+				this.cleanupAllDisplayObjects();
+			} catch {}
 		});
 
 		// Keyboard controls (arrows) and Shift for faster pan
@@ -532,7 +563,9 @@ export class GameScene extends Phaser.Scene {
 
 		for (const { mission, color } of toRender) {
 			const node = this.resourceNodes.get(mission.targetNodeId!);
-			if (!node) { continue; }
+			if (!node) {
+				continue;
+			}
 			const isCompleted = color === COLOR_COMPLETED;
 			items.push({ x: node.x, y: node.y, color: color as number, isCompleted });
 		}
@@ -542,7 +575,9 @@ export class GameScene extends Phaser.Scene {
 	}
 
 	private drawMissionIndicators() {
-		if (!this.missionIndicatorLayer) { return; }
+		if (!this.missionIndicatorLayer) {
+			return;
+		}
 		const g = this.missionIndicatorLayer;
 		g.clear();
 		// Time-based pulse for completed indicators (green)
@@ -558,10 +593,9 @@ export class GameScene extends Phaser.Scene {
 		}
 	}
 
-		// Old per-indicator objects removed; batched items computed and drawn instead
+	// Old per-indicator objects removed; batched items computed and drawn instead
 
-private selectResourceNode(nodeId: string, _nodeData: any) {
-
+	private selectResourceNode(nodeId: string, _nodeData: any) {
 		const currentState = gameState.getState();
 
 		// Update game state
@@ -698,14 +732,28 @@ private selectResourceNode(nodeId: string, _nodeData: any) {
 		const renderVersion = this.missionRenderVersion;
 
 		// Clear old per-route Graphics and drifters
-		this.missionRoutes.forEach((route) => { try { this.tweens.killTweensOf(route); } catch {}; route.destroy(); });
+		this.missionRoutes.forEach((route) => {
+			try {
+				this.tweens.killTweensOf(route);
+			} catch {}
+			route.destroy();
+		});
 		this.missionRoutes.clear();
-		this.missionDrifters.forEach((container) => { try { (container as any).removeAll?.(true); } catch {}; container.destroy(); });
+		this.missionDrifters.forEach((container) => {
+			try {
+				(container as any).removeAll?.(true);
+			} catch {}
+			container.destroy();
+		});
 		this.missionDrifters.clear();
 
 		// Prepare layers
-		if (this.routeStaticLayer) { this.routeStaticLayer.clear(); }
-		if (this.routeAnimatedLayer) { this.routeAnimatedLayer.clear(); }
+		if (this.routeStaticLayer) {
+			this.routeStaticLayer.clear();
+		}
+		if (this.routeAnimatedLayer) {
+			this.routeAnimatedLayer.clear();
+		}
 		this.animatedRoutes = [];
 
 		const stateNow = gameState.getState();
@@ -722,7 +770,9 @@ private selectResourceNode(nodeId: string, _nodeData: any) {
 			}
 			if (m.targetNodeId) {
 				const targetNode = stateNow.resourceNodes?.find((r: ResourceNode) => r.id === m.targetNodeId);
-				if (!targetNode) { continue; }
+				if (!targetNode) {
+					continue;
+				}
 				({ x: nodeX, y: nodeY } = targetNode.coordinates);
 			} else if (m.targetMonsterId) {
 				const mid = m.targetMonsterId as string;
@@ -730,16 +780,26 @@ private selectResourceNode(nodeId: string, _nodeData: any) {
 				if (!monster && m.engagementApplied && m.battleLocation) {
 					monster = { coordinates: m.battleLocation } as any;
 				}
-				if (!monster) { continue; }
-				nodeX = monster.coordinates.x; nodeY = monster.coordinates.y;
+				if (!monster) {
+					continue;
+				}
+				nodeX = monster.coordinates.x;
+				nodeY = monster.coordinates.y;
 				// Monster missions purple while active
-				if (m.status === 'active') { color = 0x9c27b0; }
+				if (m.status === 'active') {
+					color = 0x9c27b0;
+				}
 			} else {
 				continue;
 			}
-			if (typeof nodeX !== 'number' || typeof nodeY !== 'number') { continue; }
+			if (typeof nodeX !== 'number' || typeof nodeY !== 'number') {
+				continue;
+			}
 
-			const x1 = TOWN_X, y1 = TOWN_Y, x2 = nodeX, y2 = nodeY;
+			const x1 = TOWN_X,
+				y1 = TOWN_Y,
+				x2 = nodeX,
+				y2 = nodeY;
 			const isSelfActive = m.status === 'active' && (m.playerAddress || '').toLowerCase() === playerAddr;
 
 			if (isSelfActive) {
@@ -1170,8 +1230,12 @@ private selectResourceNode(nodeId: string, _nodeData: any) {
 					dir = prog <= 0.5 ? 1 : -1;
 				}
 				r.phase += dir * speed * dt;
-				if (r.phase >= cycle) { r.phase -= cycle; }
-				if (r.phase < 0) { r.phase += cycle; }
+				if (r.phase >= cycle) {
+					r.phase -= cycle;
+				}
+				if (r.phase < 0) {
+					r.phase += cycle;
+				}
 				this.drawDashedLine(this.routeAnimatedLayer, r.x1, r.y1, r.x2, r.y2, r.color, r.phase, r.dash, r.gap);
 			}
 		}
@@ -1189,15 +1253,45 @@ private selectResourceNode(nodeId: string, _nodeData: any) {
 
 	private cleanupAllDisplayObjects() {
 		// Resource nodes and labels/glows
-		try { this.resourceNodes.forEach((s) => { try { this.tweens.killTweensOf(s); } catch {}; s.destroy(); }); } catch {}
-		try { this.nodeLabels.forEach((t) => t.destroy()); } catch {}
-		try { this.nodeGlows.forEach((g) => { try { this.tweens.killTweensOf(g); } catch {}; g.destroy(); }); } catch {}
+		try {
+			this.resourceNodes.forEach((s) => {
+				try {
+					this.tweens.killTweensOf(s);
+				} catch {}
+				s.destroy();
+			});
+		} catch {}
+		try {
+			this.nodeLabels.forEach((t) => t.destroy());
+		} catch {}
+		try {
+			this.nodeGlows.forEach((g) => {
+				try {
+					this.tweens.killTweensOf(g);
+				} catch {}
+				g.destroy();
+			});
+		} catch {}
 		this.resourceNodes.clear();
 		this.nodeLabels.clear();
 		this.nodeGlows.clear();
 		// Mission indicators and glows
-		try { this.missionIndicators.forEach((g) => { try { this.tweens.killTweensOf(g); } catch {}; g.destroy(); }); } catch {}
-		try { this.missionIndicatorGlows.forEach((g) => { try { this.tweens.killTweensOf(g); } catch {}; g.destroy(); }); } catch {}
+		try {
+			this.missionIndicators.forEach((g) => {
+				try {
+					this.tweens.killTweensOf(g);
+				} catch {}
+				g.destroy();
+			});
+		} catch {}
+		try {
+			this.missionIndicatorGlows.forEach((g) => {
+				try {
+					this.tweens.killTweensOf(g);
+				} catch {}
+				g.destroy();
+			});
+		} catch {}
 		this.missionIndicators.clear();
 		this.missionIndicatorGlows.clear();
 		// Routes
@@ -1205,7 +1299,9 @@ private selectResourceNode(nodeId: string, _nodeData: any) {
 			this.missionRoutes.forEach((r) => {
 				try {
 					const tw = r.getData('pulseTween') as Phaser.Tweens.Tween | null;
-					if (tw) { tw.stop(); }
+					if (tw) {
+						tw.stop();
+					}
 					this.tweens.killTweensOf(r);
 				} catch {}
 				r.destroy();
@@ -1213,26 +1309,72 @@ private selectResourceNode(nodeId: string, _nodeData: any) {
 		} catch {}
 		this.missionRoutes.clear();
 		// Drifter containers
-		try { this.missionDrifters.forEach((c) => { try { this.tweens.killTweensOf(c); } catch {}; (c as any).removeAll?.(true); c.destroy(); }); } catch {}
+		try {
+			this.missionDrifters.forEach((c) => {
+				try {
+					this.tweens.killTweensOf(c);
+				} catch {}
+				(c as any).removeAll?.(true);
+				c.destroy();
+			});
+		} catch {}
 		this.missionDrifters.clear();
 		// Battle markers
-		try { this.battleMarkers.forEach((g) => { try { const tw = g.getData('pulseTween') as Phaser.Tweens.Tween | null; if (tw) { tw.stop(); } this.tweens.killTweensOf(g); } catch {}; g.destroy(); }); } catch {}
+		try {
+			this.battleMarkers.forEach((g) => {
+				try {
+					const tw = g.getData('pulseTween') as Phaser.Tweens.Tween | null;
+					if (tw) {
+						tw.stop();
+					}
+					this.tweens.killTweensOf(g);
+				} catch {}
+				g.destroy();
+			});
+		} catch {}
 		this.battleMarkers.clear();
 		// Monsters
-		try { this.monsterIcons.forEach((c) => { try { this.tweens.killTweensOf(c); } catch {}; c.destroy(true); }); } catch {}
+		try {
+			this.monsterIcons.forEach((c) => {
+				try {
+					this.tweens.killTweensOf(c);
+				} catch {}
+				c.destroy(true);
+			});
+		} catch {}
 		this.monsterIcons.clear();
 		// Planning overlay
-		try { this.planningRoute?.destroy(); this.planningRoute = null; } catch {}
-		try { this.planningCircle?.destroy(); this.planningCircle = null; } catch {}
+		try {
+			this.planningRoute?.destroy();
+			this.planningRoute = null;
+		} catch {}
+		try {
+			this.planningCircle?.destroy();
+			this.planningCircle = null;
+		} catch {}
 		// Background tile
-		try { this.tweens.killTweensOf(this.bgTile as any); } catch {}
-		try { this.bgTile?.destroy(); this.bgTile = null; } catch {}
+		try {
+			this.tweens.killTweensOf(this.bgTile as any);
+		} catch {}
+		try {
+			this.bgTile?.destroy();
+			this.bgTile = null;
+		} catch {}
 		// Batched indicators layer
-		try { this.missionIndicatorLayer?.destroy(); this.missionIndicatorLayer = null; } catch {}
+		try {
+			this.missionIndicatorLayer?.destroy();
+			this.missionIndicatorLayer = null;
+		} catch {}
 		this.missionIndicatorItems = [];
 		// Batched routes layers
-		try { this.routeStaticLayer?.destroy(); this.routeStaticLayer = null; } catch {}
-		try { this.routeAnimatedLayer?.destroy(); this.routeAnimatedLayer = null; } catch {}
+		try {
+			this.routeStaticLayer?.destroy();
+			this.routeStaticLayer = null;
+		} catch {}
+		try {
+			this.routeAnimatedLayer?.destroy();
+			this.routeAnimatedLayer = null;
+		} catch {}
 		this.animatedRoutes = [];
 	}
 
@@ -1431,7 +1573,9 @@ private selectResourceNode(nodeId: string, _nodeData: any) {
 		for (const [id, indicator] of this.missionIndicators) {
 			const m = missions.find((mm) => mm.id === id);
 			if (!m) {
-				try { this.tweens.killTweensOf(indicator); } catch {}
+				try {
+					this.tweens.killTweensOf(indicator);
+				} catch {}
 				indicator.destroy();
 				this.missionIndicators.delete(id);
 				continue;
@@ -1441,7 +1585,9 @@ private selectResourceNode(nodeId: string, _nodeData: any) {
 				const completionTs = m.completionTime instanceof Date ? m.completionTime.getTime() : new Date(m.completionTime).getTime();
 				const shouldExpire = now > (expiresAt || completionTs + RECENT_COMPLETED_MS);
 				if (shouldExpire) {
-					try { this.tweens.killTweensOf(indicator); } catch {}
+					try {
+						this.tweens.killTweensOf(indicator);
+					} catch {}
 					indicator.destroy();
 					this.missionIndicators.delete(id);
 				}
@@ -1452,7 +1598,9 @@ private selectResourceNode(nodeId: string, _nodeData: any) {
 			if (!m) {
 				try {
 					const tw = route.getData('pulseTween') as Phaser.Tweens.Tween | null;
-					if (tw) { tw.stop(); }
+					if (tw) {
+						tw.stop();
+					}
 					this.tweens.killTweensOf(route);
 				} catch {}
 				route.destroy();
@@ -1466,7 +1614,9 @@ private selectResourceNode(nodeId: string, _nodeData: any) {
 				if (shouldExpire) {
 					try {
 						const tw = route.getData('pulseTween') as Phaser.Tweens.Tween | null;
-						if (tw) { tw.stop(); }
+						if (tw) {
+							tw.stop();
+						}
 						this.tweens.killTweensOf(route);
 					} catch {}
 					route.destroy();
@@ -1545,11 +1695,13 @@ private selectResourceNode(nodeId: string, _nodeData: any) {
 		// Remove stale monsters
 		const currentIds = new Set(monsters.map((m) => m.id));
 		for (const [id, cnt] of this.monsterIcons) {
-				if (!currentIds.has(id)) {
-					try { this.tweens.killTweensOf(cnt); } catch {}
-					cnt.destroy(true);
-					this.monsterIcons.delete(id);
-				}
+			if (!currentIds.has(id)) {
+				try {
+					this.tweens.killTweensOf(cnt);
+				} catch {}
+				cnt.destroy(true);
+				this.monsterIcons.delete(id);
+			}
 		}
 
 		// Create/update

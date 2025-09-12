@@ -141,7 +141,7 @@ export class WebSocketManager extends EventTarget {
 	 */
 	authenticate(playerAddress: string): void {
 		if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
-		// Cannot authenticate: WebSocket not connected
+			// Cannot authenticate: WebSocket not connected
 			return;
 		}
 
@@ -157,7 +157,7 @@ export class WebSocketManager extends EventTarget {
 	 */
 	subscribe(events: string[]): void {
 		if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
-		// Cannot subscribe: WebSocket not connected
+			// Cannot subscribe: WebSocket not connected
 			return;
 		}
 
@@ -179,7 +179,7 @@ export class WebSocketManager extends EventTarget {
 	 */
 	private send(message: any): void {
 		if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
-		// Cannot send message: WebSocket not connected
+			// Cannot send message: WebSocket not connected
 			return;
 		}
 

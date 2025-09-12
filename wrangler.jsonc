@@ -8,9 +8,7 @@
 	"main": "server/worker.ts",
 	"compatibility_date": "2025-08-13",
 	"compatibility_flags": ["nodejs_compat"],
-	"routes": [
-		{ "pattern": "scablanders.sirsean.me", "custom_domain": true }
-	],
+	"routes": [{ "pattern": "scablanders.sirsean.me", "custom_domain": true }],
 	"migrations": [
 		{
 			"tag": "v1-init-game-do",
@@ -24,7 +22,7 @@
 	},
 	"build": {
 		"command": "npm run build",
-		"watch_dir": "client"
+		"watch_dir": "client",
 	},
 	"durable_objects": {
 		"bindings": [
@@ -52,22 +50,22 @@
 				{
 					"binding": "AUTH_KV",
 					"id": "223cb91dc3ed4871be9e96dd9907b6a4",
-					"preview_id": "a096d4c1f3ac4c81a83a5acf019cdb0c"
+					"preview_id": "a096d4c1f3ac4c81a83a5acf019cdb0c",
 				},
 				{
 					"binding": "KV",
 					"id": "e0aae3150dbb4928abfbf537a62a6f0d",
-					"preview_id": "ca96a2ccc90b4ea3a97467633ac42fa4"
-				}
-			]
-		}
+					"preview_id": "ca96a2ccc90b4ea3a97467633ac42fa4",
+				},
+			],
+		},
 	},
 	"observability": {
 		"enabled": true,
 	},
 	"vars": {
 		"CORS_ORIGINS": "https://scablanders.sirsean.me,http://localhost:5173",
-		"DEBUG_RESOURCES": "1"
+		"DEBUG_RESOURCES": "1",
 	},
 	/**
 	 * Smart Placement

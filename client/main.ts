@@ -68,10 +68,13 @@ initCrtTheme({ enableToggleButton: false });
 			rafId = requestAnimationFrame(loop);
 			frames++;
 			const now = performance.now();
-			if (now - last >= 500) { // update twice per second
+			if (now - last >= 500) {
+				// update twice per second
 				const fps = Math.round((frames * 1000) / (now - last));
 				const el = document.getElementById('fps-indicator');
-				if (el) { el.textContent = `FPS ${fps}`; }
+				if (el) {
+					el.textContent = `FPS ${fps}`;
+				}
 				frames = 0;
 				last = now;
 			}
@@ -80,8 +83,12 @@ initCrtTheme({ enableToggleButton: false });
 		// HMR: cancel on dispose
 		if (import.meta.env.DEV && (import.meta as any).hot) {
 			(import.meta as any).hot.dispose(() => {
-				try { cancelAnimationFrame(rafId); } catch {}
-				try { document.getElementById('fps-indicator')?.remove(); } catch {}
+				try {
+					cancelAnimationFrame(rafId);
+				} catch {}
+				try {
+					document.getElementById('fps-indicator')?.remove();
+				} catch {}
 			});
 		}
 	} catch {}
@@ -90,8 +97,12 @@ initCrtTheme({ enableToggleButton: false });
 // HMR: clean up on hot replace
 if (import.meta.env.DEV && (import.meta as any).hot) {
 	(import.meta as any).hot.dispose(() => {
-		try { (_game as any)?.destroy?.(true); } catch {}
-		try { (gameState as any)?.teardownForHMR?.(); } catch {}
+		try {
+			(_game as any)?.destroy?.(true);
+		} catch {}
+		try {
+			(gameState as any)?.teardownForHMR?.();
+		} catch {}
 	});
 }
 // Import authentication system
@@ -107,7 +118,6 @@ document.getElementById('disconnect-wallet')?.addEventListener('click', async ()
 });
 
 // Action menu buttons are created by UIManager. Listeners are attached there.
-
 
 // Debug functions for resource management testing
 function debugResourceFlow() {
