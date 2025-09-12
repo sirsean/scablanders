@@ -4,7 +4,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
-		"build": "vite build",
+		"build": "rm -rf public/client && vite build",
 		"deploy": "wrangler deploy",
 		"deploy:staging": "wrangler deploy --env staging",
 		"test": "vitest run --config vitest.config.ts",

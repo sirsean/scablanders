@@ -3,9 +3,10 @@ import { cloudflare } from '@cloudflare/vite-plugin';
 
 export default defineConfig({
 	root: './client',
+	base: '/',
 	build: {
-		// Emit the client build under public/client so Worker can serve it via assets.directory
-		outDir: '../public/client',
+		// Emit the client build to public so Worker serves from ./public
+		outDir: '../public',
 		emptyOutDir: true,
 	},
 	resolve: {
