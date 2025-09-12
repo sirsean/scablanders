@@ -8,15 +8,23 @@
 	"main": "server/worker.ts",
 	"compatibility_date": "2025-08-13",
 	"compatibility_flags": ["nodejs_compat"],
+	"routes": [
+		{ "pattern": "scablanders.sirsean.me/*", "zone_name": "sirsean.me" }
+	],
 	"migrations": [
 		{
-			"new_sqlite_classes": ["MyDurableObject"],
-			"tag": "v1",
+			"tag": "v1-init-game-do",
+			"new_classes": ["GameDO"],
 		},
 	],
 	"assets": {
 		// The path to the directory containing the `index.html` file to be served at `/`
 		"directory": "./public",
+		"binding": "ASSETS",
+	},
+	"build": {
+		"command": "npm run build",
+		"watch_dir": "client"
 	},
 	"durable_objects": {
 		"bindings": [
@@ -38,8 +46,27 @@
 			"preview_id": "ca96a2ccc90b4ea3a97467633ac42fa4",
 		},
 	],
+	"env": {
+		"staging": {
+			"kv_namespaces": [
+				{
+					"binding": "AUTH_KV",
+					"id": "223cb91dc3ed4871be9e96dd9907b6a4",
+					"preview_id": "a096d4c1f3ac4c81a83a5acf019cdb0c"
+				},
+				{
+					"binding": "KV",
+					"id": "e0aae3150dbb4928abfbf537a62a6f0d",
+					"preview_id": "ca96a2ccc90b4ea3a97467633ac42fa4"
+				}
+			]
+		}
+	},
 	"observability": {
 		"enabled": true,
+	},
+	"vars": {
+		"CORS_ORIGINS": "https://scablanders.sirsean.me,http://localhost:5173"
 	},
 	/**
 	 * Smart Placement

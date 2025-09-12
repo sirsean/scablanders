@@ -29,7 +29,14 @@ const app = new Hono<{ Bindings: Env }>();
 app.use(
 	'/*',
 	cors({
-		origin: 'http://localhost:5173',
+		origin: (origin, c) => {
+			const csv = (c.env.CORS_ORIGINS || 'http://localhost:5173')
+				.split(',')
+				.map((s) => s.trim())
+				.filter((s) => s.length > 0);
+			if (!origin) return csv[0] || '';
+			return csv.includes(origin) ? origin : '';
+		},
 		allowHeaders: ['Content-Type', 'Authorization', 'Cookie'],
 		allowMethods: ['GET', 'POST', 'OPTIONS'],
 		credentials: true,
