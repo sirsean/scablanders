@@ -31,6 +31,10 @@ import { RESOURCE_NODE_CAP } from './config';
 import { getVehicle } from './vehicles';
 import { calculateProsperityGain, prosperityResourceBoostMultiplier } from '../shared/prosperity-utils';
 import type { LeaderboardsResponse, LeaderboardEntry } from '@shared/leaderboards';
+import type { SliceKey } from './state/slices';
+import { rmw, type RmwOptions, type RmwResult, type StorageFacade } from './state/rmw';
+import type { MutationEvent, MutationLogger } from './state/event-log';
+import type { BroadcastPlan, BroadcastJob } from './state/broadcast-map';
 interface WebSocketSession {
 	websocket: WebSocket;
 	sessionId: string;
@@ -130,6 +134,89 @@ export class GameDO extends DurableObject {
 	private contributionStats: Map<string, PlayerContributionStats>; // address -> contribution totals
 	private env: Env;
 	private instanceToken: string;
+
+	// RMW infrastructure adapters
+private async runRmw<K extends SliceKey, TResult = unknown>(
+		options: RmwOptions<K, TResult> & { event?: Partial<MutationEvent> },
+	): Promise<RmwResult<K, TResult>> {
+		const storageFacade: StorageFacade = {
+			get: (key) => this.ctx.storage.get(key as any),
+			put: (key, value) => this.ctx.storage.put(key as any, value as any),
+			delete: (key) => this.ctx.storage.delete(key as any),
+		};
+		const logger: MutationLogger = {
+			log: async (ev) => {
+				// For now, log to console only; avoid spamming client eventLog
+				console.log('[GameDO RMW]', JSON.stringify({ ...ev, timestamp: ev.timestamp.toISOString?.() || new Date().toISOString() }));
+			},
+		};
+const res = await rmw(storageFacade, logger, options as any);
+		// Synchronize in-memory mirrors for changed slices
+		for (const key of res.changed as K[]) {
+			const nextSlice: any = (res.next as any)[key];
+			switch (key) {
+				case 'players':
+					this.gameState.players = new Map(Object.entries(nextSlice));
+					break;
+				case 'notifications':
+					this.gameState.notifications = new Map(Object.entries(nextSlice));
+					break;
+				case 'missions':
+					this.gameState.missions = new Map(Object.entries(nextSlice));
+					break;
+				case 'resourceNodes':
+					this.gameState.resourceNodes = new Map(Object.entries(nextSlice));
+					break;
+				case 'worldMetrics':
+					this.gameState.worldMetrics = nextSlice;
+					break;
+				case 'eventLog':
+					this.gameState.eventLog = nextSlice;
+					break;
+				case 'drifterProgress':
+					this.gameState.drifterProgress = new Map(Object.entries(nextSlice));
+					break;
+				case 'contributionStats':
+					this.contributionStats = new Map(Object.entries(nextSlice));
+					break;
+				default:
+					break;
+			}
+		}
+		// Dispatch broadcasts using existing utilities
+		await this.dispatchBroadcastPlan(res.plan);
+		return res as any;
+	}
+
+private async dispatchBroadcastPlan(plan: BroadcastPlan) {
+		for (const job of plan.jobs) {
+			try {
+				switch (job.kind) {
+					case 'world_state':
+						await this.broadcastWorldStateUpdate();
+						break;
+					case 'player_state':
+						for (const addr of job.addresses) {
+							await this.broadcastPlayerStateUpdate(addr);
+						}
+						break;
+					case 'mission_update':
+						await this.broadcastMissionUpdate({ missions: job.missions });
+						break;
+					case 'leaderboards_update':
+						await this.broadcastLeaderboardsUpdate();
+						break;
+					case 'custom':
+						// No-op default; can be handled by future adapters
+						break;
+					default:
+						break;
+				}
+			} catch (e) {
+				console.warn('[GameDO] Broadcast job failed', job, e);
+			}
+		}
+	}
 
 	// --- Diagnostics helpers (gated by DEBUG_RESOURCES env) ---
 	private debugResources(): boolean {
@@ -298,83 +385,53 @@ private async initializeGameState() {
 		}
 	}
 
-	/**
-	 * Save game state to storage
-	 */
-	private async saveGameState() {
-		try {
-			const missionsToSave = Object.fromEntries(this.gameState.missions);
-			console.log(`[GameDO] Saving game state - missions count: ${this.gameState.missions.size}`);
-			console.log(`[GameDO] Missions being saved:`, Object.keys(missionsToSave));
-
-			await Promise.all([
-				this.ctx.storage.put('players', Object.fromEntries(this.gameState.players)),
-				this.ctx.storage.put('notifications', Object.fromEntries(this.gameState.notifications)),
-				this.ctx.storage.put('missions', missionsToSave),
-				this.ctx.storage.put('resourceNodes', Object.fromEntries(this.gameState.resourceNodes)),
-				this.ctx.storage.put('worldMetrics', this.gameState.worldMetrics),
-				this.ctx.storage.put('eventLog', this.gameState.eventLog),
-				this.ctx.storage.put('drifterProgress', Object.fromEntries(this.gameState.drifterProgress)),
-				this.ctx.storage.put('contributionStats', Object.fromEntries(this.contributionStats)),
-			]);
-
-			console.log('[GameDO] Game state saved successfully');
-		} catch (error) {
-			console.error('[GameDO] Error saving game state:', error);
-		}
-	}
 
 	/**
 	 * Initialize resource nodes if they don't exist
 	 */
 private async initializeResourceNodes() {
-		// Migration: if existing nodes are present but coordinate system version changed, regenerate
+		// Migration: if existing nodes are present but coordinate system version changed, regenerate via RMW
 		const storedVer = (await this.ctx.storage.get<number>('coordSystemVersion')) ?? 0;
 		const CURRENT_VER = 2;
-		if (storedVer !== CURRENT_VER && this.gameState.resourceNodes.size > 0) {
-			console.log(`[GameDO] Coordinate system version changed (${storedVer} -> ${CURRENT_VER}). Regenerating resource nodes.`);
-			this.gameState.resourceNodes.clear();
-		}
 
-		if (this.gameState.resourceNodes.size > 0) {
-			return; // Already initialized with current version
-		}
+		const result = await this.runRmw({
+			read: ['resourceNodes'],
+			async mutate(draft) {
+				const nodesObj = (draft.resourceNodes as any as Record<string, ResourceNode>) || {};
+				let changed = false;
+				// If version changed and any nodes exist, clear for regeneration
+				if (storedVer !== CURRENT_VER && Object.keys(nodesObj).length > 0) {
+					for (const k of Object.keys(nodesObj)) delete nodesObj[k];
+					changed = true;
+				}
+				// If nodes already exist after migration check, no-op
+				if (Object.keys(nodesObj).length > 0) {
+					return { result: { initialized: false, count: Object.keys(nodesObj).length }, broadcast: { jobs: [] }, event: { op: 'init_resource_nodes_noop' } } as any;
+				}
+				// Initial creation
+				const nodesToCreate: ResourceType[] = ['ore', 'ore', 'ore', 'scrap', 'scrap', 'scrap', 'organic', 'organic'];
+				let created = 0;
+				for (let i = 0; i < nodesToCreate.length; i++) {
+					if (Object.keys(nodesObj).length >= RESOURCE_NODE_CAP) break;
+					const type = nodesToCreate[i];
+					const newNode = this.createRandomResourceNode(type);
+					nodesObj[newNode.id] = newNode;
+					created++;
+				}
+				(draft as any).resourceNodes = nodesObj;
+				return {
+					result: { initialized: true, count: created },
+					broadcast: created > 0 ? { jobs: [{ kind: 'world_state' }] } : { jobs: [] },
+					event: { op: 'init_resource_nodes', details: { count: created, migrated: storedVer !== CURRENT_VER } },
+				} as any;
+			},
+			event: { op: 'init_resource_nodes' },
+		});
 
-		console.log('[GameDO] Initializing resource nodes (no existing nodes found)');
-
-		// Create 8 initial resource nodes matching our target distribution
-		const nodesToCreate: ResourceType[] = [
-			'ore',
-			'ore',
-			'ore', // 3 ore nodes
-			'scrap',
-			'scrap',
-			'scrap', // 3 scrap nodes
-			'organic',
-			'organic', // 2 organic nodes
-		];
-
-		const nodes: ResourceNode[] = [];
-
-		for (let i = 0; i < nodesToCreate.length; i++) {
-			// Respect global cap even on initial creation
-			if (this.gameState.resourceNodes.size + nodes.length >= RESOURCE_NODE_CAP) {
-				break;
-			}
-			const type = nodesToCreate[i];
-			const newNode = this.createRandomResourceNodeWithAntiOverlap(type);
-			nodes.push(newNode);
-		}
-
-		for (const node of nodes) {
-			this.gameState.resourceNodes.set(node.id, node);
-		}
-
-		// Only save resource nodes, don't overwrite entire game state
-		console.log(`[GameDO] Saving resource nodes only (preserving existing missions: ${this.gameState.missions.size})`);
-		await this.ctx.storage.put('resourceNodes', Object.fromEntries(this.gameState.resourceNodes));
+		// Record the coord system version separately (meta key)
 		await this.ctx.storage.put('coordSystemVersion', CURRENT_VER);
-		console.log('[GameDO] Initialized', nodes.length, 'resource nodes');
+
+		console.log('[GameDO] initializeResourceNodes result:', result.result);
 	}
 
 	// =============================================================================
@@ -599,11 +656,18 @@ private async initializeResourceNodes() {
 			timestamp: partial.timestamp ?? new Date(),
 			...partial,
 		};
-		this.gameState.eventLog.push(event);
-		if (this.gameState.eventLog.length > 1000) {
-			this.gameState.eventLog = this.gameState.eventLog.slice(-1000);
-		}
-		await this.ctx.storage.put('eventLog', this.gameState.eventLog);
+		// Use RMW to append event to eventLog slice
+		await this.runRmw({
+			read: ['eventLog'],
+			async mutate(draft) {
+				const nextLog = Array.isArray(draft.eventLog) ? draft.eventLog.slice() : [];
+				nextLog.push(event);
+				const trimmed = nextLog.length > 1000 ? nextLog.slice(-1000) : nextLog;
+				(draft as any).eventLog = trimmed;
+				return { broadcast: { jobs: [] }, event: { op: 'event_append', details: { type: partial.type } } };
+			},
+			event: { op: 'event_append' },
+		});
 		await this.broadcastEventAppend(event);
 	}
 
@@ -622,31 +686,52 @@ private async initializeResourceNodes() {
 		return stats;
 	}
 
-	private incrementUpgradeCredits(address: string, amount: number) {
+private async incrementUpgradeCredits(address: string, amount: number) {
 		const amt = Math.floor(Number(amount) || 0);
 		if (amt <= 0) {
 			return;
 		}
 		const stats = this.getOrCreateContributionStats(address);
 		stats.totalUpgradeCredits += amt;
+		await this.updateContributionStatsRmw(async ({ contributionStats }) => {
+			const a = address.toLowerCase();
+			const cur = contributionStats[a] || { totalUpgradeCredits: 0, totalProsperityFromMissions: 0, totalCombatDamage: 0 };
+			cur.totalUpgradeCredits += amt;
+			contributionStats[a] = cur as any;
+			return { broadcastLeaderboards: true } as any;
+		});
 	}
 
-	private incrementProsperityFromMissions(address: string, delta: number) {
+private async incrementProsperityFromMissions(address: string, delta: number) {
 		const d = Number(delta) || 0;
 		if (d <= 0) {
 			return;
 		}
 		const stats = this.getOrCreateContributionStats(address);
 		stats.totalProsperityFromMissions += d;
+		await this.updateContributionStatsRmw(async ({ contributionStats }) => {
+			const a = address.toLowerCase();
+			const cur = contributionStats[a] || { totalUpgradeCredits: 0, totalProsperityFromMissions: 0, totalCombatDamage: 0 };
+			cur.totalProsperityFromMissions += d;
+			contributionStats[a] = cur as any;
+			return { broadcastLeaderboards: true } as any;
+		});
 	}
 
-	private incrementCombatDamage(address: string, dmg: number) {
+private async incrementCombatDamage(address: string, dmg: number) {
 		const d = Math.floor(Number(dmg) || 0);
 		if (d <= 0) {
 			return;
 		}
 		const stats = this.getOrCreateContributionStats(address);
 		stats.totalCombatDamage += d;
+		await this.updateContributionStatsRmw(async ({ contributionStats }) => {
+			const a = address.toLowerCase();
+			const cur = contributionStats[a] || { totalUpgradeCredits: 0, totalProsperityFromMissions: 0, totalCombatDamage: 0 };
+			cur.totalCombatDamage += d;
+			contributionStats[a] = cur as any;
+			return { broadcastLeaderboards: true } as any;
+		});
 	}
 
 	public async getLeaderboards(): Promise<LeaderboardsResponse> {
@@ -671,27 +756,38 @@ private async initializeResourceNodes() {
 	 */
 	async getProfile(address: string): Promise<PlayerProfile> {
 		let player = this.gameState.players.get(address);
-
 		if (!player) {
-			// Create new player
-			player = {
-				address,
-				balance: 1000, // Starting balance
-				ownedDrifters: [], // Will be populated from NFT lookup
-				vehicles: [], // new
-				discoveredNodes: [], // Empty initially
-				upgrades: [], // No upgrades initially
-				activeMissions: [], // No active missions initially
-				lastLogin: new Date(),
-			};
-
-			this.gameState.players.set(address, player);
-			await this.saveGameState();
-			console.log(`[GameDO] Created new player profile for ${address}`);
+			await this.updatePlayerRmw(address, async ({ players }) => {
+				const existing = players[address];
+				if (!existing) {
+					players[address] = {
+						address,
+						balance: 1000,
+						ownedDrifters: [],
+						vehicles: [],
+						discoveredNodes: [],
+						upgrades: [],
+						activeMissions: [],
+						lastLogin: new Date(),
+					};
+				} else {
+					existing.lastLogin = new Date();
+					players[address] = existing;
+				}
+				return { result: undefined };
+			});
+			player = this.gameState.players.get(address)!;
+			console.log(`[GameDO] Created new or updated player profile for ${address}`);
 		} else {
-			// Update last login
-			player.lastLogin = new Date();
-			await this.saveGameState();
+			await this.updatePlayerRmw(address, async ({ players }) => {
+				const p = players[address];
+				if (p) {
+					p.lastLogin = new Date();
+					players[address] = p;
+				}
+				return {};
+			});
+			player = this.gameState.players.get(address)!;
 		}
 
 		return this.buildProfileWithProgress(player);
@@ -705,18 +801,18 @@ private async initializeResourceNodes() {
 		if (!player) {
 			return { success: false, newBalance: 0, error: 'Player not found' };
 		}
-
 		if (amount <= 0) {
 			return { success: false, newBalance: player.balance, error: 'Amount must be positive' };
 		}
-
-		player.balance += amount;
-		await this.saveGameState();
-
-		// Broadcast update
-		await this.broadcastPlayerStateUpdate(address);
-
-		return { success: true, newBalance: player.balance };
+		await this.updatePlayerRmw(address, async ({ players }) => {
+			const p = players[address];
+			if (!p) return { result: undefined };
+			p.balance += amount;
+			players[address] = p;
+			return { result: { success: true, newBalance: p.balance }, broadcastAddresses: [address] } as any;
+		});
+		const updated = this.gameState.players.get(address)!;
+		return { success: true, newBalance: updated.balance };
 	}
 
 	/**
@@ -727,22 +823,21 @@ private async initializeResourceNodes() {
 		if (!player) {
 			return { success: false, newBalance: 0, error: 'Player not found' };
 		}
-
 		if (amount <= 0) {
 			return { success: false, newBalance: player.balance, error: 'Amount must be positive' };
 		}
-
 		if (player.balance < amount) {
 			return { success: false, newBalance: player.balance, error: 'Insufficient funds' };
 		}
-
-		player.balance -= amount;
-		await this.saveGameState();
-
-		// Broadcast update
-		await this.broadcastPlayerStateUpdate(address);
-
-		return { success: true, newBalance: player.balance };
+		await this.updatePlayerRmw(address, async ({ players }) => {
+			const p = players[address];
+			if (!p) return { result: undefined };
+			p.balance -= amount;
+			players[address] = p;
+			return { result: { success: true, newBalance: p.balance }, broadcastAddresses: [address] } as any;
+		});
+		const updated = this.gameState.players.get(address)!;
+		return { success: true, newBalance: updated.balance };
 	}
 
 	/**
@@ -753,13 +848,13 @@ private async initializeResourceNodes() {
 		if (!player) {
 			return { success: false, error: 'Player not found' };
 		}
-
-		player.ownedDrifters = drifters;
-		await this.saveGameState();
-
-		// Broadcast update
-		await this.broadcastPlayerStateUpdate(address);
-
+		await this.updatePlayerRmw(address, async ({ players }) => {
+			const p = players[address];
+			if (!p) return { result: { success: false, error: 'Player not found' } } as any;
+			p.ownedDrifters = drifters;
+			players[address] = p;
+			return { result: { success: true }, broadcastAddresses: [address] } as any;
+		});
 		return { success: true };
 	}
 
@@ -768,28 +863,21 @@ private async initializeResourceNodes() {
 		if (!player) {
 			return { success: false, error: 'Player not found' };
 		}
-
 		if (player.balance < vehicle.cost) {
 			return { success: false, error: 'Insufficient credits' };
 		}
-
-		player.balance -= vehicle.cost;
-		if (!player.vehicles) {
-			player.vehicles = [];
-		}
-
-		const newVehicleInstance = {
-			instanceId: crypto.randomUUID(),
-			vehicleId: vehicle.id,
-			status: 'idle' as const,
-		};
-
-		player.vehicles.push(newVehicleInstance);
-
-		await this.saveGameState();
-		await this.broadcastPlayerStateUpdate(playerAddress);
-
-		return { success: true, newBalance: player.balance };
+		let newBal = player.balance;
+		await this.updatePlayerRmw(playerAddress, async ({ players }) => {
+			const p = players[playerAddress];
+			if (!p) return { result: { success: false, error: 'Player not found' } } as any;
+			if (!Array.isArray(p.vehicles)) p.vehicles = [] as any;
+			p.balance -= vehicle.cost;
+			newBal = p.balance;
+			p.vehicles.push({ instanceId: crypto.randomUUID(), vehicleId: vehicle.id, status: 'idle' as const });
+			players[playerAddress] = p;
+			return { result: { success: true, newBalance: p.balance }, broadcastAddresses: [playerAddress] } as any;
+		});
+		return { success: true, newBalance: newBal };
 	}
 
 	// =============================================================================
@@ -861,29 +949,52 @@ private async initializeResourceNodes() {
 			const now = new Date();
 			const completion = new Date(now.getTime() + durationMs);
 
-			// Create mission
-			const missionId = `mission-${crypto.randomUUID()}`;
-			const mission: Mission = {
-				id: missionId,
-				type: 'combat',
-				playerAddress,
-				drifterIds,
-				vehicleInstanceId: vehicleInstanceId || null,
-				targetMonsterId,
-				startTime: now,
-				completionTime: completion,
-				status: 'active',
-				rewards: { credits: 0, resources: {} },
-			};
-
-			this.gameState.missions.set(missionId, mission);
-			player.activeMissions = [...(player.activeMissions || []), missionId];
-
-			await this.saveGameState();
-			await this.broadcastWorldStateUpdate();
-			await this.broadcastMissionUpdate({ mission });
-			await this.broadcastPlayerStateUpdate(playerAddress);
-			await this.broadcastLeaderboardsUpdate();
+			// Create and persist mission via RMW
+			const rmwRes = await this.runRmw({
+				read: ['players', 'missions', 'worldMetrics'],
+				async mutate(draft) {
+					const playersObj = draft.players as any as Record<string, PlayerProfile>;
+					const missionsObj = draft.missions as any as Record<string, Mission>;
+					const world = draft.worldMetrics as any as GameState['worldMetrics'];
+					const p = playersObj[playerAddress];
+					if (!p) return { result: { success: false, error: 'Player not found' } } as any;
+					const missionId = `mission-${crypto.randomUUID()}`;
+					const mission: Mission = {
+						id: missionId,
+						type: 'combat',
+						playerAddress,
+						drifterIds,
+						vehicleInstanceId: vehicleInstanceId || null,
+						targetMonsterId,
+						startTime: now,
+						completionTime: completion,
+						status: 'active',
+						rewards: { credits: 0, resources: {} },
+					};
+					missionsObj[missionId] = mission;
+					p.activeMissions = [...(p.activeMissions || []), missionId];
+					(draft as any).players = playersObj;
+					(draft as any).missions = missionsObj;
+					world.totalActiveMissions = (world.totalActiveMissions || 0) + 1;
+					world.lastUpdate = new Date();
+					(draft as any).worldMetrics = world;
+					return {
+						result: { success: true, missionId } as any,
+						broadcast: { jobs: [
+							{ kind: 'player_state', addresses: [playerAddress] },
+							{ kind: 'world_state' },
+							{ kind: 'mission_update', missions: [mission] },
+						] },
+						event: { op: 'mission_started_combat', details: { missionId } },
+					};
+				},
+				event: { op: 'mission_started_combat' },
+			});
+			if (!rmwRes.result || !(rmwRes.result as any).success) {
+				return { success: false, error: 'Failed to start monster combat mission' };
+			}
+			const missionId = (rmwRes.result as any).missionId as string;
+			const mission: Mission = this.gameState.missions.get(missionId)!;
 
 			await this.addEvent({
 				type: 'mission_started',
@@ -913,140 +1024,121 @@ private async initializeResourceNodes() {
 			`[GameDO] Starting mission - Player: ${playerAddress}, Type: ${missionType}, Drifters: [${drifterIds.join(', ')}], Target: ${targetNodeId}, VehicleInstance: ${vehicleInstanceId}`,
 		);
 
-		const player = this.gameState.players.get(playerAddress);
-		if (!player) {
-			console.error(`[GameDO] Player not found: ${playerAddress}`);
-			return { success: false, error: 'Player not found' };
+		// Compose and persist mission + player changes atomically via RMW
+		const getEff = this.getEffectiveDrifterStats.bind(this);
+		const res = await this.runRmw({
+			read: ['players', 'missions', 'worldMetrics', 'resourceNodes'],
+			async mutate(draft) {
+				const playersObj = draft.players as any as Record<string, PlayerProfile>;
+				const missionsObj = draft.missions as any as Record<string, Mission>;
+				const world = draft.worldMetrics as any as GameState['worldMetrics'];
+				const nodes = draft.resourceNodes as any as Record<string, ResourceNode>;
+				const player = playersObj[playerAddress];
+				if (!player) {
+					return { result: { success: false, error: 'Player not found' } } as any;
+				}
+				if (!drifterIds || drifterIds.length === 0) {
+					return { result: { success: false, error: 'At least one drifter is required' } } as any;
+				}
+				for (const drifterId of drifterIds) {
+					const owns = (player.ownedDrifters || []).some((d) => d.tokenId === drifterId);
+					if (!owns) {
+						return { result: { success: false, error: `You don't own Drifter #${drifterId}` } } as any;
+					}
+				}
+				// Check drifter availability across active missions
+				const activeDrifters = new Set<number>();
+				for (const m of Object.values(missionsObj)) {
+					if (m.status === 'active') m.drifterIds.forEach((id) => activeDrifters.add(id));
+				}
+				const busy = drifterIds.filter((id) => activeDrifters.has(id));
+				if (busy.length > 0) {
+					const busyList = busy.map((id) => `#${id}`).join(', ');
+					return { result: { success: false, error: `Drifter${busy.length > 1 ? 's' : ''} ${busyList} ${busy.length > 1 ? 'are' : 'is'} currently on another mission` } } as any;
+				}
+				// Vehicle validation
+				let vehicle: ReturnType<typeof getVehicle> | undefined;
+				let vehicleInstance: { instanceId: string; vehicleId: string; status: 'idle' | 'on_mission' } | undefined;
+				if (vehicleInstanceId) {
+					vehicleInstance = (player.vehicles || []).find((v) => v.instanceId === vehicleInstanceId);
+					if (!vehicleInstance) {
+						return { result: { success: false, error: 'Vehicle not found or not owned by player' } } as any;
+					}
+					if (vehicleInstance.status !== 'idle') {
+						return { result: { success: false, error: 'Vehicle is currently on another mission' } } as any;
+					}
+					vehicle = getVehicle(vehicleInstance.vehicleId);
+					if (!vehicle) {
+						return { result: { success: false, error: 'Vehicle data not found' } } as any;
+					}
+					if (drifterIds.length > (vehicle as any).maxDrifters) {
+						return { result: { success: false, error: `Vehicle only has space for ${(vehicle as any).maxDrifters} drifters` } } as any;
+					}
+				}
+				const targetNode = nodes[targetNodeId];
+				if (!targetNode) {
+					return { result: { success: false, error: 'Target node not found' } } as any;
+				}
+				const now = new Date();
+				const teamStats: DrifterStats[] = [];
+				for (const drifterId of drifterIds) {
+					const drifterProfile = getDrifterStats(drifterId);
+					if (drifterProfile) {
+						const eff = getEff(drifterId, drifterProfile);
+						teamStats.push(eff);
+					}
+				}
+				if (vehicle) {
+					teamStats.push({ combat: (vehicle as any).combat ?? 0, scavenging: (vehicle as any).scavenging ?? 0, tech: (vehicle as any).tech ?? 0, speed: (vehicle as any).speed });
+				}
+				const duration = calculateMissionDuration(targetNode, teamStats, vehicle || undefined, missionType);
+				const rewards = calculateMissionRewards(targetNode, missionType, duration, teamStats);
+				const missionId = crypto.randomUUID();
+				const mission: Mission = {
+					id: missionId,
+					type: missionType,
+					playerAddress,
+					drifterIds,
+					vehicleInstanceId: vehicleInstanceId ?? null,
+					targetNodeId,
+					startTime: now,
+					completionTime: new Date(now.getTime() + duration),
+					status: 'active',
+					rewards,
+				};
+				missionsObj[missionId] = mission;
+				player.activeMissions = [...(player.activeMissions || []), missionId];
+				if (vehicleInstance) {
+					vehicleInstance.status = 'on_mission';
+				}
+				world.totalActiveMissions = (world.totalActiveMissions || 0) + 1;
+				world.lastUpdate = new Date();
+				(draft as any).players = playersObj;
+				(draft as any).missions = missionsObj;
+				(draft as any).worldMetrics = world;
+				// Broadcast and return missionId
+				return {
+					result: { success: true, missionId } as any,
+					broadcast: {
+						jobs: [
+							{ kind: 'player_state', addresses: [playerAddress] },
+							{ kind: 'world_state' },
+							{ kind: 'mission_update', missions: [mission] },
+						],
+					},
+					event: { op: 'mission_started', details: { missionId, playerAddress } },
+				};
+			},
+			event: { op: 'mission_started' },
+		});
+
+		if (!res.result || !(res.result as any).success) {
+			return (res.result as any) || { success: false, error: 'Failed to start mission' };
 		}
 
-		// Validate drifter IDs
-		if (!drifterIds || drifterIds.length === 0) {
-			return { success: false, error: 'At least one drifter is required' };
-		}
-
-		// Check all drifters are owned by the player
-		for (const drifterId of drifterIds) {
-			const drifter = player.ownedDrifters.find((d) => d.tokenId === drifterId);
-			if (!drifter) {
-				console.error(`[GameDO] Player ${playerAddress} does not own drifter ${drifterId}`);
-				return { success: false, error: `You don't own Drifter #${drifterId}` };
-			}
-		}
-
-		// Check no drifters are currently on active missions
-		const activeDrifters = new Set<number>();
-		for (const mission of this.gameState.missions.values()) {
-			if (mission.status === 'active') {
-				mission.drifterIds.forEach((id) => activeDrifters.add(id));
-			}
-		}
-
-		const busyDrifters = drifterIds.filter((id) => activeDrifters.has(id));
-		if (busyDrifters.length > 0) {
-			console.error(`[GameDO] Drifters currently on missions: [${busyDrifters.join(', ')}]`);
-			const busyList = busyDrifters.map((id) => `#${id}`).join(', ');
-			return {
-				success: false,
-				error: `Drifter${busyDrifters.length > 1 ? 's' : ''} ${busyList} ${busyDrifters.length > 1 ? 'are' : 'is'} currently on another mission`,
-			};
-		}
-
-		console.log(`[GameDO] All ${drifterIds.length} drifter(s) are available for mission`);
-
-		// Validate vehicle (optional)
-		let vehicle: ReturnType<typeof getVehicle> | undefined;
-		let vehicleInstance: { instanceId: string; vehicleId: string; status: 'idle' | 'on_mission' } | undefined;
-		if (vehicleInstanceId) {
-			vehicleInstance = player.vehicles.find((v) => v.instanceId === vehicleInstanceId);
-			if (!vehicleInstance) {
-				return { success: false, error: 'Vehicle not found or not owned by player' };
-			}
-
-			if (vehicleInstance.status !== 'idle') {
-				return { success: false, error: 'Vehicle is currently on another mission' };
-			}
-
-			vehicle = getVehicle(vehicleInstance.vehicleId);
-			if (!vehicle) {
-				return { success: false, error: 'Vehicle data not found' };
-			}
-
-			if (drifterIds.length > vehicle.maxDrifters) {
-				return { success: false, error: `Vehicle only has space for ${vehicle.maxDrifters} drifters` };
-			}
-		}
-
-		// Validate target node exists
-		const targetNode = this.gameState.resourceNodes.get(targetNodeId);
-		if (!targetNode) {
-			return { success: false, error: 'Target node not found' };
-		}
-
-		// Create mission
-		const missionId = crypto.randomUUID();
-		const now = new Date();
-
-		// Load drifter stats for team-aware calculations
-		const teamStats: DrifterStats[] = [];
-		for (const drifterId of drifterIds) {
-			const drifterProfile = getDrifterStats(drifterId);
-			if (drifterProfile) {
-				const effective = this.getEffectiveDrifterStats(drifterId, {
-					combat: drifterProfile.combat,
-					scavenging: drifterProfile.scavenging,
-					tech: drifterProfile.tech,
-					speed: drifterProfile.speed,
-				});
-				teamStats.push(effective);
-			}
-		}
-
-		// If a vehicle is used, treat its bonuses as an additional team member for reward calculations
-		if (vehicle) {
-			teamStats.push({
-				combat: (vehicle as any).combat ?? 0,
-				scavenging: (vehicle as any).scavenging ?? 0,
-				tech: (vehicle as any).tech ?? 0,
-				speed: vehicle.speed,
-			});
-		}
-
-		// Calculate mission duration and rewards using shared utilities with drifter stats
-		const duration = calculateMissionDuration(targetNode, teamStats, vehicle || undefined, missionType);
-		console.log(
-			`[GameDO] duration: ${duration} (with ${teamStats.length} drifter/vehicle entries and vehicle ${vehicle ? vehicle.name : 'On Foot'})`,
-		);
-		const rewards = calculateMissionRewards(targetNode, missionType, duration, teamStats);
-		console.log(`[GameDO] rewards: ${rewards}`);
-
-		console.log(
-			`[GameDO] Mission duration calculated: ${duration / 1000 / 60} minutes based on distance to node at (${targetNode.coordinates.x}, ${targetNode.coordinates.y})`,
-		);
-		console.log(
-			`[GameDO] Mission rewards calculated: ${rewards.credits} credits, ${Object.values(rewards.resources)[0]} ${Object.keys(rewards.resources)[0]}`,
-		);
-
-		const mission: Mission = {
-			id: missionId,
-			type: missionType,
-			playerAddress,
-			drifterIds,
-			vehicleInstanceId: vehicleInstanceId ?? null,
-			targetNodeId,
-			startTime: now,
-			completionTime: new Date(now.getTime() + duration),
-			status: 'active',
-			rewards,
-		};
-
-		// Add to game state
-		this.gameState.missions.set(missionId, mission);
-		player.activeMissions.push(missionId);
-		if (vehicleInstance) {
-			vehicleInstance.status = 'on_mission';
-		}
-
-		// Log event: mission started
+		// Log event separate (append to eventLog)
+		const missionId = (res.result as any).missionId as string;
+		const targetNode = this.gameState.resourceNodes.get(targetNodeId)!;
 		await this.addEvent({
 			type: 'mission_started',
 			playerAddress,
@@ -1055,24 +1147,9 @@ private async initializeResourceNodes() {
 			resourceType: targetNode.type,
 			rarity: targetNode.rarity,
 			drifterIds,
-			vehicleName: vehicle ? ((vehicle as any).name ?? 'On Foot') : 'On Foot',
-			message: `${playerAddress.slice(0, 6)}… started ${missionType.toUpperCase()} at ${targetNode.type.toUpperCase()} (${targetNode.rarity.toUpperCase()}) node with drifters ${drifterIds.map((id) => `#${id}`).join(', ')} ${vehicle ? `in ${(vehicle as any).name}` : 'on foot'}`,
+			vehicleName: vehicleInstanceId ? ((getVehicle(this.gameState.players.get(playerAddress)?.vehicles.find(v=>v.instanceId===vehicleInstanceId)?.vehicleId||'') as any)?.name || 'On Foot') : 'On Foot',
+			message: `${playerAddress.slice(0, 6)}… started ${missionType.toUpperCase()} at ${targetNode.type.toUpperCase()} (${targetNode.rarity.toUpperCase()}) node with drifters ${drifterIds.map((id) => `#${id}`).join(', ')} ${vehicleInstanceId ? 'in vehicle' : 'on foot'}`,
 		});
-
-		console.log(`[GameDO] Mission ${missionId} created and added to player ${playerAddress}`);
-		console.log(`[GameDO] Player now has ${player.activeMissions.length} active missions: ${player.activeMissions}`);
-		console.log(`[GameDO] Global missions count: ${this.gameState.missions.size}`);
-
-		// Update world metrics
-		this.gameState.worldMetrics.totalActiveMissions++;
-		this.gameState.worldMetrics.lastUpdate = new Date();
-
-		await this.saveGameState();
-		console.log(`[GameDO] Game state saved after mission creation`);
-
-		// Broadcast updates
-		await this.broadcastPlayerStateUpdate(playerAddress);
-		await this.broadcastWorldStateUpdate();
 
 		return { success: true, missionId };
 	}
@@ -1081,295 +1158,135 @@ private async initializeResourceNodes() {
 	 * Complete a mission
 	 */
 	async completeMission(missionId: string, forceComplete: boolean = false): Promise<{ success: boolean; rewards?: any; error?: string }> {
-		const mission = this.gameState.missions.get(missionId);
-		if (!mission) {
-			return { success: false, error: 'Mission not found' };
-		}
-
-		if (mission.status !== 'active') {
-			return { success: false, error: 'Mission not active' };
-		}
-
-		// Skip time check if forcing completion (for manual testing)
-		if (!forceComplete && new Date() < mission.completionTime) {
-			return { success: false, error: 'Mission not yet complete' };
-		}
-
-		const player = this.gameState.players.get(mission.playerAddress);
-		if (!player) {
-			return { success: false, error: 'Player not found' };
-		}
-
-		// Award rewards
-		player.balance += mission.rewards.credits;
-
-		let totalCombatXpAwarded = 0; // for monster missions
-		let targetMonsterKind: string | undefined; // capture for completion log
-
-		// Branch handling based on target type
-		if (mission.targetMonsterId) {
-			const targetMonsterId = mission.targetMonsterId as string;
-			// Load monsters (read-only here unless we follow legacy path)
-			let monsters = await this.getStoredMonsters();
-			const monster = monsters.find((m) => m.id === targetMonsterId);
-			if (monster) {
-				targetMonsterKind = monster.kind;
-			}
-
-			const engaged = !!mission.engagementApplied;
-			if (engaged) {
-				// Damage was already applied at engagement time; award XP now based on stored damage
-				const dmgStored = Math.max(0, Number(mission.combatDamageDealt) || 0);
-				let xpGain = Math.max(1, Math.floor(dmgStored * 0.25));
-				totalCombatXpAwarded = xpGain * (mission.drifterIds?.length || 0);
-				for (const drifterId of mission.drifterIds) {
-					const { leveled, levelsGained, newLevel } = this.applyXp(drifterId, xpGain);
-					if (leveled) {
-						await this.addEvent({
-							type: 'mission_complete',
-							playerAddress: mission.playerAddress,
-							missionId: mission.id,
-							message: `Drifter #${drifterId} leveled up ${levelsGained} level(s) to ${newLevel}`,
-						});
-						// Notify player's sessions
-						const notif: PendingNotification = {
-							id: crypto.randomUUID(),
-							type: 'drifter_level_up',
-							title: 'Drifter Level Up',
-							message: `Drifter #${drifterId} reached level ${newLevel}! +1 bonus point available.`,
-							timestamp: new Date(),
-							data: { tokenId: drifterId, level: newLevel },
-						};
-						for (const [sessionId, session] of this.webSocketSessions) {
-							if (
-								session.playerAddress === mission.playerAddress &&
-								session.authenticated &&
-								session.websocket.readyState === WebSocket.READY_STATE_OPEN
-							) {
-								this.sendNotificationToSession(sessionId, notif);
+		// Complete mission atomically with RMW where feasible
+		const result = await this.runRmw({
+			read: ['players', 'missions', 'resourceNodes', 'worldMetrics', 'town'],
+			async mutate(draft) {
+				const playersObj = draft.players as any as Record<string, PlayerProfile>;
+				const missionsObj = draft.missions as any as Record<string, Mission>;
+				const nodesObj = draft.resourceNodes as any as Record<string, ResourceNode>;
+				const world = draft.worldMetrics as any as GameState['worldMetrics'];
+				const town = draft.town as TownState;
+				const mission = missionsObj[missionId];
+				if (!mission) return { result: { success: false, error: 'Mission not found' } } as any;
+				if (mission.status !== 'active') return { result: { success: false, error: 'Mission not active' } } as any;
+				if (!forceComplete) {
+					const now = new Date();
+					const end = mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime);
+					if (now < end) return { result: { success: false, error: 'Mission not yet complete' } } as any;
+				}
+				const player = playersObj[mission.playerAddress];
+				if (!player) return { result: { success: false, error: 'Player not found' } } as any;
+				// Credit rewards
+				player.balance = (player.balance || 0) + (mission.rewards?.credits || 0);
+				// Resource node depletion for resource missions
+				if (mission.targetNodeId && !mission.targetMonsterId) {
+					const node = nodesObj[mission.targetNodeId];
+					if (node) {
+						const resourceType = node.type;
+						const req = mission.rewards?.resources?.[resourceType] ?? 0;
+						const actual = Math.min(req, node.currentYield || 0);
+						node.currentYield = Math.max(0, (node.currentYield || 0) - actual);
+						node.depletion = (node.depletion || 0) + actual;
+						node.lastHarvested = new Date();
+						if (node.currentYield <= 0) {
+							node.currentYield = 0;
+							node.isActive = false;
+						}
+						nodesObj[mission.targetNodeId] = node;
+						// Prosperity gain (roughly replicate existing behavior)
+						const mt = mission.type as MissionType;
+						const isResource = mt === 'scavenge' || mt === 'strip_mine';
+						const credits = Math.max(0, mission.rewards?.credits || 0);
+						if (isResource && credits > 0) {
+							const vmLevel = town.attributes['vehicle_market']?.level ?? 0;
+							const wallLevel = town.attributes['perimeter_walls']?.level ?? 0;
+							const { delta } = calculateProsperityGain(credits, mt, vmLevel, wallLevel);
+							if (delta > 0) {
+								town.prosperity = Math.max(0, (town.prosperity || 0) + delta);
 							}
 						}
 					}
 				}
-			} else {
-				if (!monster) {
-					console.error(`[GameDO] Target monster ${targetMonsterId} not found during mission completion`);
-				} else if (monster.state !== 'dead') {
-					// Legacy fallback: apply damage at completion if engagement didn't happen (should be rare after v2)
-					const dStats: DrifterStats[] = [];
-					for (const id of mission.drifterIds) {
-						const base = await getDrifterStats(id, this.env);
-						const eff = this.getEffectiveDrifterStats(id, base);
-						dStats.push({ combat: eff.combat, scavenging: eff.scavenging, tech: eff.tech, speed: eff.speed });
-					}
-					let vehicleDataForDmg: any = undefined;
-					if (mission.vehicleInstanceId) {
-						const vInst = player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
-						if (vInst) {
-							vehicleDataForDmg = getVehicle(vInst.vehicleId);
-						}
-					}
-					const est = estimateMonsterDamage(dStats, vehicleDataForDmg);
-					const variance = 0.15; // ±15% (keep same as client range)
-					const dmg = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
-					// Track combat damage for leaderboards (legacy completion path)
-					this.incrementCombatDamage(mission.playerAddress, dmg);
-					const before = monster.hp;
-					monster.hp = Math.max(0, monster.hp - dmg);
-					const killed = monster.hp <= 0;
-					if (killed) {
-						// Remove the monster entirely when killed
-						monsters = monsters.filter((mm) => mm.id !== monster.id);
-						await this.addEvent({
-							type: 'monster_killed',
-							message: `${monster.kind} killed (damage ${dmg}, hp ${before}→0)`,
-							data: { id: monster.id, kind: monster.kind, damage: dmg },
-						});
-					} else {
-						await this.addEvent({
-							type: 'town_damaged',
-							message: `${monster.kind} damaged for ${dmg} (hp ${before}→${monster.hp})`,
-							data: { id: monster.id, kind: monster.kind, damage: dmg },
-						});
-					}
-					await this.setStoredMonsters(monsters);
-
-					// Award combat XP at 25% of damage (per drifter)
-					let xpGain = Math.max(1, Math.floor(dmg * 0.25));
-					totalCombatXpAwarded = xpGain * (mission.drifterIds?.length || 0);
-					for (const drifterId of mission.drifterIds) {
-						const { leveled, levelsGained, newLevel } = this.applyXp(drifterId, xpGain);
-						if (leveled) {
-							await this.addEvent({
-								type: 'mission_complete',
-								playerAddress: mission.playerAddress,
-								missionId: mission.id,
-								message: `Drifter #${drifterId} leveled up ${levelsGained} level(s) to ${newLevel}`,
-							});
-							// Notify player's sessions
-							const notif: PendingNotification = {
-								id: crypto.randomUUID(),
-								type: 'drifter_level_up',
-								title: 'Drifter Level Up',
-								message: `Drifter #${drifterId} reached level ${newLevel}! +1 bonus point available.`,
-								timestamp: new Date(),
-								data: { tokenId: drifterId, level: newLevel },
-							};
-							for (const [sessionId, session] of this.webSocketSessions) {
-								if (
-									session.playerAddress === mission.playerAddress &&
-									session.authenticated &&
-									session.websocket.readyState === WebSocket.READY_STATE_OPEN
-								) {
-									this.sendNotificationToSession(sessionId, notif);
-								}
-							}
-						}
-					}
+				// Remove from player active missions and mark mission completed
+				player.activeMissions = (player.activeMissions || []).filter((id) => id !== missionId);
+				missionsObj[missionId] = { ...mission, status: 'completed' };
+				// Reset vehicle if any
+				if (mission.vehicleInstanceId) {
+					const v = (player.vehicles || []).find((v) => v.instanceId === mission.vehicleInstanceId);
+					if (v) v.status = 'idle';
 				}
-			}
-		} else {
-			// Deplete resources from target node (resource missions)
-			const node = this.gameState.resourceNodes.get(mission.targetNodeId);
-			if (node) {
-				console.log(`[GameDO] Depleting resources from node ${mission.targetNodeId} (${node.type})`);
-				console.log(`[GameDO] Node before depletion: currentYield=${node.currentYield}, depletion=${node.depletion}`);
+				// Update world metrics
+				world.totalActiveMissions = Math.max(0, (world.totalActiveMissions || 1) - 1);
+				world.totalCompletedMissions = (world.totalCompletedMissions || 0) + 1;
+				world.economicActivity = (world.economicActivity || 0) + (mission.rewards?.credits || 0);
+				world.lastUpdate = new Date();
+				(draft as any).players = playersObj;
+				(draft as any).missions = missionsObj;
+				(draft as any).resourceNodes = nodesObj;
+				(draft as any).worldMetrics = world;
+				(draft as any).town = town;
+				return {
+					result: { success: true, rewards: mission.rewards } as any,
+					broadcast: {
+						jobs: [
+							{ kind: 'player_state', addresses: [mission.playerAddress] },
+							{ kind: 'world_state' },
+							{ kind: 'mission_update', missions: [missionsObj[missionId]] },
+							{ kind: 'leaderboards_update' },
+						],
+					},
+					event: { op: 'mission_completed', details: { missionId, player: mission.playerAddress } },
+				};
+			},
+			event: { op: 'mission_completed' },
+		});
 
-				// Calculate how much resource was extracted
-				const resourceType = node.type;
-				const extractedRequested = mission.rewards.resources[resourceType] ?? 0;
-				const extractedActual = Math.min(extractedRequested, node.currentYield);
-
-				console.log(`[GameDO] Extracting ${extractedActual} units (requested: ${extractedRequested}, available: ${node.currentYield})`);
-
-				// Apply depletion
-				node.currentYield -= extractedActual;
-				node.depletion += extractedActual;
-				node.lastHarvested = new Date();
-
-				// Mark as inactive if fully depleted
-				if (node.currentYield <= 0) {
-					node.currentYield = 0;
-					node.isActive = false;
-					console.log(`[GameDO] Node ${mission.targetNodeId} is now fully depleted and inactive`);
-
-					// Log resource depleted
-				await this.addEvent({
-					type: 'resource_depleted',
-					playerAddress: mission.playerAddress,
-					nodeId: mission.targetNodeId,
-					resourceType: resourceType,
-					rarity: node.rarity,
-					message: `${resourceType.toUpperCase()} (${node.rarity.toUpperCase()}) node depleted by ${mission.playerAddress.slice(0, 6)}…`,
-					data: { x: node.coordinates.x, y: node.coordinates.y },
-				});
-
-					// Add depletion notification to player
-					await this.addNotification(mission.playerAddress, {
-						id: crypto.randomUUID(),
-						type: 'resource_depleted',
-						title: 'Resource Depleted',
-						message: `The ${resourceType} node you were harvesting has been fully depleted.`,
-						timestamp: new Date(),
-						read: false,
-					});
-				}
-
-				console.log(`[GameDO] Node after depletion: currentYield=${node.currentYield}, depletion=${node.depletion}`);
-
-				// Apply Prosperity gain for resource missions (scavenge > strip_mine)
-				try {
-					const mt = mission.type as MissionType;
-					const isResource = mt === 'scavenge' || mt === 'strip_mine';
-					const credits = Math.max(0, mission.rewards?.credits || 0);
-					if (isResource && credits > 0) {
-						const town = await this.getTownState();
-						const vmLevel = town.attributes['vehicle_market']?.level ?? 0;
-						const wallLevel = town.attributes['perimeter_walls']?.level ?? 0;
-						const { delta, base, missionTypeMult, upgradeMult } = calculateProsperityGain(credits, mt, vmLevel, wallLevel);
-						if (delta > 0) {
-							const before = town.prosperity || 0;
-							town.prosperity = Math.max(0, before + delta); // unbounded above
-							await this.setTownState(town);
-							// Track player prosperity contribution for leaderboards
-							this.incrementProsperityFromMissions(mission.playerAddress, delta);
-							await this.addEvent({
-								type: 'town_prosperity_changed',
-								message: `Town Prosperity +${delta.toFixed(2)} → ${Math.round(town.prosperity)}`,
-								data: {
-									missionId: mission.id,
-									missionType: mt,
-									credits,
-									delta: Number(delta.toFixed(3)),
-									oldProsperity: before,
-									newProsperity: town.prosperity,
-									base: Number(base.toFixed(3)),
-									multipliers: {
-										missionTypeMult,
-										upgradeMult,
-										vehicleMarketLevel: vmLevel,
-										perimeterWallsLevel: wallLevel,
-									},
-								},
-							});
-						}
-					}
-				} catch (e) {
-					console.warn('[GameDO] Failed to apply prosperity gain:', e);
-				}
-			} else {
-				console.error(`[GameDO] Target node ${mission.targetNodeId} not found during mission completion`);
-			}
+		if (!result.result || !(result.result as any).success) {
+			return (result.result as any) || { success: false, error: 'Failed to complete mission' };
 		}
 
-		// Remove from active missions
-		const missionIndex = player.activeMissions.indexOf(missionId);
-		if (missionIndex > -1) {
-			player.activeMissions.splice(missionIndex, 1);
-		}
-
-		// Mark mission as completed
-		mission.status = 'completed';
-
-		// Log mission completion
+		// Post-commit: events and XP notifications largely as before (non-persistent effects handled with addEvent and addNotification)
+		const afterMission = this.gameState.missions.get(missionId)!;
+		const afterPlayer = this.gameState.players.get(afterMission.playerAddress)!;
 		await this.addEvent({
 			type: 'mission_complete',
-			playerAddress: mission.playerAddress,
-			missionId: mission.id,
-			nodeId: mission.targetMonsterId ? undefined : mission.targetNodeId,
+			playerAddress: afterMission.playerAddress,
+			missionId: afterMission.id,
+			nodeId: afterMission.targetMonsterId ? undefined : afterMission.targetNodeId,
 			resourceType: undefined as any,
 			rarity: undefined as any,
-			drifterIds: mission.drifterIds,
-			vehicleName: mission.vehicleInstanceId
-				? player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId)
-					? getVehicle(player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId)!.vehicleId)?.name
+			drifterIds: afterMission.drifterIds,
+			vehicleName: afterMission.vehicleInstanceId
+				? afterPlayer.vehicles.find((v) => v.instanceId === afterMission.vehicleInstanceId)
+					? getVehicle(afterPlayer.vehicles.find((v) => v.instanceId === afterMission.vehicleInstanceId)!.vehicleId)?.name
 					: 'On Foot'
 				: 'On Foot',
-			message: `${mission.playerAddress.slice(0, 6)}… completed ${mission.type.toUpperCase()} ${
-				mission.targetMonsterId
+			message: `${afterMission.playerAddress.slice(0, 6)}… completed ${afterMission.type.toUpperCase()} ${
+				afterMission.targetMonsterId
 					? `vs ${targetMonsterKind ?? 'MONSTER'}`
-					: `at ${(this.gameState.resourceNodes.get(mission.targetNodeId!)?.type ?? '').toString().toUpperCase()}`
-			} with drifters ${mission.drifterIds.map((id) => `#${id}`).join(', ')} ${
-				mission.vehicleInstanceId
+					: `at ${(this.gameState.resourceNodes.get(afterMission.targetNodeId!)?.type ?? '').toString().toUpperCase()}`
+			} with drifters ${afterMission.drifterIds.map((id) => `#${id}`).join(', ')} ${
+				afterMission.vehicleInstanceId
 					? `in ${(() => {
-							const vi = player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
+							const vi = afterPlayer.vehicles.find((v) => v.instanceId === afterMission.vehicleInstanceId);
 							return vi ? getVehicle(vi.vehicleId)?.name || 'On Foot' : 'On Foot';
 						})()}`
 					: 'on foot'
-			} ${mission.targetMonsterId ? `(+${totalCombatXpAwarded} XP)` : `(+${mission.rewards.credits} cr)`}`,
+			} ${afterMission.targetMonsterId ? `(+${totalCombatXpAwarded} XP)` : `(+${afterMission.rewards.credits} cr)`}`,
 		});
 
 		// Award XP to participating drifters based on credits earned
-		const xpGain = Math.ceil(mission.rewards.credits / 10);
+		const xpGain = Math.ceil(afterMission.rewards.credits / 10);
 		if (xpGain > 0) {
-			for (const drifterId of mission.drifterIds) {
+			for (const drifterId of afterMission.drifterIds) {
 				const { leveled, levelsGained, newLevel } = this.applyXp(drifterId, xpGain);
 				if (leveled) {
 					// Add event log for level-up
 					await this.addEvent({
 						type: 'mission_complete', // reuse type category for now; message clarifies
-						playerAddress: mission.playerAddress,
-						missionId: mission.id,
+						playerAddress: afterMission.playerAddress,
+						missionId: afterMission.id,
 						message: `Drifter #${drifterId} leveled up ${levelsGained} level(s) to ${newLevel}`,
 					});
 
@@ -1383,8 +1300,8 @@ private async initializeResourceNodes() {
 						data: { tokenId: drifterId, level: newLevel },
 					};
 					for (const [sessionId, session] of this.webSocketSessions) {
-						if (
-							session.playerAddress === mission.playerAddress &&
+if (
+							session.playerAddress === afterMission.playerAddress &&
 							session.authenticated &&
 							session.websocket.readyState === WebSocket.READY_STATE_OPEN
 						) {
@@ -1396,34 +1313,13 @@ private async initializeResourceNodes() {
 		}
 
 		// Update vehicle status (if any)
-		if (mission.vehicleInstanceId) {
-			const vehicleInstance = player.vehicles.find((v) => v.instanceId === mission.vehicleInstanceId);
-			if (vehicleInstance) {
-				vehicleInstance.status = 'idle';
-			}
-		}
-
-		// Update world metrics
-		this.gameState.worldMetrics.totalActiveMissions--;
-		this.gameState.worldMetrics.totalCompletedMissions++;
-		this.gameState.worldMetrics.economicActivity += mission.rewards.credits;
-		this.gameState.worldMetrics.lastUpdate = new Date();
-
-		await this.saveGameState();
-
-		// NOTE: We don't add mission completion to persistent notifications anymore
-		// since we use the real-time notification system instead
-
-		// Broadcast updates
-		await this.broadcastPlayerStateUpdate(mission.playerAddress);
-		await this.broadcastWorldStateUpdate();
-		await this.broadcastLeaderboardsUpdate();
+		// Vehicle and world metrics already updated via RMW above
 
 		// Send mission completion notification to player's sessions
-		const isMonsterMission = !!mission.targetMonsterId;
+		const isMonsterMission = !!afterMission.targetMonsterId;
 		const notifMessage = isMonsterMission
 			? `Combat mission complete! Gained +${totalCombatXpAwarded} XP.`
-			: `Mission completed! Earned ${mission.rewards.credits} credits.`;
+			: `Mission completed! Earned ${afterMission.rewards.credits} credits.`;
 		const notification: PendingNotification = {
 			id: crypto.randomUUID(),
 			type: 'mission_complete',
@@ -1435,7 +1331,7 @@ private async initializeResourceNodes() {
 		// Send to all sessions for this player
 		for (const [sessionId, session] of this.webSocketSessions) {
 			if (
-				session.playerAddress === mission.playerAddress &&
+				session.playerAddress === afterMission.playerAddress &&
 				session.authenticated &&
 				session.websocket.readyState === WebSocket.READY_STATE_OPEN
 			) {
@@ -1443,7 +1339,7 @@ private async initializeResourceNodes() {
 			}
 		}
 
-		return { success: true, rewards: mission.rewards };
+		return { success: true, rewards: afterMission.rewards };
 	}
 
 	/**
@@ -1475,18 +1371,19 @@ private async initializeResourceNodes() {
 
 		let resetCount = 0;
 		const stuckVehicles: string[] = [];
-		for (const v of player.vehicles || []) {
-			if (v.status === 'on_mission' && !activeVehicleIds.has(v.instanceId)) {
-				v.status = 'idle';
-				resetCount++;
-				stuckVehicles.push(v.instanceId);
+		await this.updatePlayerRmw(playerAddress, async ({ players }) => {
+			const p = players[playerAddress];
+			if (!p) return { result: { success: false, resetCount: 0, stuckVehicles: [] } } as any;
+			for (const v of p.vehicles || []) {
+				if (v.status === 'on_mission' && !activeVehicleIds.has(v.instanceId)) {
+					v.status = 'idle';
+					resetCount++;
+					stuckVehicles.push(v.instanceId);
+				}
 			}
-		}
-
-		if (resetCount > 0) {
-			await this.saveGameState();
-			await this.broadcastPlayerStateUpdate(playerAddress);
-		}
+			players[playerAddress] = p;
+			return { result: { success: true, resetCount, stuckVehicles }, broadcastAddresses: resetCount > 0 ? [playerAddress] : [] } as any;
+		});
 
 		return { success: true, resetCount, stuckVehicles };
 	}
@@ -1524,8 +1421,13 @@ private async initializeResourceNodes() {
 		// Clean up orphaned mission IDs from player profile
 		if (orphanedMissionIds.length > 0) {
 			console.log(`[GameDO] Cleaning up ${orphanedMissionIds.length} orphaned missions from player ${address}`);
-			player.activeMissions = player.activeMissions.filter((id) => !orphanedMissionIds.includes(id));
-			await this.saveGameState();
+			await this.updatePlayerRmw(address, async ({ players }) => {
+				const p = players[address];
+				if (!p) return {} as any;
+				p.activeMissions = p.activeMissions.filter((id) => !orphanedMissionIds.includes(id));
+				players[address] = p;
+				return { broadcastAddresses: [address] } as any;
+			});
 		}
 
 		console.log(`[GameDO] Returning ${missions.length} missions for player ${address}`);
@@ -1540,26 +1442,23 @@ private async initializeResourceNodes() {
 	 * Add notification for player
 	 */
 	async addNotification(address: string, notification: NotificationMessage): Promise<{ success: boolean; error?: string }> {
-		let notifications = this.gameState.notifications.get(address) || [];
-
-		// Add timestamp if not provided
+		// Ensure timestamp
 		if (!notification.timestamp) {
 			notification.timestamp = new Date();
 		}
-
-		notifications.push(notification);
-
-		// Keep only latest 50 notifications
-		if (notifications.length > 50) {
-			notifications = notifications.slice(-50);
-		}
-
-		this.gameState.notifications.set(address, notifications);
-		await this.saveGameState();
-
-		// Broadcast update
-		await this.broadcastPlayerStateUpdate(address);
-
+		await this.runRmw({
+			read: ['notifications'],
+			async mutate(draft) {
+				const map: Record<string, NotificationMessage[]> = (draft as any).notifications || {};
+				const list = Array.isArray(map[address]) ? map[address].slice() : [];
+				list.push(notification);
+				const trimmed = list.length > 50 ? list.slice(-50) : list;
+				map[address] = trimmed;
+				(draft as any).notifications = map;
+				return { broadcast: { jobs: [{ kind: 'player_state', addresses: [address] }] }, event: { op: 'notification_add' } };
+			},
+			event: { op: 'notification_add' },
+		});
 		return { success: true };
 	}
 
@@ -1884,27 +1783,18 @@ private async performResourceManagement() {
 			}
 		}
 
-		// 6. Update world metrics and save
-		this.gameState.worldMetrics.lastUpdate = now;
-
+// 6. Update world metrics handled in RMW path above
 		// 7. Attempt monster spawn based on cadence and cap (scaffold)
 		const maybeSpawned = await this.maybeSpawnMonster(now, town.prosperity);
 		if (maybeSpawned) {
-			changesMade = true;
+			// Broadcast world if monsters changed
+			await this.broadcastWorldStateUpdate();
 		}
 
-		if (changesMade) {
-			await this.pruneResourceNodesToCap(/*broadcast*/ false);
-			// Save only resource-related state to avoid clobbering missions on fresh instances
-			await this.saveResourceState();
-			this.resLog('[Res] perform: after save size/sample', { size: this.gameState.resourceNodes.size, sample: this.sampleResourceIds() });
-			await this.broadcastWorldStateUpdate();
-			await this.broadcastLeaderboardsUpdate();
-			console.log('[GameDO] Resource degradation cycle completed with changes');
-		} else {
-			this.resLog('[Res] perform: no changes size/sample', { size: this.gameState.resourceNodes.size, sample: this.sampleResourceIds() });
-			console.log('[GameDO] Resource degradation cycle completed with no changes needed');
-		}
+		// Prune to cap after each resource cycle
+		await this.pruneResourceNodesToCap(/*broadcast*/ true);
+		this.resLog('[Res] perform: after save size/sample', { size: this.gameState.resourceNodes.size, sample: this.sampleResourceIds() });
+		console.log('[GameDO] Resource degradation cycle completed');
 	}
 
 	/** Ensure in-memory resource nodes are loaded from storage before any tick runs */
@@ -2110,17 +2000,6 @@ private async performResourceManagement() {
 	/**
 	 * Persist only resource-related state for resource ticks to avoid overwriting missions.
 	 */
-	private async saveResourceState() {
-		try {
-			await Promise.all([
-				this.ctx.storage.put('resourceNodes', Object.fromEntries(this.gameState.resourceNodes)),
-				this.ctx.storage.put('worldMetrics', this.gameState.worldMetrics),
-			]);
-			console.log('[GameDO] Resource state saved');
-		} catch (e) {
-			console.error('[GameDO] Error saving resource state:', e);
-		}
-	}
 
 	/** Collect node IDs referenced by active missions to protect them from pruning */
 	private getLockedNodeIdsForActiveMissions(): Set<string> {
@@ -2134,47 +2013,52 @@ private async performResourceManagement() {
 	}
 
 	/** Prune stored nodes down to RESOURCE_NODE_CAP, keeping active-mission nodes and highest currentYield */
-	private async pruneResourceNodesToCap(broadcast: boolean = true): Promise<{ pruned: number; total: number }> {
-		const total = this.gameState.resourceNodes.size;
-		if (total <= RESOURCE_NODE_CAP) {
-			return { pruned: 0, total };
+private async pruneResourceNodesToCap(broadcast: boolean = true): Promise<{ pruned: number; total: number }> {
+		// Fast path with in-memory check
+		if (this.gameState.resourceNodes.size <= RESOURCE_NODE_CAP) {
+			return { pruned: 0, total: this.gameState.resourceNodes.size };
 		}
-		const locked = this.getLockedNodeIdsForActiveMissions();
-		const keepBudgetForUnlocked = Math.max(0, RESOURCE_NODE_CAP - locked.size);
-		if (locked.size > RESOURCE_NODE_CAP) {
-			console.warn(
-				`[GameDO] Locked nodes (${locked.size}) exceed cap (${RESOURCE_NODE_CAP}); will not prune locked nodes. No new nodes will spawn until below cap.`,
-			);
-		}
-		// Build arrays
-		const entries: Array<{ id: string; node: ResourceNode }> = Array.from(this.gameState.resourceNodes.entries()).map(
-			([id, node]) => ({ id, node }),
-		);
-		const lockedEntries = entries.filter((e) => locked.has(e.id));
-		const unlockedEntries = entries.filter((e) => !locked.has(e.id));
-		// Sort unlocked by currentYield desc, tie-break by baseYield desc
-		unlockedEntries.sort((a, b) => {
-			if (b.node.currentYield !== a.node.currentYield) return b.node.currentYield - a.node.currentYield;
-			return b.node.baseYield - a.node.baseYield;
-		});
-		const keptUnlocked = unlockedEntries.slice(0, keepBudgetForUnlocked);
-		const keptSet = new Set<string>([...lockedEntries.map((e) => e.id), ...keptUnlocked.map((e) => e.id)]);
 		let pruned = 0;
-		for (const e of entries) {
-			if (!keptSet.has(e.id)) {
-				this.gameState.resourceNodes.delete(e.id);
-				pruned++;
-			}
-		}
+		await this.runRmw({
+			read: ['resourceNodes', 'missions'],
+			async mutate(draft) {
+				const nodesObj = draft.resourceNodes as any as Record<string, ResourceNode>;
+				const missionsObj = draft.missions as any as Record<string, Mission>;
+				const locked = new Set<string>();
+				for (const m of Object.values(missionsObj)) {
+					if ((m as any).status === 'active' && (m as any).targetNodeId) locked.add((m as any).targetNodeId);
+				}
+				const total = Object.keys(nodesObj).length;
+				if (total <= RESOURCE_NODE_CAP) {
+					return { result: { pruned: 0, total } } as any;
+				}
+				const keepBudgetForUnlocked = Math.max(0, RESOURCE_NODE_CAP - locked.size);
+				const entries = Object.entries(nodesObj).map(([id, node]) => ({ id, node }));
+				const lockedEntries = entries.filter((e) => locked.has(e.id));
+				const unlockedEntries = entries.filter((e) => !locked.has(e.id));
+				unlockedEntries.sort((a, b) => {
+					if (b.node.currentYield !== a.node.currentYield) return b.node.currentYield - a.node.currentYield;
+					return b.node.baseYield - a.node.baseYield;
+				});
+				const keptUnlocked = unlockedEntries.slice(0, keepBudgetForUnlocked);
+				const keptSet = new Set<string>([...lockedEntries.map((e) => e.id), ...keptUnlocked.map((e) => e.id)]);
+				for (const e of entries) {
+					if (!keptSet.has(e.id)) {
+						delete nodesObj[e.id];
+						pruned++;
+					}
+				}
+				(draft as any).resourceNodes = nodesObj;
+				return {
+					result: { pruned, total: Object.keys(nodesObj).length } as any,
+					broadcast: broadcast ? { jobs: [{ kind: 'world_state' }] } : { jobs: [] },
+					event: { op: 'prune_resource_nodes', details: { pruned, cap: RESOURCE_NODE_CAP } },
+				};
+			},
+			event: { op: 'prune_resource_nodes' },
+		});
 		if (pruned > 0) {
-			await this.ctx.storage.put('resourceNodes', Object.fromEntries(this.gameState.resourceNodes));
-			await this.addEvent({
-				type: 'node_removed',
-				message: `Pruned ${pruned} resource nodes to enforce cap ${RESOURCE_NODE_CAP}`,
-			});
-			if (broadcast) {
-				await this.broadcastWorldStateUpdate();
-			}
+			await this.addEvent({ type: 'node_removed', message: `Pruned ${pruned} resource nodes to enforce cap ${RESOURCE_NODE_CAP}` });
 		}
 		return { pruned, total: this.gameState.resourceNodes.size };
 	}
@@ -2182,8 +2066,7 @@ private async performResourceManagement() {
 	/** Debug helper to trigger pruning */
 	public async triggerPruneResourceNodes(): Promise<{ success: boolean; pruned: number; total: number; cap: number }> {
 		try {
-			const res = await this.pruneResourceNodesToCap(true);
-			await this.saveGameState();
+const res = await this.pruneResourceNodesToCap(true);
 			return { success: true, pruned: res.pruned, total: this.gameState.resourceNodes.size, cap: RESOURCE_NODE_CAP };
 		} catch (e) {
 			console.error('[GameDO] triggerPruneResourceNodes error:', e);
@@ -2293,8 +2176,16 @@ private async performResourceManagement() {
 		dp.unspentPoints -= 1;
 		dp.bonuses[attribute] = (dp.bonuses[attribute] || 0) + 1;
 		this.gameState.drifterProgress.set(this.keyFor(tokenId), dp);
-		await this.saveGameState();
-		await this.broadcastPlayerStateUpdate(requestor);
+		await this.runRmw({
+			read: ['drifterProgress'],
+			async mutate(draft) {
+				const obj = draft.drifterProgress as any as Record<string, DrifterProgress>;
+				obj[String(tokenId)] = dp;
+				(draft as any).drifterProgress = obj;
+				return { broadcast: { jobs: [{ kind: 'player_state', addresses: [requestor] }] }, event: { op: 'drifter_progress_update' } };
+			},
+			event: { op: 'drifter_progress_update' },
+		});
 		return { success: true, progress: dp };
 	}
 
@@ -2381,8 +2272,14 @@ private async performResourceManagement() {
 		};
 	}
 
-	private async setTownState(state: TownState) {
-		await this.ctx.storage.put('town', state);
+private async setTownState(state: TownState) {
+		// Funnel through RMW to adhere to the new pattern
+		await this.updateTownRmw(async ({ town }) => {
+			// Replace entire town state
+			(town as any).prosperity = state.prosperity;
+			(town as any).attributes = state.attributes as any;
+			return { broadcastWorld: true } as any;
+		});
 	}
 
 	async getTownState(): Promise<TownState> {
@@ -2441,11 +2338,17 @@ private async performResourceManagement() {
 				}
 			}
 
-			// Debit credits up-front
-			player.balance -= remaining;
+			// Debit credits up-front via RMW
+			await this.updatePlayerRmw(playerAddress, async ({ players }) => {
+				const p = players[playerAddress];
+				if (!p) return { result: { success: false, error: 'Player not found' } } as any;
+				p.balance -= remaining;
+				players[playerAddress] = p;
+				return { result: undefined, broadcastAddresses: [playerAddress] } as any;
+			});
 
 			// Track full contribution amount toward upgrade credits leaderboard
-			this.incrementUpgradeCredits(playerAddress, amountCredits);
+			await this.incrementUpgradeCredits(playerAddress, amountCredits);
 
 			// Walls: repair HP first (if applicable)
 			if (attribute === 'perimeter_walls') {
@@ -2484,15 +2387,14 @@ private async performResourceManagement() {
 				}
 			}
 
-			// Persist and broadcast
-			// Ensure walls have consistent maxHp when level 0 → allow 0
-			town.attributes[attribute] = attr;
-			await this.setTownState(town);
-			await this.saveGameState();
-			await this.broadcastWorldStateUpdate();
-			await this.broadcastPlayerStateUpdate(playerAddress);
+			// Persist and broadcast via RMW
+			await this.updateTownRmw(async ({ town: t }) => {
+				(t.attributes as any)[attribute] = attr;
+				return { result: undefined, broadcastWorld: true } as any;
+			});
 
-			return { success: true, town, newBalance: player.balance };
+			const p2 = this.gameState.players.get(playerAddress)!;
+			return { success: true, town, newBalance: p2.balance };
 		} catch (err) {
 			console.error('[GameDO] contributeToTown error:', err);
 			return { success: false, error: 'Contribution failed' };
@@ -2504,8 +2406,12 @@ private async performResourceManagement() {
 		return Array.isArray(raw) ? raw : [];
 	}
 
-	private async setStoredMonsters(list: Monster[]) {
-		await this.ctx.storage.put('monsters', list);
+private async setStoredMonsters(list: Monster[]) {
+		await this.updateMonstersRmw(async ({ monsters }) => {
+			// Replace array contents in-place to ensure draft is updated
+			(monsters as any).splice(0, (monsters as any).length, ...(list as any));
+			return { broadcastWorld: true } as any;
+		});
 	}
 
 	async getMonsters(): Promise<Monster[]> {
@@ -2595,7 +2501,7 @@ private async performResourceManagement() {
 					const variance = 0.15; // ±15%
 					dmgApplied = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
 					// Track combat damage for leaderboards (engagement path)
-					this.incrementCombatDamage(mission.playerAddress, dmgApplied);
+await this.incrementCombatDamage(mission.playerAddress, dmgApplied);
 					const before = monster.hp;
 					monster.hp = Math.max(0, (monster.hp || 0) - dmgApplied);
 					killed = monster.hp <= 0;
@@ -2620,21 +2526,21 @@ private async performResourceManagement() {
 					dmgApplied = 0;
 				}
 
-				// Persist engagement state to mission and recompute return leg
-				mission.engagementApplied = true;
-				mission.combatDamageDealt = dmgApplied;
-				mission.battleLocation = battleCoords;
-
-				const returnMs = calculateOneWayTravelDuration(battleCoords as any, dStats, vehicleData as any);
-				mission.completionTime = new Date(now.getTime() + returnMs);
+				// Persist engagement state to mission and recompute return leg using RMW
+				const completionTime = new Date(now.getTime() + calculateOneWayTravelDuration(battleCoords as any, dStats, vehicleData as any));
+				await this.updateMissionsRmw(async ({ missions }) => {
+					const m = missions[mission.id];
+					if (!m) return {} as any;
+					(m as any).engagementApplied = true;
+					(m as any).combatDamageDealt = dmgApplied;
+					(m as any).battleLocation = battleCoords;
+					(m as any).completionTime = completionTime;
+					return { missionBroadcast: [m] } as any;
+				});
 				changed = true;
-
-				// Broadcast mission update (and world after monster HP change)
-				await this.broadcastMissionUpdate({ mission });
 			}
 
 			if (changed) {
-				await this.saveGameState();
 				await this.broadcastWorldStateUpdate();
 				await this.broadcastLeaderboardsUpdate();
 			}
@@ -2700,78 +2606,68 @@ private async performResourceManagement() {
 					changed = true;
 				}
 			}
-			if (changed) {
-				// Persist monster changes
-				await this.setStoredMonsters(monsters);
-				await this.ctx.storage.put('lastMonsterMoveAt', now.toISOString());
+				if (changed) {
+					// Persist monster changes
+					await this.setStoredMonsters(monsters);
+					await this.ctx.storage.put('lastMonsterMoveAt', now.toISOString());
 
-				// Recalculate and potentially shrink completionTime for active combat missions targeting moved monsters
-				let missionsAdjusted = 0;
-				for (const mission of this.gameState.missions.values()) {
-					const targetMonsterId = (mission as any).targetMonsterId as string | undefined;
-					if (!targetMonsterId) {
-						continue;
-					}
-					if (mission.status !== 'active') {
-						continue;
-					}
-					// Do not adjust timing after engagement has already occurred
-					if ((mission as any).engagementApplied) {
-						continue;
-					}
-					const monsterNow = monsters.find((mm) => mm.id === targetMonsterId);
-					if (!monsterNow) {
-						continue; // Monster may have been killed
-					}
-					// Only adjust for traveling/attacking monsters
-					if (monsterNow.state !== 'traveling' && monsterNow.state !== 'attacking') {
-						continue;
-					}
-					try {
-						// Build team stats and vehicle for speed
-						const player = this.gameState.players.get(mission.playerAddress);
-						let vehicleData: any = undefined;
-						if (mission.vehicleInstanceId && player) {
-							const vInst = player.vehicles?.find((v) => v.instanceId === mission.vehicleInstanceId) || null;
-							if (vInst) {
-								vehicleData = getVehicle(vInst.vehicleId);
+					// Recalculate and potentially shrink completionTime for active combat missions targeting moved monsters
+					const adjustList: { id: string; newEnd: number }[] = [];
+					for (const mission of this.gameState.missions.values()) {
+						const targetMonsterId = (mission as any).targetMonsterId as string | undefined;
+						if (!targetMonsterId) continue;
+						if (mission.status !== 'active') continue;
+						if ((mission as any).engagementApplied) continue;
+						const monsterNow = monsters.find((mm) => mm.id === targetMonsterId);
+						if (!monsterNow) continue;
+						if (monsterNow.state !== 'traveling' && monsterNow.state !== 'attacking') continue;
+						try {
+							const player = this.gameState.players.get(mission.playerAddress);
+							let vehicleData: any = undefined;
+							if (mission.vehicleInstanceId && player) {
+								const vInst = player.vehicles?.find((v) => v.instanceId === mission.vehicleInstanceId) || null;
+								if (vInst) vehicleData = getVehicle(vInst.vehicleId);
 							}
-						}
-						const dStats: DrifterStats[] = [];
-						for (const id of mission.drifterIds) {
-							const base = await getDrifterStats(id, this.env);
-							const eff = this.getEffectiveDrifterStats(id, base);
-							dStats.push({ combat: eff.combat, scavenging: eff.scavenging, tech: eff.tech, speed: eff.speed });
-						}
-						const newDuration = calculateMonsterMissionDuration(monsterNow.coordinates as any, dStats, vehicleData as any);
-						const startTs = (mission.startTime instanceof Date ? mission.startTime : new Date(mission.startTime)).getTime();
-						const currentPlannedEnd = (
-							mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime)
-						).getTime();
-						const newEnd = startTs + newDuration;
-						if (Number.isFinite(startTs) && Number.isFinite(currentPlannedEnd) && Number.isFinite(newEnd)) {
-							// Only shrink (never extend) by at least 1 second to avoid jitter
-							if (newEnd + 1000 < currentPlannedEnd) {
-								(mission as any).completionTime = new Date(newEnd);
-								missionsAdjusted++;
-								// Notify clients about the mission timing change
-								await this.broadcastMissionUpdate({ mission });
+							const dStats: DrifterStats[] = [];
+							for (const id of mission.drifterIds) {
+								const base = await getDrifterStats(id, this.env);
+								const eff = this.getEffectiveDrifterStats(id, base);
+								dStats.push({ combat: eff.combat, scavenging: eff.scavenging, tech: eff.tech, speed: eff.speed });
 							}
+							const newDuration = calculateMonsterMissionDuration(monsterNow.coordinates as any, dStats, vehicleData as any);
+							const startTs = (mission.startTime instanceof Date ? mission.startTime : new Date(mission.startTime)).getTime();
+							const currentPlannedEnd = (
+								mission.completionTime instanceof Date ? mission.completionTime : new Date(mission.completionTime)
+							).getTime();
+							const newEnd = startTs + newDuration;
+							if (Number.isFinite(startTs) && Number.isFinite(currentPlannedEnd) && Number.isFinite(newEnd)) {
+								if (newEnd + 1000 < currentPlannedEnd) {
+									adjustList.push({ id: mission.id, newEnd });
+								}
+							}
+						} catch (err) {
+							console.warn('[Monsters] Failed to recompute mission time for combat mission', mission.id, err);
 						}
-					} catch (err) {
-						console.warn('[Monsters] Failed to recompute mission time for combat mission', mission.id, err);
 					}
-				}
 
-				if (missionsAdjusted > 0) {
-					await this.saveGameState();
-					console.log(`[Monsters] Adjusted completionTime for ${missionsAdjusted} combat mission(s) due to monster movement`);
-				}
+					if (adjustList.length > 0) {
+						await this.updateMissionsRmw(async ({ missions }) => {
+							const toBroadcast: Mission[] = [];
+							for (const adj of adjustList) {
+								const m = missions[adj.id];
+								if (!m) continue;
+								(m as any).completionTime = new Date(adj.newEnd);
+								toBroadcast.push(m);
+							}
+							return { missionBroadcast: toBroadcast } as any;
+						});
+						console.log(`[Monsters] Adjusted completionTime for ${adjustList.length} combat mission(s) due to monster movement`);
+					}
 
-				// Broadcast world update (includes missions and monsters)
-				await this.broadcastWorldStateUpdate();
-				console.log(`[Monsters] Movement: updated ${moved} moved, ${arrived} arrived, total=${monsters.length}`);
-			} else {
+					// Broadcast world update (includes missions and monsters)
+					await this.broadcastWorldStateUpdate();
+					console.log(`[Monsters] Movement: updated ${moved} moved, ${arrived} arrived, total=${monsters.length}`);
+				} else {
 				console.log('[Monsters] Movement: no changes');
 			}
 			return changed;
@@ -3034,21 +2930,31 @@ private async performResourceManagement() {
 		let totalCleaned = 0;
 		const playersAffected: string[] = [];
 
-		for (const [address, player] of this.gameState.players) {
-			const initialCount = player.activeMissions.length;
-			const validMissions = player.activeMissions.filter((missionId) => this.gameState.missions.has(missionId));
-
-			if (validMissions.length !== initialCount) {
-				const cleaned = initialCount - validMissions.length;
-				totalCleaned += cleaned;
-				playersAffected.push(address);
-				player.activeMissions = validMissions;
-				console.log(`[GameDO] Cleaned ${cleaned} orphaned missions from player ${address}`);
-			}
-		}
+		await this.runRmw({
+			read: ['players', 'missions'],
+			async mutate(draft) {
+				const playersObj: Record<string, PlayerProfile> = (draft as any).players || {};
+				const missionsObj: Record<string, Mission> = (draft as any).missions || {};
+				const missionIds = new Set(Object.keys(missionsObj));
+				for (const [address, player] of Object.entries(playersObj)) {
+					const initial = Array.isArray((player as any).activeMissions) ? (player as any).activeMissions : [];
+					const filtered = initial.filter((id: string) => missionIds.has(id));
+					if (filtered.length !== initial.length) {
+						(playersObj[address] as any).activeMissions = filtered;
+						totalCleaned += initial.length - filtered.length;
+						playersAffected.push(address);
+					}
+				}
+				(draft as any).players = playersObj;
+				return {
+					broadcast: { jobs: playersAffected.length > 0 ? [{ kind: 'player_state', addresses: playersAffected.slice() }] : [] },
+					event: { op: 'cleanup_orphaned_missions', details: { cleaned: totalCleaned, players: playersAffected.length } },
+				};
+			},
+			event: { op: 'cleanup_orphaned_missions' },
+		});
 
 		if (totalCleaned > 0) {
-			await this.saveGameState();
 			console.log(`[GameDO] Cleanup complete: removed ${totalCleaned} orphaned missions from ${playersAffected.length} players`);
 		}
 
@@ -3418,7 +3324,242 @@ private async performResourceManagement() {
 	/**
 	 * Clean up session data when WebSocket closes
 	 */
-	private cleanupSession(sessionId: string) {
+// =============================================================================
+// Domain-specific RMW helpers
+// =============================================================================
+
+/**
+ * Update a single player's profile slice using RMW. Caller provides a mutator that
+ * receives the draft players map and should modify only the intended player entry.
+ */
+private async updatePlayerRmw<T = void>(
+  playerAddress: string,
+  mutate: (
+    draft: { players: Record<string, PlayerProfile> },
+  ) => Promise<{ result?: T; broadcastAddresses?: string[]; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
+  correlationId?: string,
+) {
+  const res = await this.runRmw({
+    read: ['players'],
+    context: { correlationId },
+    async mutate(draft, helpers, prev) {
+      const r = await mutate({ players: draft.players });
+      let result: T | undefined;
+      let addresses: string[] | undefined;
+      let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
+      if (r && typeof r === 'object' && ('result' in r || 'broadcastAddresses' in r || 'events' in r)) {
+        const rr = r as any;
+        result = rr.result as T | undefined;
+        addresses = rr.broadcastAddresses as string[] | undefined;
+        evs = rr.events as any;
+      } else {
+        result = r as T;
+      }
+const plan: BroadcastPlan = {
+        jobs: addresses && addresses.length > 0 ? [{ kind: 'player_state', addresses }] : [],
+      };
+      const event = evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'player_update' };
+      return { result, broadcast: plan, event };
+    },
+    event: { op: 'player_update' },
+  });
+  return res.result as T | undefined;
+}
+
+/**
+ * Update missions slice (single mission or many). Caller mutator should change only mission entries
+ * and optionally provide mission_update broadcast payload if desired.
+ */
+private async updateMissionsRmw<T = void>(
+  mutate: (
+    draft: { missions: Record<string, Mission> },
+  ) => Promise<{ result?: T; missionBroadcast?: Mission[]; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
+  correlationId?: string,
+) {
+  const res = await this.runRmw({
+    read: ['missions'],
+    context: { correlationId },
+    async mutate(draft) {
+      const r = await mutate({ missions: draft.missions });
+      let result: T | undefined;
+      let missionList: Mission[] | undefined;
+      let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
+      if (r && typeof r === 'object' && ('result' in r || 'missionBroadcast' in r || 'events' in r)) {
+        const rr = r as any;
+        result = rr.result as T | undefined;
+        missionList = rr.missionBroadcast as Mission[] | undefined;
+        evs = rr.events as any;
+      } else {
+        result = r as T;
+      }
+const jobs: BroadcastJob[] = [];
+      if (missionList && missionList.length > 0) {
+        jobs.push({ kind: 'mission_update', missions: missionList });
+      }
+      return {
+        result,
+        broadcast: { jobs },
+        event: evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'missions_update' },
+      };
+    },
+    event: { op: 'missions_update' },
+  });
+  return res.result as T | undefined;
+}
+
+/**
+ * Update resource-related slices. Use this for resourceNodes/worldMetrics combos typical of ticks.
+ */
+private async updateResourcesRmw<T = void>(
+  mutate: (
+    draft: { resourceNodes: Record<string, ResourceNode>; worldMetrics: GameState['worldMetrics'] },
+  ) => Promise<{ result?: T; broadcastWorld?: boolean; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
+  correlationId?: string,
+) {
+  const res = await this.runRmw({
+    read: ['resourceNodes', 'worldMetrics'],
+    context: { correlationId },
+    async mutate(draft) {
+      const r = await mutate({ resourceNodes: draft.resourceNodes, worldMetrics: draft.worldMetrics });
+      let result: T | undefined;
+      let broadcastWorld = false;
+      let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
+      if (r && typeof r === 'object' && ('result' in r || 'broadcastWorld' in r || 'events' in r)) {
+        const rr = r as any;
+        result = rr.result as T | undefined;
+        broadcastWorld = !!rr.broadcastWorld;
+        evs = rr.events as any;
+      } else {
+        result = r as T;
+      }
+const jobs: BroadcastJob[] = [];
+      if (broadcastWorld) jobs.push({ kind: 'world_state' });
+      return {
+        result,
+        broadcast: { jobs },
+        event: evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'resources_update' },
+      };
+    },
+    event: { op: 'resources_update' },
+  });
+  return res.result as T | undefined;
+}
+
+/**
+ * Update town slice using RMW.
+ */
+private async updateTownRmw<T = void>(
+  mutate: (
+    draft: { town: TownState },
+  ) => Promise<{ result?: T; broadcastWorld?: boolean; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
+  correlationId?: string,
+) {
+  const res = await this.runRmw({
+    read: ['town'],
+    context: { correlationId },
+    async mutate(draft) {
+      const r = await mutate({ town: draft.town });
+      let result: T | undefined;
+      let broadcastWorld = false;
+      let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
+      if (r && typeof r === 'object' && ('result' in r || 'broadcastWorld' in r || 'events' in r)) {
+        const rr = r as any;
+        result = rr.result as T | undefined;
+        broadcastWorld = !!rr.broadcastWorld;
+        evs = rr.events as any;
+      } else {
+        result = r as T;
+      }
+      const jobs: import('./state/broadcast-map').BroadcastJob[] = [];
+      if (broadcastWorld) jobs.push({ kind: 'world_state' });
+      return {
+        result,
+        broadcast: { jobs },
+        event: evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'town_update' },
+      };
+    },
+    event: { op: 'town_update' },
+  });
+  return res.result as T | undefined;
+}
+
+/**
+ * Update monsters slice using RMW.
+ */
+private async updateMonstersRmw<T = void>(
+  mutate: (
+    draft: { monsters: Monster[] },
+  ) => Promise<{ result?: T; broadcastWorld?: boolean; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
+  correlationId?: string,
+) {
+  const res = await this.runRmw({
+    read: ['monsters'],
+    context: { correlationId },
+    async mutate(draft) {
+      const r = await mutate({ monsters: draft.monsters });
+      let result: T | undefined;
+      let broadcastWorld = false;
+      let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
+      if (r && typeof r === 'object' && ('result' in r || 'broadcastWorld' in r || 'events' in r)) {
+        const rr = r as any;
+        result = rr.result as T | undefined;
+        broadcastWorld = !!rr.broadcastWorld;
+        evs = rr.events as any;
+      } else {
+        result = r as T;
+      }
+      const jobs: import('./state/broadcast-map').BroadcastJob[] = [];
+      if (broadcastWorld) jobs.push({ kind: 'world_state' });
+      return {
+        result,
+        broadcast: { jobs },
+        event: evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'monsters_update' },
+      };
+    },
+    event: { op: 'monsters_update' },
+  });
+  return res.result as T | undefined;
+}
+
+/**
+ * Update contributionStats slice (and optionally trigger leaderboards broadcast).
+ */
+private async updateContributionStatsRmw<T = void>(
+  mutate: (
+    draft: { contributionStats: Record<string, any> },
+  ) => Promise<{ result?: T; broadcastLeaderboards?: boolean; events?: { op: string; details?: Record<string, unknown> }[] } | T>,
+  correlationId?: string,
+) {
+  const res = await this.runRmw({
+    read: ['contributionStats'],
+    context: { correlationId },
+    async mutate(draft) {
+      const r = await mutate({ contributionStats: draft.contributionStats });
+      let result: T | undefined;
+      let broadcastLeaderboards = false;
+      let evs: { op: string; details?: Record<string, unknown> }[] | undefined;
+      if (r && typeof r === 'object' && ('result' in r || 'broadcastLeaderboards' in r || 'events' in r)) {
+        const rr = r as any;
+        result = rr.result as T | undefined;
+        broadcastLeaderboards = !!rr.broadcastLeaderboards;
+        evs = rr.events as any;
+      } else {
+        result = r as T;
+      }
+      const jobs: import('./state/broadcast-map').BroadcastJob[] = [];
+      if (broadcastLeaderboards) jobs.push({ kind: 'leaderboards_update' });
+      return {
+        result,
+        broadcast: { jobs },
+        event: evs && evs.length > 0 ? { op: evs[0].op, details: evs[0].details } : { op: 'contribution_stats_update' },
+      };
+    },
+    event: { op: 'contribution_stats_update' },
+  });
+  return res.result as T | undefined;
+}
+
+private cleanupSession(sessionId: string) {
 		const session = this.webSocketSessions.get(sessionId);
 		if (!session) {
 			return;
