@@ -1247,8 +1247,29 @@ private async incrementCombatDamage(address: string, dmg: number) {
 		}
 
 		// Post-commit: events and XP notifications largely as before (non-persistent effects handled with addEvent and addNotification)
-		const afterMission = this.gameState.missions.get(missionId)!;
+const afterMission = this.gameState.missions.get(missionId)!;
 		const afterPlayer = this.gameState.players.get(afterMission.playerAddress)!;
+// Compute total combat XP awarded for monster missions when engagement applied at battle time
+		let totalCombatXpAwarded = 0;
+		if (afterMission.targetMonsterId) {
+			const engaged = !!(afterMission as any).engagementApplied;
+			if (engaged) {
+				const dmgStored = Math.max(0, Number((afterMission as any).combatDamageDealt) || 0);
+				const xpGain = Math.max(1, Math.floor(dmgStored * 0.25));
+				totalCombatXpAwarded = xpGain * ((afterMission.drifterIds?.length) || 0);
+			}
+		}
+		// Resolve monster kind (optional) for message clarity
+		let targetMonsterKind: string | undefined = undefined;
+		if (afterMission.targetMonsterId) {
+			try {
+				const monsters = await this.getStoredMonsters();
+				const monster = monsters.find((m) => m.id === afterMission.targetMonsterId);
+				if (monster) {
+					targetMonsterKind = (monster as any).kind as any;
+				}
+			} catch {}
+		}
 		await this.addEvent({
 			type: 'mission_complete',
 			playerAddress: afterMission.playerAddress,
@@ -1262,8 +1283,8 @@ private async incrementCombatDamage(address: string, dmg: number) {
 					? getVehicle(afterPlayer.vehicles.find((v) => v.instanceId === afterMission.vehicleInstanceId)!.vehicleId)?.name
 					: 'On Foot'
 				: 'On Foot',
-			message: `${afterMission.playerAddress.slice(0, 6)}… completed ${afterMission.type.toUpperCase()} ${
-				afterMission.targetMonsterId
+message: `${afterMission.playerAddress.slice(0, 6)}… completed ${afterMission.type.toUpperCase()} ${
+afterMission.targetMonsterId
 					? `vs ${targetMonsterKind ?? 'MONSTER'}`
 					: `at ${(this.gameState.resourceNodes.get(afterMission.targetNodeId!)?.type ?? '').toString().toUpperCase()}`
 			} with drifters ${afterMission.drifterIds.map((id) => `#${id}`).join(', ')} ${
@@ -1273,7 +1294,9 @@ private async incrementCombatDamage(address: string, dmg: number) {
 							return vi ? getVehicle(vi.vehicleId)?.name || 'On Foot' : 'On Foot';
 						})()}`
 					: 'on foot'
-			} ${afterMission.targetMonsterId ? `(+${totalCombatXpAwarded} XP)` : `(+${afterMission.rewards.credits} cr)`}`,
+			} ${afterMission.targetMonsterId
+				? (totalCombatXpAwarded > 0 ? `(+${totalCombatXpAwarded} XP)` : '')
+				: `(+${afterMission.rewards.credits} cr)`}`
 		});
 
 		// Award XP to participating drifters based on credits earned
@@ -1317,8 +1340,8 @@ if (
 
 		// Send mission completion notification to player's sessions
 		const isMonsterMission = !!afterMission.targetMonsterId;
-		const notifMessage = isMonsterMission
-			? `Combat mission complete! Gained +${totalCombatXpAwarded} XP.`
+const notifMessage = isMonsterMission
+			? (totalCombatXpAwarded > 0 ? `Combat mission complete! Gained +${totalCombatXpAwarded} XP.` : 'Combat mission complete!')
 			: `Mission completed! Earned ${afterMission.rewards.credits} credits.`;
 		const notification: PendingNotification = {
 			id: crypto.randomUUID(),
