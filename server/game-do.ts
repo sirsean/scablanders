@@ -130,6 +130,27 @@ export class GameDO extends DurableObject {
 	private contributionStats: Map<string, PlayerContributionStats>; // address -> contribution totals
 	private env: Env;
 
+	// --- Diagnostics helpers (gated by DEBUG_RESOURCES env) ---
+	private debugResources(): boolean {
+		try {
+			return !!(this.env as any).DEBUG_RESOURCES;
+		} catch {
+			return false;
+		}
+	}
+	private resLog(message: string, data?: any) {
+		if (this.debugResources()) {
+			if (data !== undefined) {
+				console.log(message, data);
+			} else {
+				console.log(message);
+			}
+		}
+	}
+	private sampleResourceIds(max: number = 5): string[] {
+		return Array.from(this.gameState?.resourceNodes?.keys?.() || []).slice(0, max);
+	}
+
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 		this.env = env;
@@ -1631,10 +1652,18 @@ private async initializeResourceManagement() {
 		console.log('[GameDO] Initializing resource management');
 
 		try {
+			this.resLog('[Res] init: before first performResourceManagement size/sample', {
+				size: this.gameState.resourceNodes.size,
+				sample: this.sampleResourceIds(),
+			});
 			// Run resource management immediately on startup
 			await this.performResourceManagement();
 			// Enforce prune after initial management
 			await this.pruneResourceNodesToCap(/*broadcast*/ true);
+			this.resLog('[Res] init: after first performResourceManagement size/sample', {
+				size: this.gameState.resourceNodes.size,
+				sample: this.sampleResourceIds(),
+			});
 			console.log('[GameDO] Initial resource management check completed');
 		} catch (error) {
 			console.error('[GameDO] Error during initial resource management:', error);
@@ -1673,6 +1702,7 @@ async alarm() {
 
 		try {
 			const now = new Date();
+			this.resLog('[Res] alarm: entry size/sample', { size: this.gameState.resourceNodes.size, sample: this.sampleResourceIds() });
 
 			// Monster tick: run when due
 			const monIso = await this.ctx.storage.get<string>('nextMonsterAlarmAt');
@@ -1690,9 +1720,17 @@ async alarm() {
 			const resIso = await this.ctx.storage.get<string>('nextResourceAlarmAt');
 			let resAt = resIso ? new Date(resIso) : new Date(0);
 			if (now >= resAt) {
+				this.resLog('[Res] alarm: before performResourceManagement size/sample', {
+					size: this.gameState.resourceNodes.size,
+					sample: this.sampleResourceIds(),
+				});
 				await this.performResourceManagement();
 				// Prune to cap every resource cycle to keep storage clean
 				await this.pruneResourceNodesToCap(/*broadcast*/ true);
+				this.resLog('[Res] alarm: after performResourceManagement size/sample', {
+					size: this.gameState.resourceNodes.size,
+					sample: this.sampleResourceIds(),
+				});
 				const resIntervalMs = this.gameState.resourceConfig.degradationCheckInterval * 60 * 1000;
 				resAt = new Date(now.getTime() + resIntervalMs);
 				await this.ctx.storage.put('nextResourceAlarmAt', resAt.toISOString());
@@ -1705,11 +1743,15 @@ async alarm() {
 		await this.scheduleNextAlarm();
 	}
 
-	/**
+/**
 	 * Perform resource management: degradation, cleanup, and spawning
 	 */
 private async performResourceManagement() {
 		console.log('[GameDO] Starting resource degradation cycle');
+
+		// Guard: ensure nodes are loaded from storage if in-memory map is empty
+		await this.ensureResourceNodesLoaded();
+		this.resLog('[Res] perform: entry size/sample', { size: this.gameState.resourceNodes.size, sample: this.sampleResourceIds() });
 
 		const config = this.gameState.resourceConfig;
 		const now = new Date();
@@ -1841,11 +1883,34 @@ private async performResourceManagement() {
 		if (changesMade) {
 			await this.pruneResourceNodesToCap(/*broadcast*/ false);
 			await this.saveGameState();
+			this.resLog('[Res] perform: after save size/sample', { size: this.gameState.resourceNodes.size, sample: this.sampleResourceIds() });
 			await this.broadcastWorldStateUpdate();
 			await this.broadcastLeaderboardsUpdate();
 			console.log('[GameDO] Resource degradation cycle completed with changes');
 		} else {
+			this.resLog('[Res] perform: no changes size/sample', { size: this.gameState.resourceNodes.size, sample: this.sampleResourceIds() });
 			console.log('[GameDO] Resource degradation cycle completed with no changes needed');
+		}
+	}
+
+	/** Ensure in-memory resource nodes are loaded from storage before any tick runs */
+	private async ensureResourceNodesLoaded(): Promise<void> {
+		try {
+			if (this.gameState.resourceNodes.size > 0) {
+				return;
+			}
+			const nodesData = await this.ctx.storage.get<Record<string, ResourceNode>>('resourceNodes');
+			if (nodesData && Object.keys(nodesData).length > 0) {
+				this.gameState.resourceNodes = new Map(Object.entries(nodesData));
+				this.resLog('[Res] ensureResourceNodesLoaded: loaded from storage', {
+					size: this.gameState.resourceNodes.size,
+					sample: this.sampleResourceIds(),
+				});
+			} else {
+				this.resLog('[Res] ensureResourceNodesLoaded: storage empty or missing');
+			}
+		} catch (e) {
+			console.warn('[GameDO] ensureResourceNodesLoaded error', e);
 		}
 	}
 
