@@ -27,7 +27,7 @@ import {
 	estimateMonsterDamage,
 } from '../shared/mission-utils';
 import { getDrifterStats } from './drifters';
-import { RESOURCE_NODE_CAP } from './config';
+import { RESOURCE_NODE_CAP, MAX_EVENT_LOG_MESSAGES, MAX_EVENT_MESSAGE_LEN, MAX_NOTIFICATION_ENTRIES } from './config';
 import { getVehicle } from './vehicles';
 import { calculateProsperityGain, prosperityResourceBoostMultiplier } from '../shared/prosperity-utils';
 import type { LeaderboardsResponse, LeaderboardEntry } from '@shared/leaderboards';
@@ -294,6 +294,15 @@ export class GameDO extends DurableObject {
 	 */
 	private async initializeGameState() {
 		await this.loadGameState();
+		// Prune completed missions on startup to bound the missions slice immediately
+		await this.runRmw({
+			read: ['missions'],
+			mutate: async (draft) => {
+				this.pruneCompletedMissions(draft.missions as any);
+				return { event: { op: 'missions_prune_startup' } } as any;
+			},
+			event: { op: 'missions_prune_startup' },
+		});
 		await this.initializeResourceNodes();
 		// Enforce a hard cap on total stored nodes on startup/hydration
 		await this.pruneResourceNodesToCap(/*broadcast*/ false);
@@ -655,23 +664,29 @@ export class GameDO extends DurableObject {
 	}
 
 	/**
-	 * Add an event to the global event log (FIFO, max 1000), persist and broadcast
+	 * Add an event to the global event log (FIFO, bounded), persist and broadcast
 	 */
 	private async addEvent(partial: Omit<GameEvent, 'id' | 'timestamp'> & { timestamp?: Date }) {
+		// Build event and clamp message length
+		let msg = (partial as any).message as string | undefined;
+		if (typeof msg === 'string' && msg.length > MAX_EVENT_MESSAGE_LEN) {
+			msg = msg.slice(0, Math.max(0, MAX_EVENT_MESSAGE_LEN - 1)) + '…';
+		}
 		const event: GameEvent = {
 			id: crypto.randomUUID(),
 			timestamp: partial.timestamp ?? new Date(),
 			...partial,
+			message: msg ?? (partial as any).message,
 		};
 		// Use RMW to append event to eventLog slice
 		await this.runRmw({
 			read: ['eventLog'],
-			async mutate(draft) {
+			mutate: async (draft) => {
 				const nextLog = Array.isArray(draft.eventLog) ? draft.eventLog.slice() : [];
 				nextLog.push(event);
-				const trimmed = nextLog.length > 1000 ? nextLog.slice(-1000) : nextLog;
+				const trimmed = nextLog.length > MAX_EVENT_LOG_MESSAGES ? nextLog.slice(-MAX_EVENT_LOG_MESSAGES) : nextLog;
 				(draft as any).eventLog = trimmed;
-				return { broadcast: { jobs: [] }, event: { op: 'event_append', details: { type: partial.type } } };
+				return { broadcast: { jobs: [] }, event: { op: 'event_append', details: { type: (partial as any).type } } };
 			},
 			event: { op: 'event_append' },
 		});
@@ -902,6 +917,36 @@ export class GameDO extends DurableObject {
 	// =============================================================================
 
 	/**
+	 * Prune older completed missions from the missions slice to keep storage size under limits.
+	 * Retains all active missions and the most recent `keepMaxTotal` completed missions.
+	 */
+	private pruneCompletedMissions(
+		missionsObj: Record<string, Mission>,
+		keepMaxTotal: number = 150,
+	): number {
+		try {
+			const entries = Object.entries(missionsObj);
+			const completed = entries.filter(([, m]) => m && (m as any).status === 'completed');
+			if (completed.length <= keepMaxTotal) {
+				return 0;
+			}
+			completed.sort((a, b) => {
+				const at = new Date(((a[1] as any).completionTime || (a[1] as any).startTime) as any).getTime();
+				const bt = new Date(((b[1] as any).completionTime || (b[1] as any).startTime) as any).getTime();
+				return at - bt; // oldest first
+			});
+			const toRemove = completed.length - keepMaxTotal;
+			for (let i = 0; i < toRemove; i++) {
+				const id = completed[i][0];
+				delete missionsObj[id];
+			}
+			return toRemove;
+		} catch (_e) {
+			return 0;
+		}
+	}
+
+	/**
 	 * Start a monster combat mission targeting a specific monster.
 	 * Computes a simple duration based on distance and team speed, with a 2-minute engagement window.
 	 */
@@ -969,7 +1014,7 @@ export class GameDO extends DurableObject {
 			// Create and persist mission via RMW
 			const rmwRes = await this.runRmw({
 				read: ['players', 'missions', 'worldMetrics'],
-				async mutate(draft) {
+				mutate: async (draft) => {
 					const playersObj = draft.players as any as Record<string, PlayerProfile>;
 					const missionsObj = draft.missions as any as Record<string, Mission>;
 					const world = draft.worldMetrics as any as GameState['worldMetrics'];
@@ -992,6 +1037,8 @@ export class GameDO extends DurableObject {
 					};
 					missionsObj[missionId] = mission;
 					p.activeMissions = [...(p.activeMissions || []), missionId];
+					// Prune older completed missions to keep missions slice bounded
+					this.pruneCompletedMissions(missionsObj as any);
 					(draft as any).players = playersObj;
 					(draft as any).missions = missionsObj;
 					world.totalActiveMissions = (world.totalActiveMissions || 0) + 1;
@@ -1048,7 +1095,7 @@ export class GameDO extends DurableObject {
 		const getEff = this.getEffectiveDrifterStats.bind(this);
 		const res = await this.runRmw({
 			read: ['players', 'missions', 'worldMetrics', 'resourceNodes'],
-			async mutate(draft) {
+			mutate: async (draft) => {
 				const playersObj = draft.players as any as Record<string, PlayerProfile>;
 				const missionsObj = draft.missions as any as Record<string, Mission>;
 				const world = draft.worldMetrics as any as GameState['worldMetrics'];
@@ -1143,9 +1190,11 @@ export class GameDO extends DurableObject {
 				if (vehicleInstance) {
 					vehicleInstance.status = 'on_mission';
 				}
-				world.totalActiveMissions = (world.totalActiveMissions || 0) + 1;
-				world.lastUpdate = new Date();
-				(draft as any).players = playersObj;
+					world.totalActiveMissions = (world.totalActiveMissions || 0) + 1;
+					world.lastUpdate = new Date();
+					// Prune older completed missions to keep missions slice bounded
+					this.pruneCompletedMissions(missionsObj as any);
+					(draft as any).players = playersObj;
 				(draft as any).missions = missionsObj;
 				(draft as any).worldMetrics = world;
 				// Broadcast and return missionId
@@ -1199,7 +1248,7 @@ export class GameDO extends DurableObject {
 		// Complete mission atomically with RMW where feasible
 		const result = await this.runRmw({
 			read: ['players', 'missions', 'resourceNodes', 'worldMetrics', 'town'],
-			async mutate(draft) {
+			mutate: async (draft) => {
 				const playersObj = draft.players as any as Record<string, PlayerProfile>;
 				const missionsObj = draft.missions as any as Record<string, Mission>;
 				const nodesObj = draft.resourceNodes as any as Record<string, ResourceNode>;
@@ -1257,6 +1306,8 @@ export class GameDO extends DurableObject {
 				// Remove from player active missions and mark mission completed
 				player.activeMissions = (player.activeMissions || []).filter((id) => id !== missionId);
 				missionsObj[missionId] = { ...mission, status: 'completed' };
+				// Prune older completed missions to keep missions slice bounded
+				this.pruneCompletedMissions(missionsObj as any);
 				// Reset vehicle if any
 				if (mission.vehicleInstanceId) {
 					const v = (player.vehicles || []).find((v) => v.instanceId === mission.vehicleInstanceId);
@@ -1529,11 +1580,11 @@ export class GameDO extends DurableObject {
 		}
 		await this.runRmw({
 			read: ['notifications'],
-			async mutate(draft) {
+			mutate: async (draft) => {
 				const map: Record<string, NotificationMessage[]> = (draft as any).notifications || {};
 				const list = Array.isArray(map[address]) ? map[address].slice() : [];
 				list.push(notification);
-				const trimmed = list.length > 50 ? list.slice(-50) : list;
+				const trimmed = list.length > MAX_NOTIFICATION_ENTRIES ? list.slice(-MAX_NOTIFICATION_ENTRIES) : list;
 				map[address] = trimmed;
 				(draft as any).notifications = map;
 				return { broadcast: { jobs: [{ kind: 'player_state', addresses: [address] }] }, event: { op: 'notification_add' } };
@@ -1582,7 +1633,7 @@ export class GameDO extends DurableObject {
 	/**
 	 * Return a snapshot of the global event log (newest first)
 	 */
-	async getEventLog(limit: number = 1000): Promise<GameEvent[]> {
+async getEventLog(limit: number = MAX_EVENT_LOG_MESSAGES): Promise<GameEvent[]> {
 		await this.ensureAlarmsInitialized();
 		return this.gameState.eventLog.slice(-limit).reverse();
 	}

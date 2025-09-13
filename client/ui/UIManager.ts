@@ -794,10 +794,10 @@ export class UIManager {
 
 		// Explicit ordering (left-to-right) per spec
 		const order: (HTMLElement | null)[] = [
-			// Unauth panels first so they tile from the left when visible
-			this.unauthImagePanel,
-			this.welcomePanel,
+			// Unauth panels first so they tile from the left when visible (Connect Wallet first)
 			this.connectWalletPanel,
+			this.welcomePanel,
+			this.unauthImagePanel,
 			// Auth-only panels follow
 			this.profilePanel,
 			this.logPanel,

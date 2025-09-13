@@ -17,11 +17,11 @@ export class ConnectWalletPanel {
       font-family: 'Courier New', monospace;
       display: none;
       overflow-y: auto;
-      z-index: 1050;
+      z-index: 1060;
     `;
 
 		(panel as any).dataset.baseWidth = '460';
-		panel.style.zIndex = '1050';
+		panel.style.zIndex = '1060';
 
 		const hasWallet = typeof (window as any).ethereum !== 'undefined';
 
