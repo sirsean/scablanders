@@ -1866,28 +1866,30 @@ async getEventLog(limit: number = MAX_EVENT_LOG_MESSAGES): Promise<GameEvent[]> 
 		const hoursElapsed = (now.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60);
 		console.log(`[GameDO] Hours elapsed since last degradation: ${hoursElapsed.toFixed(2)}`);
 
-		// 2. Apply degradation to all active nodes
+		// Work on a plain object snapshot of current nodes, then persist via RMW in one go
+		const nodesObj: Record<string, ResourceNode> = {};
+		for (const [id, node] of this.gameState.resourceNodes) {
+			// Shallow clone is sufficient because we overwrite primitives below
+			nodesObj[id] = { ...node };
+		}
+
+		// 2. Apply degradation to all active nodes (in nodesObj)
 		const depleted: string[] = [];
 		const hourlyDegradationRate = config.degradationRate / 100; // Convert percentage to decimal
 
-		for (const [nodeId, node] of this.gameState.resourceNodes) {
-			if (node.isActive && node.currentYield > 0) {
+		for (const [nodeId, node] of Object.entries(nodesObj)) {
+			if (node.isActive && (node.currentYield || 0) > 0) {
 				// Calculate degradation amount (minimum 1 per cycle to ensure steady degradation)
 				let degradationAmount = Math.floor(node.baseYield * hourlyDegradationRate * hoursElapsed);
-
-				// Ensure at least 1 point of degradation per cycle for active nodes
 				if (degradationAmount < 1) {
 					degradationAmount = 1;
 				}
-
 				const oldYield = node.currentYield;
-				node.currentYield = Math.max(0, node.currentYield - degradationAmount);
-
+				node.currentYield = Math.max(0, (node.currentYield || 0) - degradationAmount);
 				console.log(`[GameDO] Node ${nodeId} degraded: ${oldYield} -> ${node.currentYield} (-${oldYield - node.currentYield})`);
 				_changesMade = true;
-
-				// Mark as inactive if fully degraded
 				if (node.currentYield <= 0) {
+					node.currentYield = 0;
 					node.isActive = false;
 					depleted.push(nodeId);
 					console.log(`[GameDO] Node ${nodeId} has been fully degraded and is now inactive`);
@@ -1895,12 +1897,12 @@ async getEventLog(limit: number = MAX_EVENT_LOG_MESSAGES): Promise<GameEvent[]> 
 			}
 		}
 
-		// 3. Remove fully degraded nodes immediately
+		// 3. Remove fully degraded nodes immediately (from nodesObj) and emit events
 		if (depleted.length > 0) {
 			console.log(`[GameDO] Removing ${depleted.length} fully degraded nodes`);
 			for (const nodeId of depleted) {
-				const removed = this.gameState.resourceNodes.get(nodeId);
-				this.gameState.resourceNodes.delete(nodeId);
+				const removed = nodesObj[nodeId];
+				delete nodesObj[nodeId];
 				await this.addEvent({
 					type: 'node_removed',
 					nodeId,
@@ -1913,19 +1915,13 @@ async getEventLog(limit: number = MAX_EVENT_LOG_MESSAGES): Promise<GameEvent[]> 
 			_changesMade = true;
 		}
 
-		// 4. Count current active nodes by type
-		const nodeCountsByType: Record<ResourceType, number> = {
-			ore: 0,
-			scrap: 0,
-			organic: 0,
-		};
-
-		for (const node of this.gameState.resourceNodes.values()) {
+		// 4. Count current active nodes by type (from nodesObj)
+		const nodeCountsByType: Record<ResourceType, number> = { ore: 0, scrap: 0, organic: 0 };
+		for (const node of Object.values(nodesObj)) {
 			if (node.isActive) {
 				nodeCountsByType[node.type]++;
 			}
 		}
-
 		const totalActiveNodes = Object.values(nodeCountsByType).reduce((sum, count) => sum + count, 0);
 		console.log(
 			`[GameDO] Current active node counts: ore=${nodeCountsByType.ore}, scrap=${nodeCountsByType.scrap}, organic=${nodeCountsByType.organic}, total=${totalActiveNodes}`,
@@ -1933,7 +1929,6 @@ async getEventLog(limit: number = MAX_EVENT_LOG_MESSAGES): Promise<GameEvent[]> 
 
 		// 5. Spawn replacement nodes to maintain target counts (influenced by Prosperity), respecting global cap
 		const nodesToSpawn: { type: ResourceType; count: number }[] = [];
-
 		for (const [type, targetCountBase] of Object.entries(config.targetNodesPerType) as [ResourceType, number][]) {
 			const targetCount = Math.max(1, Math.round(targetCountBase * cappedSpawnMult));
 			const currentCount = nodeCountsByType[type];
@@ -1944,8 +1939,8 @@ async getEventLog(limit: number = MAX_EVENT_LOG_MESSAGES): Promise<GameEvent[]> 
 
 		for (const { type, count } of nodesToSpawn) {
 			for (let i = 0; i < count; i++) {
-				// Respect global cap while spawning
-				const remainingCapacity = Math.max(0, RESOURCE_NODE_CAP - this.gameState.resourceNodes.size);
+				// Respect global cap while spawning (based on nodesObj size)
+				const remainingCapacity = Math.max(0, RESOURCE_NODE_CAP - Object.keys(nodesObj).length);
 				if (remainingCapacity <= 0) {
 					break;
 				}
@@ -1954,7 +1949,7 @@ async getEventLog(limit: number = MAX_EVENT_LOG_MESSAGES): Promise<GameEvent[]> 
 				const yieldScale = cappedSpawnMult; // same cap applied
 				newNode.baseYield = Math.max(1, Math.round(newNode.baseYield * yieldScale));
 				newNode.currentYield = Math.max(1, Math.round(newNode.currentYield * yieldScale));
-				this.gameState.resourceNodes.set(newNode.id, newNode);
+				nodesObj[newNode.id] = newNode;
 				console.log(
 					`[GameDO] Spawned replacement ${type} node at (${newNode.coordinates.x}, ${newNode.coordinates.y}) with ${newNode.currentYield} yield (m=${yieldScale.toFixed(2)})`,
 				);
@@ -1970,7 +1965,22 @@ async getEventLog(limit: number = MAX_EVENT_LOG_MESSAGES): Promise<GameEvent[]> 
 			}
 		}
 
-		// 6. Update world metrics handled in RMW path above
+		// 6. Persist resourceNodes and worldMetrics via RMW to keep storage authoritative
+		await this.updateResourcesRmw(async ({ resourceNodes, worldMetrics }) => {
+			// Remove keys not present anymore
+			for (const k of Object.keys(resourceNodes)) {
+				if (!(k in nodesObj)) {
+					delete (resourceNodes as any)[k];
+				}
+			}
+			// Upsert all nodes from nodesObj
+			for (const [k, v] of Object.entries(nodesObj)) {
+				(resourceNodes as any)[k] = v as any;
+			}
+			(worldMetrics as any).lastUpdate = now;
+			return { broadcastWorld: true } as any;
+		});
+
 		// 7. Attempt monster spawn based on cadence and cap (scaffold)
 		const maybeSpawned = await this.maybeSpawnMonster(now, town.prosperity);
 		if (maybeSpawned) {
@@ -1978,7 +1988,7 @@ async getEventLog(limit: number = MAX_EVENT_LOG_MESSAGES): Promise<GameEvent[]> 
 			await this.broadcastWorldStateUpdate();
 		}
 
-		// Prune to cap after each resource cycle
+		// Prune to cap after each resource cycle (persists via RMW inside)
 		await this.pruneResourceNodesToCap(/*broadcast*/ true);
 		this.resLog('[Res] perform: after save size/sample', { size: this.gameState.resourceNodes.size, sample: this.sampleResourceIds() });
 		console.log('[GameDO] Resource degradation cycle completed');
