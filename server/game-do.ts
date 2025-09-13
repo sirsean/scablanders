@@ -1070,6 +1070,61 @@ export class GameDO extends DurableObject {
 				message: `Combat mission started vs ${monster.kind} (${targetMonsterId})`,
 			});
 
+			// If the monster is already attacking the town, engage immediately so damage is dealt right away
+			// This ensures XP can be granted on immediate collection when completionTime === now
+			if (monster.state === 'attacking') {
+				try {
+					// Work against stored monsters for HP mutation
+					let monstersStored = await this.getStoredMonsters();
+					const idx = monstersStored.findIndex((m) => m.id === targetMonsterId);
+					if (idx !== -1) {
+						const target = monstersStored[idx];
+						const battleCoords = { ...target.coordinates };
+						// Roll actual damage around the base estimate (±15% variance), same as scheduled engagement path
+						const est = estimateMonsterDamage(dStats, vehicleData as any);
+						const variance = 0.15;
+						const dmgApplied = Math.max(1, Math.round(est.base * (1 + (Math.random() * 2 - 1) * variance)));
+						await this.incrementCombatDamage(playerAddress, dmgApplied);
+						const beforeHp = target.hp;
+						target.hp = Math.max(0, (target.hp || 0) - dmgApplied);
+						const killed = target.hp <= 0;
+						let kind: any = (target as any).kind;
+						if (killed) {
+							// Remove defeated monster from storage list
+							monstersStored = monstersStored.filter((mm) => mm.id !== target.id);
+							await this.addEvent({
+								type: 'monster_killed',
+								message: `${kind} killed (damage ${dmgApplied}, hp ${beforeHp}→0)`,
+								data: { id: target.id, kind, damage: dmgApplied },
+							});
+						} else {
+							await this.addEvent({
+								type: 'town_damaged',
+								message: `${kind} damaged for ${dmgApplied} (hp ${beforeHp}→${target.hp})`,
+								data: { id: target.id, kind, damage: dmgApplied },
+							});
+						}
+						await this.setStoredMonsters(monstersStored);
+						// Persist engagement details to the mission; keep completionTime as-is (immediate) for attacking-case
+						await this.updateMissionsRmw(async ({ missions }) => {
+							const m = missions[missionId];
+							if (!m) {
+								return {} as any;
+							}
+							(m as any).engagementApplied = true;
+							(m as any).combatDamageDealt = dmgApplied;
+							(m as any).battleLocation = battleCoords;
+							return { missionBroadcast: [m] } as any;
+						});
+						// Broadcast world and leaderboards updates to reflect immediate damage
+						await this.broadcastWorldStateUpdate();
+						await this.broadcastLeaderboardsUpdate();
+					}
+				} catch (err) {
+					console.warn('[GameDO] Immediate engagement at mission start failed', err);
+				}
+			}
+
 			return { success: true, missionId };
 		} catch (e) {
 			console.error('[GameDO] startMonsterCombatMission error', e);
